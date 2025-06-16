@@ -1,6 +1,7 @@
 """
-Integration tests specifically for SELECT query retry behavior.
-This is critical functionality that must be thoroughly tested against real Cassandra.
+Integration tests for SELECT query operations.
+Tests various SELECT scenarios with real Cassandra including consistency levels,
+large result sets, prepared statements, and concurrent operations.
 """
 
 import asyncio
@@ -12,8 +13,8 @@ from cassandra.query import SimpleStatement
 
 
 @pytest.mark.integration
-class TestSelectRetryBehavior:
-    """Test SELECT query retry behavior in various scenarios with real Cassandra."""
+class TestSelectOperations:
+    """Test SELECT query operations in various scenarios with real Cassandra."""
 
     @pytest.mark.asyncio
     async def test_select_with_consistency_levels(self, cassandra_session):

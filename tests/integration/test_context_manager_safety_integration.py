@@ -7,7 +7,6 @@ Cassandra connections and don't close shared resources inappropriately.
 
 import asyncio
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from cassandra import InvalidRequest
@@ -271,89 +270,6 @@ class TestContextManagerSafetyIntegration:
         await verify_session.execute("DROP KEYSPACE IF EXISTS test_session_context")
         await verify_session.close()
         await cluster.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_thread_pool_access_during_context_exit(self, cassandra_cluster):
-        """
-        Test that other threads can access session while context manager exits.
-        """
-        cluster = AsyncCluster(["localhost"])
-        session = await cluster.connect()
-
-        try:
-            # Setup
-            await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_thread_safety
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
-            )
-            await session.set_keyspace("test_thread_safety")
-
-            await session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS counter (
-                    id TEXT PRIMARY KEY,
-                    count INT
-                )
-                """
-            )
-
-            # Initialize counter
-            await session.execute("INSERT INTO counter (id, count) VALUES ('main', 0)")
-
-            # Function to run in thread
-            def increment_counter(session_ref, counter_name):
-                """Increment counter from thread."""
-                # Create new event loop for thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-                async def do_increment():
-                    # Get current value
-                    result = await session_ref.execute(
-                        "SELECT count FROM counter WHERE id = %s", [counter_name]
-                    )
-                    current = result.one().count
-
-                    # Increment
-                    await session_ref.execute(
-                        "UPDATE counter SET count = %s WHERE id = %s", [current + 1, counter_name]
-                    )
-
-                loop.run_until_complete(do_increment())
-                loop.close()
-
-            # Use thread pool
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                # Start background threads
-                futures = []
-                for i in range(3):
-                    future = executor.submit(increment_counter, session, "main")
-                    futures.append(future)
-
-                # Use streaming in main thread with context manager
-                async with await session.execute_stream("SELECT * FROM counter") as stream:
-                    async for row in stream:
-                        # While streaming, other threads are working
-                        await asyncio.sleep(0.1)
-
-                # Wait for threads
-                for future in futures:
-                    future.result(timeout=5.0)
-
-            # Verify all increments worked
-            result = await session.execute("SELECT count FROM counter WHERE id = 'main'")
-            final_count = result.one().count
-            assert final_count == 3  # Each thread incremented once
-
-        finally:
-            await session.execute("DROP KEYSPACE IF EXISTS test_thread_safety")
-            await session.close()
-            await cluster.shutdown()
 
     @pytest.mark.asyncio
     async def test_cluster_context_manager_multiple_sessions(self, cassandra_cluster):

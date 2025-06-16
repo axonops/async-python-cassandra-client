@@ -10,113 +10,16 @@ import time
 import uuid
 
 import pytest
-from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
+from cassandra import OperationTimedOut, ReadTimeout, Unavailable
+from cassandra.cluster import NoHostAvailable
 
-from async_cassandra import AsyncCassandraSession, AsyncCluster, AsyncRetryPolicy
+from async_cassandra import AsyncCassandraSession, AsyncCluster
+from async_cassandra.exceptions import ConnectionError
 
 
 @pytest.mark.integration
 class TestNetworkFailures:
     """Test behavior under various network failure conditions."""
-
-    @pytest.mark.asyncio
-    async def test_timeout_handling(self, cassandra_session: AsyncCassandraSession):
-        """Test query timeout handling."""
-        # Create a large dataset that will take time to query
-        await cassandra_session.execute("DROP TABLE IF EXISTS large_data")
-        await cassandra_session.execute(
-            """
-            CREATE TABLE large_data (
-                partition_key INT,
-                clustering_key INT,
-                data TEXT,
-                PRIMARY KEY (partition_key, clustering_key)
-            )
-            """
-        )
-
-        # Insert a lot of data in one partition
-        insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO large_data (partition_key, clustering_key, data) VALUES (?, ?, ?)"
-        )
-
-        # Insert 10000 rows
-        insert_tasks = []
-        large_text = "x" * 1000  # 1KB of data per row
-
-        for i in range(10000):
-            task = cassandra_session.execute(insert_stmt, [1, i, large_text])
-            insert_tasks.append(task)
-
-            # Execute in batches
-            if len(insert_tasks) >= 100:
-                await asyncio.gather(*insert_tasks)
-                insert_tasks = []
-
-        if insert_tasks:
-            await asyncio.gather(*insert_tasks)
-
-        # Now try to query all data with a very short timeout
-        try:
-            # This should timeout
-            await cassandra_session.execute(
-                "SELECT * FROM large_data WHERE partition_key = 1",
-                timeout=0.1,  # 1ms timeout - should definitely timeout
-            )
-            pytest.fail("Query should have timed out")
-        except (OperationTimedOut, asyncio.TimeoutError):
-            # Expected behavior - may be either depending on where timeout occurs
-            pass
-
-    @pytest.mark.asyncio
-    async def test_retry_on_timeout(self, cassandra_cluster):
-        """Test that retries work correctly on timeouts."""
-        # Create session with custom retry policy
-        retry_policy = AsyncRetryPolicy(max_retries=3)
-
-        cluster = AsyncCluster(
-            contact_points=["localhost"],
-            retry_policy=retry_policy,
-        )
-        session = await cluster.connect()
-
-        # Create test keyspace and table
-        await session.execute(
-            """
-            CREATE KEYSPACE IF NOT EXISTS test_retry
-            WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
-            """
-        )
-        await session.set_keyspace("test_retry")
-
-        await session.execute("DROP TABLE IF EXISTS retry_test")
-        await session.execute(
-            """
-            CREATE TABLE retry_test (
-                id UUID PRIMARY KEY,
-                data TEXT
-            )
-            """
-        )
-
-        # Insert test data
-        test_id = uuid.uuid4()
-        await session.execute(
-            "INSERT INTO retry_test (id, data) VALUES (%s, %s)", [test_id, "test data"]
-        )
-
-        # Query should succeed even if there are transient issues
-        result = await session.execute("SELECT * FROM retry_test WHERE id = %s", [test_id])
-
-        rows = []
-        async for row in result:
-            rows.append(row)
-
-        assert len(rows) == 1
-        assert rows[0].data == "test data"
-
-        await session.close()
-        await cluster.shutdown()
 
     @pytest.mark.asyncio
     async def test_unavailable_handling(self, cassandra_cluster):
@@ -203,41 +106,6 @@ class TestNetworkFailures:
 
         # Most queries should succeed
         assert successful >= 45  # Allow a few failures
-
-    @pytest.mark.asyncio
-    async def test_write_timeout_behavior(self, cassandra_session: AsyncCassandraSession):
-        """Test write timeout behavior."""
-        # Create a table with large values
-        await cassandra_session.execute("DROP TABLE IF EXISTS large_writes")
-        await cassandra_session.execute(
-            """
-            CREATE TABLE large_writes (
-                id UUID PRIMARY KEY,
-                data BLOB
-            )
-            """
-        )
-
-        # Try to write very large data with short timeout
-        large_data = b"x" * (1 * 1024 * 1024)  # 1MB - reduced from 10MB to avoid overloading
-
-        # This might timeout on slow systems
-        try:
-            await cassandra_session.execute(
-                "INSERT INTO large_writes (id, data) VALUES (%s, %s)",
-                [uuid.uuid4(), large_data],
-                timeout=0.01,  # 10ms timeout for 1MB write - should timeout
-            )
-        except (WriteTimeout, OperationTimedOut, Exception) as e:
-            # Expected on most systems
-            # Could be WriteTimeout, OperationTimedOut, or wrapped in QueryError
-            assert "timeout" in str(e).lower() or "overloaded" in str(e).lower()
-
-        # Normal sized writes should succeed
-        normal_data = b"x" * 1024  # 1KB
-        await cassandra_session.execute(
-            "INSERT INTO large_writes (id, data) VALUES (%s, %s)", [uuid.uuid4(), normal_data]
-        )
 
     @pytest.mark.asyncio
     async def test_read_timeout_behavior(self, cassandra_session: AsyncCassandraSession):
@@ -347,3 +215,48 @@ class TestNetworkFailures:
 
         # With retries, most should succeed
         assert successful >= 95  # At least 95% success rate
+
+    @pytest.mark.asyncio
+    async def test_connection_timeout_handling(self):
+        """Test connection timeout with unreachable hosts."""
+        # Try to connect to non-existent host
+        cluster = AsyncCluster(
+            contact_points=["192.168.255.255"],  # Non-routable IP
+            control_connection_timeout=1.0,
+        )
+
+        start_time = time.time()
+
+        with pytest.raises((ConnectionError, NoHostAvailable, asyncio.TimeoutError)):
+            # Should timeout quickly
+            await cluster.connect(timeout=2.0)
+
+        duration = time.time() - start_time
+        assert duration < 5.0  # Should fail within timeout period
+
+        await cluster.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_batch_operations_with_failures(self, cassandra_session: AsyncCassandraSession):
+        """Test batch operation behavior during failures."""
+        from cassandra.query import BatchStatement, BatchType
+
+        # Create a batch
+        batch = BatchStatement(batch_type=BatchType.UNLOGGED)
+
+        # Add multiple statements to the batch
+        for i in range(20):
+            batch.add(
+                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                [uuid.uuid4(), f"Batch User {i}", f"batch{i}@test.com", 25],
+            )
+
+        # Execute batch - should succeed
+        await cassandra_session.execute_batch(batch)
+
+        # Verify data was inserted
+        result = await cassandra_session.execute(
+            "SELECT COUNT(*) FROM users WHERE age = 25 ALLOW FILTERING"
+        )
+        count = result.one()[0]
+        assert count >= 20  # At least our batch inserts

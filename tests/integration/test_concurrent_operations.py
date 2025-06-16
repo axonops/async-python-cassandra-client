@@ -246,71 +246,73 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_prepared_statement_concurrency(self, cassandra_session: AsyncCassandraSession):
         """Test that prepared statements work correctly under high concurrency."""
-        # Create a counter table for this test
-        await cassandra_session.execute("DROP TABLE IF EXISTS test_counters")
+        # Create a table for testing prepared statement performance
+        await cassandra_session.execute("DROP TABLE IF EXISTS prepared_test")
         await cassandra_session.execute(
             """
-            CREATE TABLE test_counters (
-                id UUID PRIMARY KEY,
-                count INT,
-                last_updated TIMESTAMP
+            CREATE TABLE prepared_test (
+                partition_key INT,
+                cluster_key INT,
+                data TEXT,
+                timestamp TIMESTAMP,
+                PRIMARY KEY (partition_key, cluster_key)
             )
             """
         )
 
-        # Initialize a counter
-        counter_id = uuid.uuid4()
-        await cassandra_session.execute(
-            "INSERT INTO test_counters (id, count, last_updated) VALUES (%s, %s, %s)",
-            [counter_id, 0, datetime.now(timezone.utc)],
+        # Prepare statements once
+        insert_stmt = await cassandra_session.prepare(
+            "INSERT INTO prepared_test (partition_key, cluster_key, data, timestamp) VALUES (?, ?, ?, ?)"
+        )
+        select_stmt = await cassandra_session.prepare(
+            "SELECT * FROM prepared_test WHERE partition_key = ? AND cluster_key = ?"
         )
 
-        # Prepare statements
-        read_stmt = await cassandra_session.prepare("SELECT count FROM test_counters WHERE id = ?")
-        update_stmt = await cassandra_session.prepare(
-            "UPDATE test_counters SET count = ?, last_updated = ? WHERE id = ?"
-        )
+        # Track timing for prepared vs non-prepared
+        prepared_times = []
 
-        # Concurrent increment operations
-        async def increment_counter():
-            # Read current value
-            result = await cassandra_session.execute(read_stmt, [counter_id])
-            row = None
-            async for r in result:
-                row = r
-                break
+        # Function to use prepared statement
+        async def use_prepared_statement(partition, cluster):
+            start = time.time()
 
-            if row:
-                current_count = row.count
-                # Update with increment
-                await cassandra_session.execute(
-                    update_stmt,
-                    [current_count + 1, datetime.now(timezone.utc), counter_id],
-                )
-                return True
-            return False
+            # Insert with prepared statement
+            await cassandra_session.execute(
+                insert_stmt,
+                [partition, cluster, f"data_{partition}_{cluster}", datetime.now(timezone.utc)],
+            )
 
-        # Run 50 concurrent increments
-        # Note: This will have race conditions, which is expected
-        tasks = [increment_counter() for _ in range(50)]
-        results = await asyncio.gather(*tasks)
+            # Select with prepared statement
+            result = await cassandra_session.execute(select_stmt, [partition, cluster])
+            async for _ in result:
+                pass
 
-        # Verify prepared statements worked
-        successful = sum(1 for r in results if r)
-        assert successful == 50  # All operations should complete
+            prepared_times.append(time.time() - start)
 
-        # Final count will be less than 50 due to race conditions
-        # This is expected behavior without using Cassandra's counter columns
-        final_result = await cassandra_session.execute(read_stmt, [counter_id])
-        final_row = None
-        async for row in final_result:
-            final_row = row
-            break
+        # Run many concurrent operations with prepared statements
+        print("\nTesting prepared statement concurrency...")
+        start_time = time.time()
 
-        assert final_row is not None
-        assert 1 <= final_row.count <= 50  # Some updates will be lost due to races
+        tasks = []
+        for i in range(100):
+            for j in range(10):
+                tasks.append(use_prepared_statement(i, j))
 
-        print("\nPrepared statement concurrency test:")
-        print("  Expected increments: 50")
-        print(f"  Final count: {final_row.count}")
-        print(f"  Lost updates: {50 - final_row.count} (expected due to race conditions)")
+        # Execute 1000 operations concurrently
+        await asyncio.gather(*tasks)
+
+        total_time = time.time() - start_time
+        avg_time = sum(prepared_times) / len(prepared_times)
+
+        print(f"  Total operations: {len(tasks)}")
+        print(f"  Total time: {total_time:.2f}s")
+        print(f"  Average operation time: {avg_time*1000:.2f}ms")
+        print(f"  Operations per second: {len(tasks)/total_time:.0f}")
+
+        # Verify all data was written correctly
+        result = await cassandra_session.execute("SELECT COUNT(*) FROM prepared_test")
+        count = result.one()[0]
+        assert count == 1000, f"Expected 1000 rows, got {count}"
+
+        # Prepared statements should handle high concurrency efficiently
+        assert total_time < 30.0  # Should complete 1000 ops in under 30 seconds
+        assert avg_time < 0.1  # Each operation should average under 100ms
