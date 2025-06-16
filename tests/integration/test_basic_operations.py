@@ -6,39 +6,34 @@ import uuid
 
 import pytest
 
-from async_cassandra import AsyncCluster
-
 
 class TestBasicOperations:
     """Test basic CRUD operations with real Cassandra."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_connection_and_keyspace(self):
+    async def test_connection_and_keyspace(self, cassandra_cluster):
         """Test connecting to Cassandra and creating keyspace."""
-        cluster = AsyncCluster(contact_points=["localhost"])
+        session = await cassandra_cluster.connect()
 
-        async with cluster:
-            session = await cluster.connect()
-
-            # Create keyspace
-            await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_connection
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
+        # Create keyspace
+        await session.execute(
             """
-            )
+            CREATE KEYSPACE IF NOT EXISTS test_connection
+            WITH REPLICATION = {
+                'class': 'SimpleStrategy',
+                'replication_factor': 1
+            }
+        """
+        )
 
-            # Use keyspace
-            await session.set_keyspace("test_connection")
-            assert session.keyspace == "test_connection"
+        # Use keyspace
+        await session.set_keyspace("test_connection")
+        assert session.keyspace == "test_connection"
 
-            # Cleanup
-            await session.execute("DROP KEYSPACE test_connection")
-            await session.close()
+        # Cleanup
+        await session.execute("DROP KEYSPACE test_connection")
+        await session.close()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
