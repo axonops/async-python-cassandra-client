@@ -204,7 +204,7 @@ Tests cover:
 - ✅ All endpoint functionality
 - ✅ Timeout handling
 - ✅ Connection lifecycle
-- ✅ **Context manager safety** (NEW)
+- ✅ **Context manager safety**
   - Query error isolation
   - Streaming error containment
   - Concurrent stream independence
