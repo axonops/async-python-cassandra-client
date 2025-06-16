@@ -121,6 +121,7 @@ test-bdd:
 		echo "Starting Cassandra container for BDD tests..."; \
 		./scripts/quick_cassandra.sh start; \
 	fi
+	@mkdir -p reports
 	pytest tests/bdd -v --cucumber-json=reports/bdd.json
 
 # Standard test command - runs everything except stress
@@ -221,6 +222,6 @@ clean:
 	rm -rf htmlcov/
 	rm -rf .pytest_cache/
 	rm -rf .mypy_cache/
-	rm -rf reports/
+	rm -rf reports/*.json reports/*.html reports/*.xml
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete

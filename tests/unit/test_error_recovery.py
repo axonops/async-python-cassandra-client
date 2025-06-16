@@ -202,14 +202,18 @@ class TestErrorRecovery:
             mock_future.add_callbacks = Mock()
 
             def handle_callbacks(callback=None, errback=None):
-                # Complete query after a short delay
-                async def complete_query():
-                    await asyncio.sleep(0.1)
+                # Schedule the callback to be called after a short delay
+                # This simulates a query that completes during shutdown
+                def delayed_callback():
                     if callback:
-                        callback([])
+                        callback([])  # Call with empty rows
                     query_complete.set()
 
-                asyncio.create_task(complete_query())
+                # Use threading.Timer since callbacks come from driver threads
+                import threading
+
+                timer = threading.Timer(0.1, delayed_callback)
+                timer.start()
 
             mock_future.add_callbacks.side_effect = handle_callbacks
             return mock_future
@@ -237,6 +241,13 @@ class TestErrorRecovery:
 
         # Query should complete during the 5 second wait
         await query_complete.wait()
+
+        # Wait for the query task to actually complete
+        # Use wait_for with a timeout to avoid hanging if something goes wrong
+        try:
+            await asyncio.wait_for(query_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Query task did not complete within timeout")
 
         # Wait for full shutdown including the 5 second delay
         await shutdown_task

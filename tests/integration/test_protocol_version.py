@@ -13,9 +13,9 @@ class TestProtocolVersionIntegration:
     """Integration tests for protocol version connection."""
 
     @pytest.mark.asyncio
-    async def test_protocol_v5_connection(self, cassandra_service):
+    async def test_protocol_v5_connection(self):
         """Test successful connection with protocol v5."""
-        cluster = AsyncCluster(contact_points=[cassandra_service.contact_point], protocol_version=5)
+        cluster = AsyncCluster(contact_points=["localhost"], protocol_version=5)
 
         try:
             session = await cluster.connect()
@@ -30,10 +30,10 @@ class TestProtocolVersionIntegration:
             await cluster.shutdown()
 
     @pytest.mark.asyncio
-    async def test_no_protocol_version_uses_negotiation(self, cassandra_service):
+    async def test_no_protocol_version_uses_negotiation(self):
         """Test that omitting protocol version allows negotiation."""
         cluster = AsyncCluster(
-            contact_points=[cassandra_service.contact_point]
+            contact_points=["localhost"]
             # No protocol_version specified - driver will negotiate
         )
 

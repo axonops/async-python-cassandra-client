@@ -46,7 +46,7 @@ start_cassandra() {
     # First check if ANY Cassandra is available
     if check_cassandra; then
         echo "Cassandra is already running and ready!"
-        exit 0
+        return 0
     fi
 
     # Check if our container exists but isn't responding
@@ -76,14 +76,14 @@ start_cassandra() {
         if check_cassandra; then
             echo "Cassandra is ready!"
             CLEANUP_NEEDED=0
-            exit 0
+            return 0
         fi
         echo -n "."
         sleep 1
     done
 
     echo -e "\nTimeout waiting for Cassandra"
-    exit 1
+    return 1
 }
 
 # Function to stop Cassandra
@@ -99,9 +99,15 @@ case "${1:-start}" in
     start)
         # Only set trap for start command
         trap cleanup EXIT INT TERM
-        start_cassandra
-        # Disable trap on successful start
-        trap - EXIT INT TERM
+        if start_cassandra; then
+            # Disable trap on successful start
+            trap - EXIT INT TERM
+            exit 0
+        else
+            # Disable trap and exit with error
+            trap - EXIT INT TERM
+            exit 1
+        fi
         ;;
     stop)
         stop_cassandra

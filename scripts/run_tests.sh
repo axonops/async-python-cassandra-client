@@ -6,7 +6,9 @@ set -e
 # Cleanup handler
 cleanup_on_exit() {
     local exit_code=$?
-    if [ $exit_code -ne 0 ] && [ "${KEEP_CONTAINERS:-0}" != "1" ]; then
+    # Only cleanup if we haven't already cleaned up
+    if [ $exit_code -ne 0 ] && [ "${KEEP_CONTAINERS:-0}" != "1" ] && [ "${CLEANUP_DONE:-0}" != "1" ]; then
+        export CLEANUP_DONE=1
         echo "Cleaning up containers after test failure..."
         ./scripts/manage_test_containers.sh kill 2>/dev/null || true
         ./scripts/quick_cassandra.sh stop 2>/dev/null || true
