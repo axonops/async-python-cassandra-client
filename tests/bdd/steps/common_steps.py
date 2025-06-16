@@ -29,7 +29,7 @@ def clear_context():
 @given("monitoring is enabled")
 def enable_monitoring():
     """Enable monitoring for tests."""
-    from async_cassandra.monitoring import MetricsCollector
+    from async_cassandra.metrics import MetricsCollector
 
     collector = MetricsCollector()
     store_context("metrics_collector", collector)

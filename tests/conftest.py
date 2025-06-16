@@ -29,12 +29,13 @@ def fast_shutdown_for_unit_tests(request):
     # Check if this test should be skipped
     should_skip = any(skip_test in request.node.nodeid for skip_test in skip_tests)
 
-    # Only apply to unit tests, not integration tests
+    # Only apply to unit tests and BDD tests, not integration tests
     if not should_skip and (
         "unit" in request.node.nodeid
         or "_core" in request.node.nodeid
         or "_features" in request.node.nodeid
         or "_resilience" in request.node.nodeid
+        or "bdd" in request.node.nodeid
     ):
         # Store the original sleep function
         original_sleep = asyncio.sleep
