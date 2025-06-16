@@ -10,7 +10,7 @@ A Python library that enables the Cassandra driver to work seamlessly with async
 
 When using the standard Cassandra driver in async applications, blocking operations can freeze your entire service. This wrapper solves that critical issue by bridging the gap between Cassandra's thread-based I/O and Python's async ecosystem, ensuring your web services remain responsive under load.
 
-## 🏗️ Why async-cassandra?
+## 🏗️ Why create this framework?
 
 ### Understanding Async vs Sync
 
