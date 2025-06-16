@@ -7,10 +7,6 @@ from pathlib import Path
 import pytest
 
 from tests._fixtures.cassandra import cassandra_container  # noqa: F401
-from tests.bdd.steps.common_steps import *  # noqa: E402, F403
-from tests.bdd.steps.given_steps import *  # noqa: E402, F403
-from tests.bdd.steps.then_steps import *  # noqa: E402, F403
-from tests.bdd.steps.when_steps import *  # noqa: E402, F403
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -87,30 +83,6 @@ async def isolated_session(cassandra_cluster):
 
 
 @pytest.fixture
-def async_cluster():
-    """Fixture to hold async cluster instance."""
-    return None
-
-
-@pytest.fixture
-def async_session():
-    """Fixture to hold async session instance."""
-    return None
-
-
-@pytest.fixture
-def query_result():
-    """Fixture to hold query results."""
-    return None
-
-
-@pytest.fixture
-def error_raised():
-    """Fixture to hold raised errors."""
-    return None
-
-
-@pytest.fixture
 def test_context():
     """Shared context for BDD tests with isolation helpers."""
     return {
@@ -143,39 +115,28 @@ def pytest_configure(config):
     """Configure custom markers for BDD tests."""
     config.addinivalue_line("markers", "bdd: mark test as BDD test")
     config.addinivalue_line("markers", "critical: mark test as critical for production")
-    config.addinivalue_line("markers", "smoke: mark test as smoke test")
     config.addinivalue_line("markers", "concurrency: mark test as concurrency test")
-    config.addinivalue_line("markers", "error_handling: mark test as error handling test")
     config.addinivalue_line("markers", "performance: mark test as performance test")
-    config.addinivalue_line("markers", "resilience: mark test as resilience test")
-    config.addinivalue_line("markers", "fastapi: mark test as FastAPI integration test")
-    # Additional markers from feature files (with underscores instead of hyphens)
-    config.addinivalue_line("markers", "error_propagation: mark test as error propagation test")
-    config.addinivalue_line("markers", "prepared_statements: mark test as prepared statements test")
     config.addinivalue_line("markers", "memory: mark test as memory test")
-    config.addinivalue_line("markers", "batch_operations: mark test as batch operations test")
-    config.addinivalue_line("markers", "circuit_breaker: mark test as circuit breaker test")
-    config.addinivalue_line("markers", "connection_pool: mark test as connection pool test")
-    config.addinivalue_line("markers", "deployment: mark test as deployment test")
-    config.addinivalue_line("markers", "zero_downtime: mark test as zero downtime test")
-    config.addinivalue_line("markers", "monitoring: mark test as monitoring test")
-    config.addinivalue_line("markers", "alerting: mark test as alerting test")
-    config.addinivalue_line("markers", "fire_and_forget: mark test as fire and forget test")
-    config.addinivalue_line("markers", "streaming: mark test as streaming test")
-    config.addinivalue_line("markers", "timeout: mark test as timeout test")
-    config.addinivalue_line("markers", "network: mark test as network test")
-    config.addinivalue_line("markers", "data_integrity: mark test as data integrity test")
+    config.addinivalue_line("markers", "fastapi: mark test as FastAPI integration test")
     config.addinivalue_line("markers", "startup_shutdown: mark test as startup/shutdown test")
     config.addinivalue_line(
         "markers", "dependency_injection: mark test as dependency injection test"
     )
-    config.addinivalue_line("markers", "scale: mark test as scale test")
-    config.addinivalue_line("markers", "caching: mark test as caching test")
-    config.addinivalue_line("markers", "chaos: mark test as chaos test")
+    config.addinivalue_line("markers", "streaming: mark test as streaming test")
     config.addinivalue_line("markers", "pagination: mark test as pagination test")
-    config.addinivalue_line("markers", "protocol_version: mark test as protocol version test")
-    config.addinivalue_line("markers", "cassandra_3_11: mark test as requiring Cassandra 3.11")
-    config.addinivalue_line("markers", "cassandra_5: mark test as requiring Cassandra 5")
+    config.addinivalue_line("markers", "caching: mark test as caching test")
+    config.addinivalue_line("markers", "prepared_statements: mark test as prepared statements test")
+    config.addinivalue_line("markers", "monitoring: mark test as monitoring test")
+    config.addinivalue_line("markers", "connection_reuse: mark test as connection reuse test")
+    config.addinivalue_line("markers", "background_tasks: mark test as background tasks test")
+    config.addinivalue_line("markers", "graceful_shutdown: mark test as graceful shutdown test")
+    config.addinivalue_line("markers", "middleware: mark test as middleware test")
+    config.addinivalue_line("markers", "connection_failure: mark test as connection failure test")
+    config.addinivalue_line("markers", "websocket: mark test as websocket test")
+    config.addinivalue_line("markers", "memory_pressure: mark test as memory pressure test")
+    config.addinivalue_line("markers", "auth: mark test as authentication test")
+    config.addinivalue_line("markers", "error_handling: mark test as error handling test")
 
 
 # Automatically mark all BDD tests

@@ -88,6 +88,10 @@ Feature: FastAPI Integration
   @fastapi @monitoring
   Scenario: Monitor API and database performance
     Given monitoring is enabled for the FastAPI app
+    And a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a user endpoint that queries Cassandra
     When I make various API requests
     Then metrics should track:
       | metric_type              | description                    |
@@ -98,3 +102,70 @@ Feature: FastAPI Integration
       | connection_pool_size     | Active connections             |
       | error_rate               | Failed requests percentage     |
     And metrics should be accessible via "/metrics" endpoint
+
+  @critical @fastapi @connection_reuse
+  Scenario: Connection reuse across requests
+    Given an endpoint that performs multiple queries
+    When I make 50 sequential requests
+    Then the same Cassandra session should be reused
+    And no new connections should be created after warmup
+    And each request should complete faster than connection setup time
+
+  @fastapi @background_tasks
+  Scenario: Background tasks with Cassandra operations
+    Given an endpoint that triggers background Cassandra operations
+    When I submit 10 tasks that write to Cassandra
+    Then the API should return immediately with 202 status
+    And all background writes should complete successfully
+    And no resources should leak from background tasks
+
+  @critical @fastapi @graceful_shutdown
+  Scenario: Graceful shutdown under load
+    Given heavy concurrent load on the API
+    When the application receives a shutdown signal
+    Then in-flight requests should complete successfully
+    And new requests should be rejected with 503
+    And all Cassandra operations should finish cleanly
+    And shutdown should complete within 30 seconds
+
+  @fastapi @middleware
+  Scenario: Middleware integration with async-cassandra
+    Given a middleware that logs Cassandra query metrics
+    When I make requests through the middleware
+    Then query count should be tracked per request
+    And query timing should be measured accurately
+    And middleware should not interfere with async operations
+
+  @critical @fastapi @connection_failure
+  Scenario: Handle Cassandra connection failures gracefully
+    Given a healthy API with established connections
+    When Cassandra becomes temporarily unavailable
+    Then API should return 503 Service Unavailable
+    And error messages should be user-friendly
+    When Cassandra becomes available again
+    Then API should automatically recover
+    And no manual intervention should be required
+
+  @fastapi @websocket
+  Scenario: WebSocket endpoint with Cassandra streaming
+    Given a WebSocket endpoint that streams Cassandra data
+    When a client connects and requests real-time updates
+    Then the WebSocket should stream query results
+    And updates should be pushed as data changes
+    And connection cleanup should occur on disconnect
+
+  @critical @fastapi @memory_pressure
+  Scenario: Handle memory pressure gracefully
+    Given an endpoint that fetches large datasets
+    When multiple clients request large amounts of data
+    Then memory usage should stay within limits
+    And requests should be throttled if necessary
+    And the application should not crash from OOM
+
+  @fastapi @auth
+  Scenario: Authentication and session isolation
+    Given endpoints with per-user Cassandra keyspaces
+    When different users make concurrent requests
+    Then each user should only access their keyspace
+    And sessions should be isolated between users
+    And no data should leak between user contexts
