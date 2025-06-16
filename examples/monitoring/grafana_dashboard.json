@@ -1,0 +1,85 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Async-Cassandra Monitoring Dashboard",
+    "description": "Comprehensive monitoring for async-cassandra applications",
+    "tags": ["cassandra", "async", "python"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Query Performance Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(cassandra_queries_total[5m])",
+            "legendFormat": "Queries/sec"
+          },
+          {
+            "expr": "histogram_quantile(0.95, cassandra_query_duration_seconds_bucket)",
+            "legendFormat": "95th Percentile Latency"
+          },
+          {
+            "expr": "rate(cassandra_queries_total{success=\"success\"}[5m]) / rate(cassandra_queries_total[5m])",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Query Latency Distribution",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "increase(cassandra_query_duration_seconds_bucket[1m])",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Error Rate by Type",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(cassandra_errors_total[5m])",
+            "legendFormat": "{{error_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Connection Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cassandra_connection_healthy",
+            "legendFormat": "{{host}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Query Volume by Type",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "increase(cassandra_queries_total[1h])",
+            "legendFormat": "{{query_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ]
+  }
+}

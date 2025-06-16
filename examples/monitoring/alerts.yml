@@ -1,0 +1,102 @@
+# Prometheus Alerting Rules for Async-Cassandra
+# Save this file and configure Prometheus to load it
+
+groups:
+  - name: cassandra.rules
+    rules:
+      # High Query Latency Alert
+      - alert: HighCassandraQueryLatency
+        expr: histogram_quantile(0.95, cassandra_query_duration_seconds_bucket) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: cassandra
+        annotations:
+          summary: "High Cassandra query latency detected"
+          description: "95th percentile query latency is {{ $value }}s, above 0.1s threshold"
+
+      # High Error Rate Alert
+      - alert: HighCassandraErrorRate
+        expr: rate(cassandra_errors_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          component: cassandra
+        annotations:
+          summary: "High Cassandra error rate"
+          description: "Error rate is {{ $value }} errors/sec, above threshold of 5/sec"
+
+      # Low Success Rate Alert
+      - alert: LowCassandraSuccessRate
+        expr: rate(cassandra_queries_total{success="success"}[5m]) / rate(cassandra_queries_total[5m]) < 0.95
+        for: 3m
+        labels:
+          severity: warning
+          component: cassandra
+        annotations:
+          summary: "Low Cassandra query success rate"
+          description: "Success rate is {{ $value | humanizePercentage }}, below 95% threshold"
+
+      # Connection Health Alert
+      - alert: CassandraConnectionUnhealthy
+        expr: cassandra_connection_healthy == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: cassandra
+        annotations:
+          summary: "Cassandra connection unhealthy"
+          description: "Connection to {{ $labels.host }} is unhealthy"
+
+      # High Query Volume Alert
+      - alert: HighCassandraQueryVolume
+        expr: rate(cassandra_queries_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: cassandra
+        annotations:
+          summary: "High Cassandra query volume"
+          description: "Query rate is {{ $value }} queries/sec, above 1000/sec threshold"
+
+      # Slow Query Detection
+      - alert: SlowCassandraQueries
+        expr: increase(cassandra_query_duration_seconds_bucket{le="0.5"}[5m]) / increase(cassandra_query_duration_seconds_bucket{le="+Inf"}[5m]) < 0.9
+        for: 2m
+        labels:
+          severity: warning
+          component: cassandra
+        annotations:
+          summary: "Slow Cassandra queries detected"
+          description: "Less than 90% of queries complete within 0.5s"
+
+# Notification Configuration Examples
+# Add to your alertmanager.yml:
+
+# global:
+#   smtp_smarthost: 'localhost:587'
+#   smtp_from: 'alerts@yourcompany.com'
+
+# route:
+#   group_by: ['alertname']
+#   group_wait: 10s
+#   group_interval: 10s
+#   repeat_interval: 1h
+#   receiver: 'web.hook'
+
+# receivers:
+# - name: 'web.hook'
+#   email_configs:
+#   - to: 'admin@yourcompany.com'
+#     subject: 'Cassandra Alert: {{ .GroupLabels.alertname }}'
+#     body: |
+#       {{ range .Alerts }}
+#       Alert: {{ .Annotations.summary }}
+#       Description: {{ .Annotations.description }}
+#       {{ end }}
+
+#   slack_configs:
+#   - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+#     channel: '#alerts'
+#     title: 'Cassandra Alert'
+#     text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
