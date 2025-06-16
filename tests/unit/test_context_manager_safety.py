@@ -27,7 +27,7 @@ class TestContextManagerSafety:
         not any sessions created from it.
         """
         mock_cluster = MagicMock()
-        mock_cluster.shutdown = AsyncMock()
+        mock_cluster.shutdown = MagicMock()  # Not AsyncMock because it's called via run_in_executor
         mock_cluster.connect = AsyncMock()
         mock_cluster.protocol_version = 5  # Mock protocol version
 
@@ -44,7 +44,9 @@ class TestContextManagerSafety:
             mock_async_session._session = mock_session
             mock_async_session.close = AsyncMock()
 
-            with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
+            with patch(
+                "async_cassandra.session.AsyncCassandraSession.create", new_callable=AsyncMock
+            ) as mock_create:
                 mock_create.return_value = mock_async_session
 
                 # Use cluster in context manager
@@ -68,7 +70,7 @@ class TestContextManagerSafety:
         not the cluster it came from.
         """
         mock_cluster = MagicMock()
-        mock_cluster.shutdown = AsyncMock()
+        mock_cluster.shutdown = MagicMock()  # Not AsyncMock because it's called via run_in_executor
         mock_session = MagicMock()
         mock_session.shutdown = MagicMock()  # AsyncCassandraSession calls shutdown, not close
 
@@ -279,7 +281,7 @@ class TestContextManagerSafety:
         Test that cluster remains open after session context manager exits.
         """
         mock_cluster = MagicMock()
-        mock_cluster.shutdown = AsyncMock()
+        mock_cluster.shutdown = MagicMock()  # Not AsyncMock because it's called via run_in_executor
         mock_cluster.connect = AsyncMock()
         mock_cluster.protocol_version = 5  # Mock protocol version
 
@@ -300,15 +302,19 @@ class TestContextManagerSafety:
             mock_async_session1._session = mock_session1
             mock_async_session1.close = AsyncMock()
             mock_async_session1.__aenter__ = AsyncMock(return_value=mock_async_session1)
-            mock_async_session1.__aexit__ = AsyncMock(
-                side_effect=lambda *args: mock_async_session1.close()
-            )
+
+            async def async_exit1(*args):
+                await mock_async_session1.close()
+
+            mock_async_session1.__aexit__ = AsyncMock(side_effect=async_exit1)
 
             mock_async_session2 = MagicMock()
             mock_async_session2._session = mock_session2
             mock_async_session2.close = AsyncMock()
 
-            with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
+            with patch(
+                "async_cassandra.session.AsyncCassandraSession.create", new_callable=AsyncMock
+            ) as mock_create:
                 mock_create.side_effect = [mock_async_session1, mock_async_session2]
 
                 cluster = AsyncCluster(["localhost"])
@@ -490,7 +496,7 @@ class TestContextManagerSafety:
         Test that nested context managers only close their own resources.
         """
         mock_cluster = MagicMock()
-        mock_cluster.shutdown = AsyncMock()
+        mock_cluster.shutdown = MagicMock()  # Not AsyncMock because it's called via run_in_executor
         mock_cluster.connect = AsyncMock()
         mock_cluster.protocol_version = 5  # Mock protocol version
 
@@ -514,11 +520,15 @@ class TestContextManagerSafety:
             mock_async_session.close = AsyncMock()
             mock_async_session.shutdown = AsyncMock()  # For when __aexit__ calls close()
             mock_async_session.__aenter__ = AsyncMock(return_value=mock_async_session)
-            mock_async_session.__aexit__ = AsyncMock(
-                side_effect=lambda *args: mock_async_session.shutdown()
-            )
 
-            with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
+            async def async_exit_shutdown(*args):
+                await mock_async_session.shutdown()
+
+            mock_async_session.__aexit__ = AsyncMock(side_effect=async_exit_shutdown)
+
+            with patch(
+                "async_cassandra.session.AsyncCassandraSession.create", new_callable=AsyncMock
+            ) as mock_create:
                 mock_create.return_value = mock_async_session
 
                 # Nested context managers
@@ -550,7 +560,7 @@ class TestContextManagerSafety:
         Test that cluster and session context managers don't interfere.
         """
         mock_cluster = MagicMock()
-        mock_cluster.shutdown = AsyncMock()
+        mock_cluster.shutdown = MagicMock()  # Not AsyncMock because it's called via run_in_executor
         mock_cluster.connect = AsyncMock()
         mock_cluster.is_closed = False
         mock_cluster.protocol_version = 5  # Mock protocol version
@@ -568,9 +578,11 @@ class TestContextManagerSafety:
             mock_async_session1._session = mock_session
             mock_async_session1.close = AsyncMock()
             mock_async_session1.__aenter__ = AsyncMock(return_value=mock_async_session1)
-            mock_async_session1.__aexit__ = AsyncMock(
-                side_effect=lambda *args: mock_async_session1.close()
-            )
+
+            async def async_exit1(*args):
+                await mock_async_session1.close()
+
+            mock_async_session1.__aexit__ = AsyncMock(side_effect=async_exit1)
 
             mock_async_session2 = MagicMock()
             mock_async_session2._session = mock_session
@@ -580,11 +592,15 @@ class TestContextManagerSafety:
             mock_async_session3._session = mock_session
             mock_async_session3.close = AsyncMock()
             mock_async_session3.__aenter__ = AsyncMock(return_value=mock_async_session3)
-            mock_async_session3.__aexit__ = AsyncMock(
-                side_effect=lambda *args: mock_async_session3.close()
-            )
 
-            with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
+            async def async_exit3(*args):
+                await mock_async_session3.close()
+
+            mock_async_session3.__aexit__ = AsyncMock(side_effect=async_exit3)
+
+            with patch(
+                "async_cassandra.session.AsyncCassandraSession.create", new_callable=AsyncMock
+            ) as mock_create:
                 mock_create.side_effect = [
                     mock_async_session1,
                     mock_async_session2,

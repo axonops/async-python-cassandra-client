@@ -127,6 +127,9 @@ class TestPageCallbackDeadlock:
         # Results should be available
         assert len(rows) == 2
 
+        # Wait for thread to complete to avoid event loop closed warning
+        thread.join(timeout=1.0)
+
     async def test_callback_receives_correct_page_info(self):
         """Test that callbacks receive correct page information."""
         page_infos = []
