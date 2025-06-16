@@ -1,13 +1,17 @@
-"""
-Unit tests for streaming functionality.
+"""Consolidated streaming functionality tests.
+
+This module combines all streaming tests including basic functionality,
+memory management, and error handling.
 """
 
 import asyncio
+import gc
+import threading
+import weakref
 from unittest.mock import Mock
 
 import pytest
-from cassandra import ConsistencyLevel
-from cassandra.cluster import ResponseFuture
+from cassandra import ConsistencyLevel, InvalidRequest
 
 from async_cassandra.streaming import (
     AsyncStreamingResultSet,
@@ -17,269 +21,508 @@ from async_cassandra.streaming import (
 )
 
 
-class TestAsyncStreamingResultSet:
-    """Test cases for AsyncStreamingResultSet."""
+class TestStreamingCore:
+    """Core streaming functionality tests."""
 
-    @pytest.fixture
-    def mock_response_future(self):
-        """Create a mock ResponseFuture."""
-        future = Mock(spec=ResponseFuture)
-        future.has_more_pages = True
-        future._final_exception = None
-        future.add_callbacks = Mock()
-        future.start_fetching_next_page = Mock()
-        return future
+    @pytest.mark.features
+    @pytest.mark.quick
+    @pytest.mark.critical
+    async def test_single_page_streaming(self):
+        """Test streaming with single page of results."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = False
+        # Ensure _final_exception is None to avoid triggering error path
+        mock_result_set._final_exception = None
 
-    @pytest.mark.asyncio
-    async def test_single_page_iteration(self, mock_response_future):
-        """Test iterating through a single page of results."""
-        mock_response_future.has_more_pages = False
-
-        result_set = AsyncStreamingResultSet(mock_response_future)
-
-        # Get callback from add_callbacks
-        args = mock_response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-
-        # Simulate page callback from a thread
-        test_rows = [{"id": 1}, {"id": 2}, {"id": 3}]
-        import threading
-
-        def thread_callback():
-            callback(test_rows)
-
-        thread = threading.Thread(target=thread_callback)
-        thread.start()
-
-        # Iterate through results
-        collected = []
-        async for row in result_set:
-            collected.append(row)
-
-        assert collected == test_rows
-        assert result_set.total_rows_fetched == 3
-        assert result_set.page_number == 1
-
-    @pytest.mark.asyncio
-    async def test_multi_page_iteration(self, mock_response_future):
-        """Test iterating through multiple pages."""
-        result_set = AsyncStreamingResultSet(mock_response_future)
-
-        # Get callbacks
-        args = mock_response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-
-        # Track pages fetched
-        pages_fetched = []
-
-        def mock_start_fetching():
-            pages_fetched.append(True)
-            # Simulate async callback from thread
-            if len(pages_fetched) == 1:
-                # Second page
-                import threading
-
+        # We need to simulate the callback being called from a thread
+        # The AsyncStreamingResultSet expects callbacks to be called after it sets up
+        def add_callbacks(callback=None, errback=None):
+            # Simulate the driver calling the callback from a thread
+            if callback:
+                # Call from a thread like the actual driver does
                 def thread_callback():
-                    callback([{"id": 4}, {"id": 5}])
-                    mock_response_future.has_more_pages = False
+                    callback([1, 2, 3])
 
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
-        mock_response_future.start_fetching_next_page = mock_start_fetching
+        mock_result_set.add_callbacks = add_callbacks
 
-        # First page from thread
-        import threading
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
 
-        def first_page_callback():
-            callback([{"id": 1}, {"id": 2}, {"id": 3}])
+        results = []
+        async for row in streaming_result:
+            results.append(row)
 
-        thread = threading.Thread(target=first_page_callback)
-        thread.start()
+        assert results == [1, 2, 3]
 
-        # Iterate through all results
-        collected = []
-        async for row in result_set:
-            collected.append(row)
-
-        assert len(collected) == 5
-        assert collected[0]["id"] == 1
-        assert collected[4]["id"] == 5
-        assert result_set.total_rows_fetched == 5
-        assert result_set.page_number == 2
-
-    @pytest.mark.asyncio
-    async def test_page_iteration(self, mock_response_future):
-        """Test iterating by pages instead of rows."""
-        result_set = AsyncStreamingResultSet(mock_response_future)
-
-        pages_to_simulate = [[{"id": 1}, {"id": 2}], [{"id": 3}, {"id": 4}], [{"id": 5}]]
-
-        current_page_idx = [0]
-
-        def mock_start_fetching():
-            current_page_idx[0] += 1
-            if current_page_idx[0] < len(pages_to_simulate):
-                result_set._handle_page(pages_to_simulate[current_page_idx[0]])
-                if current_page_idx[0] == len(pages_to_simulate) - 1:
-                    mock_response_future.has_more_pages = False
-
-        mock_response_future.start_fetching_next_page = mock_start_fetching
-
+    @pytest.mark.features
+    @pytest.mark.critical
+    async def test_multi_page_streaming(self):
+        """Test streaming with multiple pages."""
         # First page
-        result_set._handle_page(pages_to_simulate[0])
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
 
-        # Collect pages
-        collected_pages = []
-        async for page in result_set.pages():
-            collected_pages.append(page)
+        callbacks = {"callback": None, "errback": None}
+        page_count = 0
 
-        assert len(collected_pages) == 3
-        assert collected_pages[0] == pages_to_simulate[0]
-        assert collected_pages[2] == pages_to_simulate[2]
+        def add_callbacks(callback=None, errback=None):
+            nonlocal page_count
+            callbacks["callback"] = callback
+            callbacks["errback"] = errback
 
-    @pytest.mark.asyncio
-    async def test_error_handling(self, mock_response_future):
+            # Simulate first page callback
+            if callback and page_count == 0:
+                page_count += 1
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        def start_fetching():
+            # Simulate fetching next page
+            mock_result_set.has_more_pages = False
+            if callbacks["callback"]:
+
+                def thread_callback():
+                    callbacks["callback"]([4, 5, 6])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        mock_result_set.add_callbacks = add_callbacks
+        mock_result_set.start_fetching_next_page = start_fetching
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        results = []
+        async for row in streaming_result:
+            results.append(row)
+
+        assert results == [1, 2, 3, 4, 5, 6]
+
+    @pytest.mark.features
+    async def test_page_based_iteration(self):
+        """Test iterating by pages instead of rows."""
+        # First page
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+
+        callbacks = {"callback": None, "errback": None}
+        page_count = 0
+
+        def add_callbacks(callback=None, errback=None):
+            nonlocal page_count
+            callbacks["callback"] = callback
+            callbacks["errback"] = errback
+
+            # Simulate first page callback
+            if callback and page_count == 0:
+                page_count += 1
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        def start_fetching():
+            # Simulate fetching next page
+            mock_result_set.has_more_pages = False
+            if callbacks["callback"]:
+
+                def thread_callback():
+                    callbacks["callback"]([4, 5, 6])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        mock_result_set.add_callbacks = add_callbacks
+        mock_result_set.start_fetching_next_page = start_fetching
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        pages = []
+        async for page in streaming_result.pages():
+            pages.append(list(page))
+
+        assert pages == [[1, 2, 3], [4, 5, 6]]
+
+    @pytest.mark.features
+    async def test_error_during_streaming(self):
         """Test error handling during streaming."""
-        result_set = AsyncStreamingResultSet(mock_response_future)
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
 
-        # Initialize the event loop and page_ready event
-        result_set._loop = asyncio.get_running_loop()
-        result_set._page_ready = asyncio.Event()
+        callbacks = {"callback": None, "errback": None}
+        page_count = 0
 
-        # Simulate error which will set the page_ready event
-        test_error = Exception("Query failed")
-        result_set._handle_error(test_error)
+        def add_callbacks(callback=None, errback=None):
+            nonlocal page_count
+            callbacks["callback"] = callback
+            callbacks["errback"] = errback
 
-        # Should raise error when iterating
-        with pytest.raises(Exception) as exc_info:
-            async for _ in result_set:
-                pass
+            # Simulate first page callback
+            if callback and page_count == 0:
+                page_count += 1
 
-        assert str(exc_info.value) == "Query failed"
-        assert result_set._exhausted
+                def thread_callback():
+                    callback([1, 2, 3])
 
-    @pytest.mark.asyncio
-    async def test_stream_config(self, mock_response_future):
-        """Test streaming with custom configuration."""
-        callback_calls = []
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
 
-        def progress_callback(page_num, row_count):
-            callback_calls.append((page_num, row_count))
+        def start_fetching():
+            # Simulate error on next page
+            if callbacks["errback"]:
 
-        config = StreamConfig(fetch_size=100, max_pages=2, page_callback=progress_callback)
+                def thread_errback():
+                    callbacks["errback"](InvalidRequest("Query error"))
 
-        result_set = AsyncStreamingResultSet(mock_response_future, config)
+                thread = threading.Thread(target=thread_errback)
+                thread.start()
 
-        # Simulate pages
-        result_set._handle_page([{"id": i} for i in range(100)])
+        mock_result_set.add_callbacks = add_callbacks
+        mock_result_set.start_fetching_next_page = start_fetching
 
-        # Should have called callback
-        assert callback_calls == [(1, 100)]
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
 
-        # Add another page
-        result_set._handle_page([{"id": i} for i in range(100, 150)])
+        results = []
+        with pytest.raises(InvalidRequest, match="Query error"):
+            async for row in streaming_result:
+                results.append(row)
 
-        # Should stop after max_pages
-        assert result_set._exhausted
-        assert len(callback_calls) == 2
+        # Should have gotten first page results before error
+        assert results == [1, 2, 3]
 
-    @pytest.mark.asyncio
-    async def test_cancel_streaming(self, mock_response_future):
-        """Test canceling a streaming operation."""
-        result_set = AsyncStreamingResultSet(mock_response_future)
+    @pytest.mark.features
+    async def test_streaming_cancellation(self):
+        """Test cancelling streaming iteration."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
 
-        # Start with some data
-        result_set._handle_page([{"id": 1}, {"id": 2}])
+        def add_callbacks(callback=None, errback=None):
+            if callback:
 
-        # Cancel streaming
-        await result_set.cancel()
+                def thread_callback():
+                    callback(list(range(100)))
 
-        assert result_set._exhausted
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
 
-        # Should stop iteration
-        collected = []
-        async for row in result_set:
-            collected.append(row)
+        mock_result_set.add_callbacks = add_callbacks
 
-        # Should only get the initial page
-        assert len(collected) == 2
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        results = []
+        async for row in streaming_result:
+            results.append(row)
+            if len(results) >= 10:
+                break  # Cancel iteration
+
+        assert len(results) == 10
+        assert results == list(range(10))
+
+    @pytest.mark.features
+    def test_create_streaming_statement(self):
+        """Test creating streaming statements."""
+        # Basic statement
+        stmt = create_streaming_statement("SELECT * FROM users")
+        assert stmt.query_string == "SELECT * FROM users"
+        assert stmt.fetch_size == 1000
+
+        # Custom fetch size
+        stmt = create_streaming_statement("SELECT * FROM users", fetch_size=100)
+        assert stmt.fetch_size == 100
+
+        # With consistency level
+        stmt = create_streaming_statement(
+            "SELECT * FROM users", consistency_level=ConsistencyLevel.QUORUM
+        )
+        assert stmt.consistency_level == ConsistencyLevel.QUORUM
+
+
+class TestStreamingMemoryManagement:
+    """Test memory management in streaming operations."""
+
+    @pytest.mark.features
+    @pytest.mark.critical
+    async def test_memory_cleanup_on_error(self):
+        """Test that memory is properly cleaned up on errors."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+
+        # Set up to have data in current page
+        def add_callbacks(callback=None, errback=None):
+            # Don't call callback immediately to test manual error handling
+            pass
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        # Manually set some data
+        streaming_result._current_page = [1, 2, 3]
+
+        # Simulate error
+        error = InvalidRequest("Test error")
+        streaming_result._handle_error(error)
+
+        # _current_page should be cleared
+        assert streaming_result._current_page == []
+        assert streaming_result._error == error
+
+    @pytest.mark.features
+    async def test_no_memory_leak_on_multiple_errors(self):
+        """Test that multiple errors don't cause memory accumulation."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+
+        def add_callbacks(callback=None, errback=None):
+            # Don't call callbacks
+            pass
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        # Simulate multiple errors
+        for i in range(10):
+            streaming_result._current_page = list(range(1000))  # Simulate page load
+            streaming_result._handle_error(Exception(f"Error {i}"))
+
+            # Should be cleared each time
+            assert streaming_result._current_page == []
+
+    @pytest.mark.features
+    @pytest.mark.critical
+    async def test_async_context_manager_cleanup(self):
+        """Test cleanup when using async context manager."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+
+        def add_callbacks(callback=None, errback=None):
+            if callback:
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        async with AsyncStreamingResultSet(mock_result_set) as stream:
+            results = []
+            async for row in stream:
+                results.append(row)
+                if len(results) >= 2:
+                    break
+
+        # Should have cleaned up
+        assert stream._closed
+        assert stream._current_page == []
+
+    @pytest.mark.features
+    async def test_close_clears_callbacks(self):
+        """Test that close() clears all callbacks and resources."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+        mock_result_set.clear_callbacks = Mock()
+
+        def add_callbacks(callback=None, errback=None):
+            # Don't call callbacks
+            pass
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        # Set some data
+        streaming_result._current_page = [1, 2, 3]
+
+        # Close should clear everything
+        await streaming_result.close()
+
+        assert streaming_result._closed
+        assert streaming_result._current_page == []
+        # clear_callbacks is called internally if available
+
+    @pytest.mark.features
+    async def test_exception_in_iteration_cleans_up(self):
+        """Test cleanup when exception occurs during iteration."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = False
+        mock_result_set._final_exception = None
+
+        def add_callbacks(callback=None, errback=None):
+            if callback:
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+
+        # Force exception during iteration
+        async def bad_iteration():
+            async for row in streaming_result:
+                if row == 2:
+                    raise ValueError("Test error")
+
+        with pytest.raises(ValueError, match="Test error"):
+            async with streaming_result:
+                await bad_iteration()
+
+        # Should still be cleaned up
+        assert streaming_result._closed
+
+    @pytest.mark.features
+    async def test_page_limit_enforcement(self):
+        """Test that page limits are enforced."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = True
+        mock_result_set._final_exception = None
+
+        callbacks = {"callback": None}
+        fetch_count = 0
+
+        def add_callbacks(callback=None, errback=None):
+            callbacks["callback"] = callback
+            # First page
+            if callback:
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        def start_fetching():
+            nonlocal fetch_count
+            fetch_count += 1
+            if fetch_count < 5:
+                mock_result_set.has_more_pages = True
+                if callbacks["callback"]:
+
+                    def thread_callback():
+                        callbacks["callback"](
+                            [fetch_count * 3 + 1, fetch_count * 3 + 2, fetch_count * 3 + 3]
+                        )
+
+                    thread = threading.Thread(target=thread_callback)
+                    thread.start()
+            else:
+                mock_result_set.has_more_pages = False
+
+        mock_result_set.add_callbacks = add_callbacks
+        mock_result_set.start_fetching_next_page = start_fetching
+
+        # Limit to 3 pages
+        streaming_result = AsyncStreamingResultSet(mock_result_set, StreamConfig(max_pages=3))
+
+        all_results = []
+        async for row in streaming_result:
+            all_results.append(row)
+
+        # Should only get 3 pages worth of data
+        assert len(all_results) == 9  # 3 pages * 3 rows each
+
+    @pytest.mark.features
+    async def test_weakref_cleanup(self):
+        """Test that streaming results can be garbage collected."""
+        mock_result_set = Mock()
+        mock_result_set.has_more_pages = False
+        mock_result_set._final_exception = None
+
+        def add_callbacks(callback=None, errback=None):
+            if callback:
+
+                def thread_callback():
+                    callback([1, 2, 3])
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
+
+        mock_result_set.add_callbacks = add_callbacks
+
+        streaming_result = AsyncStreamingResultSet(mock_result_set)
+        weak_ref = weakref.ref(streaming_result)
+
+        # Use it briefly
+        async for _ in streaming_result:
+            break
+
+        # Delete reference
+        del streaming_result
+
+        # Force garbage collection
+        gc.collect()
+
+        # Should be collected
+        assert weak_ref() is None
 
 
 class TestStreamingResultHandler:
-    """Test cases for StreamingResultHandler."""
+    """Test StreamingResultHandler functionality."""
 
-    @pytest.fixture
-    def mock_response_future(self):
-        """Create a mock ResponseFuture."""
-        future = Mock(spec=ResponseFuture)
-        future.add_callbacks = Mock()
-        return future
+    @pytest.mark.features
+    @pytest.mark.quick
+    async def test_get_streaming_result(self):
+        """Test getting streaming result through handler."""
+        mock_future = Mock()
+        handler = StreamingResultHandler(mock_future)
 
-    @pytest.mark.asyncio
-    async def test_get_streaming_result(self, mock_response_future):
-        """Test getting streaming result from handler."""
-        handler = StreamingResultHandler(mock_response_future)
+        # StreamingResultHandler works differently - it returns a streaming result set directly
+        result = await handler.get_streaming_result()
+        assert isinstance(result, AsyncStreamingResultSet)
+        assert result.response_future == mock_future
 
-        # Get streaming result
+    @pytest.mark.features
+    async def test_streaming_handler_error(self):
+        """Test error handling in streaming handler."""
+        mock_future = Mock()
+        mock_future.has_more_pages = False
+        mock_future._final_exception = None
+
+        error = InvalidRequest("Streaming error")
+
+        def add_callbacks(callback=None, errback=None):
+            if errback:
+                # Call the errback after a short delay to let the async iteration start
+                def thread_errback():
+                    import time
+
+                    time.sleep(0.01)  # Small delay to ensure iteration starts
+                    errback(error)
+
+                thread = threading.Thread(target=thread_errback)
+                thread.start()
+
+        mock_future.add_callbacks = add_callbacks
+
+        handler = StreamingResultHandler(mock_future)
         result = await handler.get_streaming_result()
 
-        # Should return an AsyncStreamingResultSet
-        assert isinstance(result, AsyncStreamingResultSet)
-        assert result.response_future == mock_response_future
-        assert result.config is not None
-
-    @pytest.mark.asyncio
-    async def test_initial_error_handling(self, mock_response_future):
-        """Test error handling in initial response."""
-        handler = StreamingResultHandler(mock_response_future)
-
-        # The handler now just creates and returns an AsyncStreamingResultSet
-        # Error handling happens within the AsyncStreamingResultSet itself
-        result = await handler.get_streaming_result()
-
-        # Verify the result is properly initialized
-        assert isinstance(result, AsyncStreamingResultSet)
-        assert result.response_future == mock_response_future
-
-        # Initialize the event loop and page_ready event
+        # Set up the event loop and page_ready event
         result._loop = asyncio.get_running_loop()
         result._page_ready = asyncio.Event()
 
-        # Test error handling by simulating an error in the result set
-        test_error = Exception("Connection failed")
-        result._handle_error(test_error)
-
-        # Should raise error when iterating
-        with pytest.raises(Exception) as exc_info:
-            async for _ in result:
+        with pytest.raises(InvalidRequest, match="Streaming error"):
+            async for row in result:
                 pass
-
-        assert str(exc_info.value) == "Connection failed"
-
-
-class TestCreateStreamingStatement:
-    """Test cases for create_streaming_statement helper."""
-
-    def test_create_basic_statement(self):
-        """Test creating a basic streaming statement."""
-        query = "SELECT * FROM users"
-        statement = create_streaming_statement(query)
-
-        assert statement.query_string == query
-        assert statement.fetch_size == 1000
-
-    def test_create_with_custom_fetch_size(self):
-        """Test creating statement with custom fetch size."""
-        query = "SELECT * FROM large_table"
-        statement = create_streaming_statement(query, fetch_size=5000)
-
-        assert statement.query_string == query
-        assert statement.fetch_size == 5000
-
-    def test_create_with_consistency_level(self):
-        """Test creating statement with consistency level."""
-        query = "SELECT * FROM users"
-        statement = create_streaming_statement(query, consistency_level=ConsistencyLevel.QUORUM)
-
-        assert statement.consistency_level == ConsistencyLevel.QUORUM

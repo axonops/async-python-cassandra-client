@@ -10,7 +10,7 @@ import pytest
 from cassandra.query import BoundStatement, PreparedStatement
 
 from async_cassandra import AsyncCassandraSession as AsyncSession
-from tests._features.test_helpers import create_mock_response_future
+from tests.unit.test_helpers import create_mock_response_future
 
 
 class TestPreparedStatements:

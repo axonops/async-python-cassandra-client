@@ -81,8 +81,7 @@ case "${1:-all}" in
 
     fastapi)
         ensure_cassandra
-        run_test_suite "FastAPI Tests (tests/fastapi)" "pytest tests/fastapi -v || true"
-        run_test_suite "FastAPI Example Tests" "cd examples/fastapi_app && pytest test_fastapi_app.py -v"
+        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v"
         ;;
 
     bdd)
@@ -92,10 +91,9 @@ case "${1:-all}" in
 
     critical)
         ensure_cassandra
-        print_status "info" "Running critical tests as per..."
-        run_test_suite "Core Critical Tests" "pytest tests/_core -v -x -m 'critical'"
-        run_test_suite "FastAPI Tests" "pytest tests/fastapi -v || true"
-        run_test_suite "FastAPI Example" "cd examples/fastapi_app && pytest test_fastapi_app.py -v"
+        print_status "info" "Running critical tests as per"
+        run_test_suite "Core Critical Tests" "pytest tests/unit -v -x -m 'critical'"
+        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v"
         run_test_suite "BDD Critical Tests" "pytest tests/bdd -m 'critical' -v || true"
         ;;
 
@@ -111,9 +109,9 @@ case "${1:-all}" in
 
         failed=0
 
-        run_test_suite "Unit Tests" "pytest tests/unit/ tests/_core/ tests/_resilience/ tests/_features/ -v" || failed=1
+        run_test_suite "Unit Tests" "pytest tests/unit/ -v" || failed=1
         run_test_suite "Integration Tests" "pytest tests/integration/ -v -m integration" || failed=1
-        run_test_suite "FastAPI Tests" "cd examples/fastapi_app && pytest test_fastapi_app.py -v" || failed=1
+        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v" || failed=1
         run_test_suite "BDD Tests" "pytest tests/bdd -v" || failed=1
 
         if [ $failed -eq 0 ]; then
@@ -139,7 +137,7 @@ case "${1:-all}" in
         echo "  integration - Run integration tests"
         echo "  fastapi     - Run FastAPI tests"
         echo "  bdd         - Run BDD tests"
-        echo "  critical    - Run critical tests (per CLAUDE.md)"
+        echo "  critical    - Run critical tests (unit, FastAPI, BDD critical)"
         echo "  all         - Run all tests with linting"
         echo "  clean       - Clean up test containers"
         exit 1

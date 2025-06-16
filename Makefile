@@ -109,10 +109,6 @@ test-features:
 	@echo "Running feature tests..."
 	pytest tests/_features -v
 
-test-fastapi:
-	@echo "Running FastAPI integration tests..."
-	pytest tests/fastapi -v
-	cd examples/fastapi_app && pytest tests/ -v
 
 test-performance:
 	@echo "Running performance tests..."
@@ -137,7 +133,9 @@ test:
 	pytest tests/ -v -m "not stress"
 
 test-unit:
-	pytest tests/unit/ tests/_core/ tests/_resilience/ tests/_features/ -v --cov=async_cassandra --cov-report=html
+	@echo "Running unit tests (no Cassandra required)..."
+	pytest tests/unit/ -v --cov=async_cassandra --cov-report=html
+	@echo "Unit tests completed."
 
 test-integration:
 	@echo "Running integration tests..."
@@ -152,6 +150,15 @@ test-integration-keep:
 	@echo "Running integration tests (keeping containers after tests)..."
 	KEEP_CONTAINERS=1 pytest tests/integration/ -v -m integration
 	@echo "Integration tests completed. Containers are still running."
+
+test-fastapi:
+	@echo "Running FastAPI integration tests with real app and Cassandra..."
+	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
+		echo "Starting Cassandra container..."; \
+		./scripts/quick_cassandra.sh start; \
+	fi
+	cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v
+	@echo "FastAPI integration tests completed."
 
 test-stress:
 	@echo "Running stress tests..."
