@@ -74,21 +74,23 @@ async def cassandra_cluster():
 async def cassandra_session(cassandra_cluster):
     """Create an async Cassandra session with isolated keyspace."""
     session = await cassandra_cluster.connect()
-    
+
     # Create unique keyspace for this test
     keyspace = generate_unique_keyspace("test_integ")
     await create_test_keyspace(session, keyspace)
     await session.set_keyspace(keyspace)
-    
+
     # Create users table for tests that expect it
-    await session.execute("""
+    await session.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id UUID PRIMARY KEY,
             name TEXT,
             email TEXT,
             age INT
         )
-    """)
+    """
+    )
 
     yield session
 
@@ -140,7 +142,7 @@ async def session_with_keyspace(cassandra_cluster):
         await cleanup_keyspace(session, keyspace)
     except Exception:
         pass
-    
+
     try:
         await session.close()
     except Exception:
