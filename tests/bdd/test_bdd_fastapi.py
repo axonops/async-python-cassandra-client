@@ -272,9 +272,10 @@ def app_startup(fastapi_context):
 @when("the application shuts down")
 def app_shutdown(fastapi_context):
     """Shutdown application."""
-    # The TestClient handles shutdown when context exits
-    # We'll verify it happened in the Then step
-    pass
+    # Close the test client to trigger shutdown
+    if fastapi_context.get("client") and not fastapi_context.get("client_closed"):
+        fastapi_context["client"].__exit__(None, None, None)
+        fastapi_context["client_closed"] = True
 
 
 # Then steps

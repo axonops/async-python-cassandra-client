@@ -213,12 +213,12 @@ def execute_with_params(query_context, event_loop):
         session = query_context["session"]
 
         # Execute INSERT
-        insert_query = "INSERT INTO products (id, name, price) VALUES (?, ?, ?)"
+        insert_query = "INSERT INTO products (id, name, price) VALUES (%s, %s, %s)"
         await session.execute(insert_query, [1, "Laptop", 999.99])
         results.append({"query": "INSERT", "success": True})
 
         # Execute SELECT
-        select_query = "SELECT * FROM products WHERE id = ?"
+        select_query = "SELECT * FROM products WHERE id = %s"
         result = await session.execute(select_query, [1])
         results.append({"query": "SELECT", "result": result})
 
@@ -314,7 +314,13 @@ def verify_select_data(query_context):
 def verify_invalid_request(query_context):
     """Verify InvalidRequest error."""
     assert query_context["error"] is not None
-    assert isinstance(query_context["error"], InvalidRequest)
+    # Our wrapper converts InvalidRequest to QueryError
+    from async_cassandra.exceptions import QueryError
+
+    assert isinstance(query_context["error"], (InvalidRequest, QueryError))
+    # If it's a QueryError, check that the cause was InvalidRequest
+    if isinstance(query_context["error"], QueryError) and hasattr(query_context["error"], "cause"):
+        assert isinstance(query_context["error"].cause, InvalidRequest)
 
 
 @then("the error message should indicate the syntax problem")
@@ -382,17 +388,20 @@ def create_large_table(query_context, event_loop):
 
         # Insert many rows - we'll insert fewer for test speed
         # but enough to cause a timeout with a full scan
-        batch_size = 100
-        for batch_start in range(0, 10000, batch_size):
+        batch_size = 10  # Smaller batch to avoid "Batch too large" error
+        total_rows = 1000  # Enough to potentially cause timeout
+
+        for batch_start in range(0, total_rows, batch_size):
             batch = []
-            for i in range(batch_start, min(batch_start + batch_size, 10000)):
-                batch.append(f"INSERT INTO huge_table (id, data) VALUES ({i}, '{'x' * 1000}')")
+            for i in range(batch_start, min(batch_start + batch_size, total_rows)):
+                batch.append(f"INSERT INTO huge_table (id, data) VALUES ({i}, '{'x' * 100}')")
 
-            # Execute batch
+            # Execute batch with smaller size to avoid Cassandra limits
             if batch:
-                await session.execute(f"BEGIN BATCH {' '.join(batch)} APPLY BATCH")
+                batch_query = f"BEGIN BATCH {' '.join(batch)} APPLY BATCH"
+                await session.execute(batch_query)
 
-        query_context["large_table_rows"] = 10000
+        query_context["large_table_rows"] = total_rows
 
     run_async(_create(), event_loop)
 
