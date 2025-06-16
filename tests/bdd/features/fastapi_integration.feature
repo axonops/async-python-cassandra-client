@@ -26,7 +26,10 @@ Feature: FastAPI Integration
 
   @fastapi @error_handling
   Scenario: API error handling for database issues
-    Given a Cassandra query that will fail
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a Cassandra query that will fail
     When I send a request that triggers the failing query
     Then I should receive a 500 error response
     And the error should not expose internal details
@@ -34,6 +37,9 @@ Feature: FastAPI Integration
 
   @fastapi @startup_shutdown
   Scenario: Application lifecycle management
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
     When the FastAPI application starts up
     Then the Cassandra cluster connection should be established
     And the connection pool should be initialized
@@ -44,7 +50,10 @@ Feature: FastAPI Integration
 
   @fastapi @dependency_injection
   Scenario: Use async-cassandra with FastAPI dependencies
-    Given a FastAPI dependency that provides a Cassandra session
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a FastAPI dependency that provides a Cassandra session
     When I use this dependency in multiple endpoints
     Then each request should get a working session
     And sessions should be properly managed per request
@@ -52,7 +61,10 @@ Feature: FastAPI Integration
 
   @fastapi @streaming
   Scenario: Stream large datasets through API
-    Given an endpoint that returns 10,000 records
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint that returns 10,000 records
     When I request the data with streaming enabled
     Then the response should start immediately
     And data should be streamed in chunks
@@ -61,7 +73,10 @@ Feature: FastAPI Integration
 
   @fastapi @pagination
   Scenario: Implement cursor-based pagination
-    Given a paginated endpoint for listing items
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a paginated endpoint for listing items
     When I request the first page with limit 20
     Then I should receive 20 items and a next cursor
     When I request the next page using the cursor
@@ -70,7 +85,10 @@ Feature: FastAPI Integration
 
   @fastapi @caching
   Scenario: Implement query result caching
-    Given an endpoint with query result caching enabled
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint with query result caching enabled
     When I make the same request multiple times
     Then the first request should query Cassandra
     And subsequent requests should use cached data
@@ -79,7 +97,10 @@ Feature: FastAPI Integration
 
   @fastapi @prepared_statements
   Scenario: Use prepared statements in API endpoints
-    Given an endpoint that uses prepared statements
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint that uses prepared statements
     When I make 1000 requests to this endpoint
     Then statement preparation should happen only once
     And query performance should be optimized
@@ -105,7 +126,10 @@ Feature: FastAPI Integration
 
   @critical @fastapi @connection_reuse
   Scenario: Connection reuse across requests
-    Given an endpoint that performs multiple queries
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint that performs multiple queries
     When I make 50 sequential requests
     Then the same Cassandra session should be reused
     And no new connections should be created after warmup
@@ -113,7 +137,10 @@ Feature: FastAPI Integration
 
   @fastapi @background_tasks
   Scenario: Background tasks with Cassandra operations
-    Given an endpoint that triggers background Cassandra operations
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint that triggers background Cassandra operations
     When I submit 10 tasks that write to Cassandra
     Then the API should return immediately with 202 status
     And all background writes should complete successfully
@@ -121,7 +148,10 @@ Feature: FastAPI Integration
 
   @critical @fastapi @graceful_shutdown
   Scenario: Graceful shutdown under load
-    Given heavy concurrent load on the API
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And heavy concurrent load on the API
     When the application receives a shutdown signal
     Then in-flight requests should complete successfully
     And new requests should be rejected with 503
@@ -130,7 +160,11 @@ Feature: FastAPI Integration
 
   @fastapi @middleware
   Scenario: Middleware integration with async-cassandra
-    Given a middleware that logs Cassandra query metrics
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a middleware that logs Cassandra query metrics
+    And a user endpoint that queries Cassandra
     When I make requests through the middleware
     Then query count should be tracked per request
     And query timing should be measured accurately
@@ -138,7 +172,10 @@ Feature: FastAPI Integration
 
   @critical @fastapi @connection_failure
   Scenario: Handle Cassandra connection failures gracefully
-    Given a healthy API with established connections
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a healthy API with established connections
     When Cassandra becomes temporarily unavailable
     Then API should return 503 Service Unavailable
     And error messages should be user-friendly
@@ -148,7 +185,10 @@ Feature: FastAPI Integration
 
   @fastapi @websocket
   Scenario: WebSocket endpoint with Cassandra streaming
-    Given a WebSocket endpoint that streams Cassandra data
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And a WebSocket endpoint that streams Cassandra data
     When a client connects and requests real-time updates
     Then the WebSocket should stream query results
     And updates should be pushed as data changes
@@ -156,7 +196,10 @@ Feature: FastAPI Integration
 
   @critical @fastapi @memory_pressure
   Scenario: Handle memory pressure gracefully
-    Given an endpoint that fetches large datasets
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And an endpoint that fetches large datasets
     When multiple clients request large amounts of data
     Then memory usage should stay within limits
     And requests should be throttled if necessary
@@ -164,7 +207,10 @@ Feature: FastAPI Integration
 
   @fastapi @auth
   Scenario: Authentication and session isolation
-    Given endpoints with per-user Cassandra keyspaces
+    Given a FastAPI application with async-cassandra
+    And a running Cassandra cluster with test data
+    And the FastAPI test client is initialized
+    And endpoints with per-user Cassandra keyspaces
     When different users make concurrent requests
     Then each user should only access their keyspace
     And sessions should be isolated between users

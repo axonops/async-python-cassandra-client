@@ -16,24 +16,26 @@ class TestBasicOperations:
         """Test connecting to Cassandra and creating keyspace."""
         session = await cassandra_cluster.connect()
 
-        # Create keyspace
-        await session.execute(
+        try:
+            # Create keyspace
+            await session.execute(
+                """
+                CREATE KEYSPACE IF NOT EXISTS test_connection
+                WITH REPLICATION = {
+                    'class': 'SimpleStrategy',
+                    'replication_factor': 1
+                }
             """
-            CREATE KEYSPACE IF NOT EXISTS test_connection
-            WITH REPLICATION = {
-                'class': 'SimpleStrategy',
-                'replication_factor': 1
-            }
-        """
-        )
+            )
 
-        # Use keyspace
-        await session.set_keyspace("test_connection")
-        assert session.keyspace == "test_connection"
+            # Use keyspace
+            await session.set_keyspace("test_connection")
+            assert session.keyspace == "test_connection"
 
-        # Cleanup
-        await session.execute("DROP KEYSPACE test_connection")
-        await session.close()
+            # Cleanup
+            await session.execute("DROP KEYSPACE test_connection")
+        finally:
+            await session.close()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

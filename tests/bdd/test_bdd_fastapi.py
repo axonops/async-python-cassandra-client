@@ -306,7 +306,7 @@ def cassandra_with_data(fastapi_context):
         )
 
         # Insert test products
-        for i in range(1, 11):
+        for i in range(1, 51):  # Create 50 products for pagination tests
             await session.execute(
                 f"""
                 INSERT INTO products (id, name, price)
@@ -600,7 +600,7 @@ def setup_background_tasks_endpoint(fastapi_context):
         except Exception as e:
             print(f"Background task {task_id} failed: {e}")
 
-    @app.post("/background-write")
+    @app.post("/background-write", status_code=202)
     async def trigger_background_write(task_id: int, background_tasks: BackgroundTasks):
         # Ensure table exists
         await app.state.session.execute(
@@ -614,7 +614,7 @@ def setup_background_tasks_endpoint(fastapi_context):
         # Add background task
         background_tasks.add_task(write_to_cassandra, task_id, app.state.session)
 
-        return {"message": "Task submitted", "task_id": task_id}
+        return {"message": "Task submitted", "task_id": task_id, "status": "accepted"}
 
     fastapi_context["background_endpoint_added"] = True
 
@@ -660,10 +660,21 @@ def setup_query_metrics_middleware(fastapi_context):
             response = await call_next(request)
             return response
 
-    # Add middleware BEFORE the test client is initialized
-    # Store the middleware class to add it later
-    fastapi_context["query_metrics_middleware"] = QueryMetricsMiddleware
-    fastapi_context["middleware_prepared"] = True
+    # We need to re-create the test client after adding middleware
+    # First, close the existing test client
+    if fastapi_context.get("client_entered"):
+        fastapi_context["client"].__exit__(None, None, None)
+        fastapi_context["client_entered"] = False
+
+    # Add middleware to the app
+    app.add_middleware(QueryMetricsMiddleware)
+
+    # Re-create the test client
+    test_client = TestClient(app)
+    test_client.__enter__()  # This triggers startup
+    fastapi_context["client"] = test_client
+    fastapi_context["client_entered"] = True
+    fastapi_context["middleware_added"] = True
 
 
 @given("a healthy API with established connections")
@@ -1150,7 +1161,7 @@ def request_next_page(fastapi_context):
 def make_repeated_requests(fastapi_context):
     """Make the same request multiple times."""
     responses = []
-    key = "test_product"
+    key = "Product 1"  # Use an actual product name
 
     for i in range(3):
         response = fastapi_context["client"].get(f"/cached-data/{key}")
@@ -1613,7 +1624,7 @@ def verify_cache_ttl(fastapi_context):
 @then("cache should be invalidated on data updates")
 def verify_cache_invalidation(fastapi_context):
     """Verify cache invalidation on updates."""
-    key = "test_product"
+    key = "Product 2"  # Use an actual product name
 
     # First request (should cache)
     response1 = fastapi_context["client"].get(f"/cached-data/{key}")
