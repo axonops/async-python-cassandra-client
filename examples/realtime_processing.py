@@ -236,7 +236,7 @@ async def process_historical_data(session, processor: RealTimeProcessor):
 
     # Stream and process data
     start_time = datetime.now()
-    
+
     # Use context manager for proper resource cleanup
     async with await session.execute_stream(
         stmt, parameters=[today, one_hour_ago], stream_config=config

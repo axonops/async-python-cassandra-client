@@ -27,7 +27,7 @@ list_containers() {
 kill_containers() {
     echo "Finding and killing all ${PROJECT_PREFIX} containers..."
     local containers=$($CONTAINER_CMD ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" || true)
-    
+
     if [ -z "$containers" ]; then
         echo "No test containers to kill"
     else
@@ -41,6 +41,16 @@ kill_containers() {
 # Function to clean up volumes associated with test containers
 clean_volumes() {
     echo "Cleaning up orphaned volumes..."
+
+    # First remove volumes that match our test patterns
+    local test_volumes=$($CONTAINER_CMD volume ls --format "{{.Name}}" | grep -E "(cassandra|async)" || true)
+    if [ -n "$test_volumes" ]; then
+        echo "Removing test-related volumes:"
+        echo "$test_volumes"
+        echo "$test_volumes" | xargs -r $CONTAINER_CMD volume rm -f
+    fi
+
+    # Then prune any remaining orphaned volumes
     if [ "$CONTAINER_CMD" = "docker" ]; then
         docker volume prune -f
     else
@@ -56,7 +66,7 @@ show_logs() {
         echo "Usage: $0 logs <container_name>"
         exit 1
     fi
-    
+
     echo "Showing logs for $container_name:"
     $CONTAINER_CMD logs "$container_name"
 }

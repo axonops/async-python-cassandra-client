@@ -23,14 +23,9 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from async_cassandra import AsyncCluster, StreamConfig
-from async_cassandra.constants import (
-    MAX_CONCURRENT_QUERIES,
-)
+from async_cassandra.constants import MAX_CONCURRENT_QUERIES
 from async_cassandra.metrics import create_metrics_system
-from async_cassandra.monitoring import (
-    RateLimitedSession,
-    create_monitored_session,
-)
+from async_cassandra.monitoring import RateLimitedSession, create_monitored_session
 
 
 # Pydantic models
@@ -322,11 +317,13 @@ async def stream_users_advanced(
         # Use context manager for proper cleanup
         async with result as stream:
             async for row in stream:
-                users.append({
-                    "id": str(row.id),
-                    "name": row.name,
-                    "email": row.email,
-                })
+                users.append(
+                    {
+                        "id": str(row.id),
+                        "name": row.name,
+                        "email": row.email,
+                    }
+                )
 
                 # Check if we've reached the limit
                 if limit and len(users) >= limit:
@@ -392,12 +389,12 @@ async def get_user(user_id: str):
 @app.get("/metrics/queries")
 async def get_query_metrics():
     """Get query performance metrics."""
-    if not metrics or not hasattr(metrics, 'collectors'):
+    if not metrics or not hasattr(metrics, "collectors"):
         return {"error": "Metrics not available"}
 
     # Get stats from in-memory collector
     for collector in metrics.collectors:
-        if hasattr(collector, 'get_stats'):
+        if hasattr(collector, "get_stats"):
             stats = await collector.get_stats()
             return stats
 
@@ -473,7 +470,14 @@ async def test_concurrent_load(
                 )
                 await session.execute(
                     stmt,
-                    [user_id, f"LoadTest{i}", f"load{i}@test.com", 25, datetime.now(), datetime.now()],
+                    [
+                        user_id,
+                        f"LoadTest{i}",
+                        f"load{i}@test.com",
+                        25,
+                        datetime.now(),
+                        datetime.now(),
+                    ],
                 )
                 return {"success": True, "index": i, "user_id": str(user_id)}
         except Exception as e:
@@ -525,17 +529,18 @@ async def create_users_batch(batch: UserBatch):
         for user_data in batch.users:
             user_id = uuid.uuid4()
             await session.execute(
-                stmt,
-                [user_id, user_data.name, user_data.email, user_data.age, now, now]
+                stmt, [user_id, user_data.name, user_data.email, user_data.age, now, now]
             )
-            created_users.append({
-                "id": str(user_id),
-                "name": user_data.name,
-                "email": user_data.email,
-                "age": user_data.age,
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat(),
-            })
+            created_users.append(
+                {
+                    "id": str(user_id),
+                    "name": user_data.name,
+                    "email": user_data.email,
+                    "age": user_data.age,
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                }
+            )
 
         return {"created": len(created_users), "users": created_users}
     except Exception as e:
@@ -564,5 +569,5 @@ async def cleanup_test_users():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -24,12 +24,12 @@ sequenceDiagram
     participant Code as Your Code
     participant CM as Context Manager
     participant Resource as Resource/Memory
-    
+
     Code->>CM: async with obj as result:
     CM->>CM: __aenter__() called
     CM->>Resource: Acquire resource
     CM-->>Code: Returns result
-    
+
     alt Normal execution
         Code->>Code: Process data...
         Code->>CM: End of with block
@@ -40,7 +40,7 @@ sequenceDiagram
         Code->>Code: break/return
         Code->>CM: Exit with block
     end
-    
+
     Note over CM: __aexit__() ALWAYS called
     CM->>Resource: Clean up (close connections, free memory)
     CM->>Code: Re-raise exception (if any)
@@ -78,20 +78,20 @@ class AsyncStreamingResultSet:
     async def __aenter__(self):
         """Enter the context manager."""
         return self  # Return self so you can use it
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager - THIS ALWAYS RUNS!"""
         await self.close()  # Clean up resources
         return None  # Don't suppress exceptions
-    
+
     async def close(self):
         """The actual cleanup that prevents memory leaks."""
         self._closed = True
         self._exhausted = True
-        
+
         # This is the critical part - breaks circular references:
         self._cleanup_callbacks()  # Removes callbacks from driver
-        
+
         # Clear data to free memory
         self._current_page = []
         self._current_index = 0

@@ -29,17 +29,17 @@ from async_cassandra import AsyncCluster
 async def main():
     # 1. Create a cluster object (doesn't connect yet)
     cluster = AsyncCluster(['localhost'])
-    
+
     # 2. Connect and get a session (this is where connection happens)
     session = await cluster.connect('my_keyspace')
-    
+
     # 3. Execute a query (waits for results without blocking)
     result = await session.execute("SELECT * FROM users LIMIT 10")
-    
+
     # 4. Process results (rows are like dictionaries)
     for row in result:
         print(f"User: {row.name}, Email: {row.email}")
-    
+
     # 5. Clean up (IMPORTANT: always close connections)
     await cluster.shutdown()
 
@@ -172,7 +172,7 @@ except ConnectionError as e:
     # Happens when: Can't reach Cassandra, node is down, network issues
     print(f"Connection failed: {e}")
     # What to do: Retry, use a different node, alert ops team
-    
+
 except QueryError as e:
     # Happens when: Bad CQL syntax, table doesn't exist, permissions issue
     print(f"Query failed: {e}")
@@ -192,7 +192,7 @@ async def get_user_with_retry(session, user_id, max_retries=3):
             prepared = await session.prepare("SELECT * FROM users WHERE id = ?")
             result = await session.execute(prepared, [user_id])
             return result.one()
-            
+
         except ConnectionError as e:
             if attempt == max_retries - 1:
                 # Final attempt failed, re-raise
@@ -201,7 +201,7 @@ async def get_user_with_retry(session, user_id, max_retries=3):
             wait_time = 2 ** attempt
             print(f"Connection failed, retrying in {wait_time}s...")
             await asyncio.sleep(wait_time)
-            
+
         except QueryError as e:
             # Don't retry query errors - they won't fix themselves
             print(f"Query error (not retrying): {e}")
@@ -308,7 +308,7 @@ async def export_user_data(session, output_file):
         fetch_size=5000,  # Process 5000 rows at a time
         page_callback=lambda page_num, rows: print(f"Processing page {page_num}...")
     )
-    
+
     # CRITICAL: Use context manager for automatic cleanup
     async with await session.execute_stream(
         "SELECT id, name, email, created_at FROM users",
@@ -316,16 +316,16 @@ async def export_user_data(session, output_file):
     ) as result:
         with open(output_file, 'w') as f:
             f.write("id,name,email,created_at\n")
-            
+
             row_count = 0
             async for row in result:
                 f.write(f"{row.id},{row.name},{row.email},{row.created_at}\n")
                 row_count += 1
-                
+
                 # Progress update every 10,000 rows
                 if row_count % 10000 == 0:
                     print(f"Exported {row_count:,} users...")
-    
+
     # Result is automatically closed here, preventing memory leaks
     print(f"Export complete! Total users: {row_count:,}")
     return row_count
@@ -371,11 +371,11 @@ prepared_statements = {}
 async def startup():
     """Initialize Cassandra connection when server starts."""
     global cluster, session, prepared_statements
-    
+
     # Create cluster connection
     cluster = AsyncCluster(['localhost'])
     session = await cluster.connect('my_keyspace')
-    
+
     # Prepare statements once at startup (more efficient)
     prepared_statements['get_user'] = await session.prepare(
         "SELECT * FROM users WHERE id = ?"
@@ -400,23 +400,23 @@ async def get_user(user_id: str):
     try:
         # Convert string to UUID
         user_uuid = uuid.UUID(user_id)
-        
+
         # Execute prepared statement
         result = await session.execute(
-            prepared_statements['get_user'], 
+            prepared_statements['get_user'],
             [user_uuid]
         )
-        
+
         user = result.one()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-            
+
         return {
             "id": str(user.id),
             "name": user.name,
             "email": user.email
         }
-        
+
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
     except Exception as e:
@@ -426,12 +426,12 @@ async def get_user(user_id: str):
 async def create_user(name: str, email: str):
     """Create a new user."""
     user_id = uuid.uuid4()
-    
+
     await session.execute(
         prepared_statements['create_user'],
         [user_id, name, email]
     )
-    
+
     return {"id": str(user_id), "name": name, "email": email}
 ```
 
@@ -502,7 +502,7 @@ try:
     cluster = AsyncCluster(['localhost'], protocol_version=3)
 except ConfigurationError as e:
     print(e)
-    # Output: Protocol version 3 is not supported. async-cassandra requires 
+    # Output: Protocol version 3 is not supported. async-cassandra requires
     # CQL protocol v5 or higher for optimal async performance...
 ```
 

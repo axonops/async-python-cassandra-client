@@ -12,7 +12,6 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
 from httpx import ASGITransport
 
 
@@ -24,7 +23,7 @@ class TestFastAPIExample:
         """Create test client for the FastAPI app."""
         # First, check that Cassandra is available
         from async_cassandra import AsyncCluster
-        
+
         try:
             test_cluster = AsyncCluster(contact_points=["localhost"])
             test_session = await test_cluster.connect()
@@ -33,9 +32,9 @@ class TestFastAPIExample:
             await test_cluster.shutdown()
         except Exception as e:
             pytest.skip(f"Cassandra not available: {e}")
-        
+
         from main import app, lifespan
-        
+
         # Manually handle lifespan since httpx doesn't do it properly
         async with lifespan(app):
             transport = ASGITransport(app=app)
@@ -275,7 +274,9 @@ class TestFastAPIExample:
         status = await app_client.get("/context_manager_safety/status")
         assert status.status_code == 200
         initial_state = status.json()
-        print(f"✓ Initial state: Session={initial_state['session_open']}, Cluster={initial_state['cluster_open']}")
+        print(
+            f"✓ Initial state: Session={initial_state['session_open']}, Cluster={initial_state['cluster_open']}"
+        )
 
         # Test 1: Query errors don't close session
         print("\nTest 1: Query Error Safety")
@@ -302,11 +303,9 @@ class TestFastAPIExample:
         if not stream_result["session_still_streams"]:
             print(f"  - Note: No users found ({stream_result['rows_after_error']} rows)")
             # Create a user for subsequent tests
-            user_resp = await app_client.post("/users", json={
-                "name": "Test User",
-                "email": "test@example.com",
-                "age": 30
-            })
+            user_resp = await app_client.post(
+                "/users", json={"name": "Test User", "email": "test@example.com", "age": 30}
+            )
             assert user_resp.status_code == 201
         print("✓ Streaming errors don't close session")
         print(f"  - Error caught: {stream_result['error_message'][:50]}...")
@@ -321,7 +320,9 @@ class TestFastAPIExample:
         assert concurrent_result["streams_completed"] == 3
         # Check if streams worked independently (each should have 10 users)
         if not concurrent_result["all_streams_independent"]:
-            print(f"  - Warning: Stream counts varied: {[r['count'] for r in concurrent_result['results']]}")
+            print(
+                f"  - Warning: Stream counts varied: {[r['count'] for r in concurrent_result['results']]}"
+            )
         assert concurrent_result["session_still_open"] is True
         print("✓ Concurrent streams completed")
         for result in concurrent_result["results"]:
@@ -362,8 +363,8 @@ class TestFastAPIExample:
         assert final_state["session_open"] is True
         assert final_state["cluster_open"] is True
         print("\n✓ All context manager safety tests passed!")
-        print(f"  - Session remained stable throughout all tests")
-        print(f"  - No resource leaks detected")
+        print("  - Session remained stable throughout all tests")
+        print("  - No resource leaks detected")
 
 
 async def run_all_tests():

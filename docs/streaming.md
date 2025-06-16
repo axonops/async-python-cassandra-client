@@ -25,21 +25,21 @@ sequenceDiagram
     participant App as Your App
     participant Driver as Cassandra Driver
     participant Cassandra as Cassandra DB
-    
+
     App->>Driver: execute("SELECT * FROM large_table")
     Driver->>Cassandra: Request (fetch_size=5000 = page size)
     Note over Cassandra: Reads 5000 rows<br/>(one page)
     Cassandra-->>Driver: Page 1 (5000 rows) + has_more_pages=true
     Driver-->>App: ResultSet with Page 1
-    
+
     Note over App: Process rows...
-    
+
     App->>Driver: Get next page
     Driver->>Cassandra: Request next page
     Note over Cassandra: Reads next 5000 rows
     Cassandra-->>Driver: Page 2 (5000 rows) + has_more_pages=true
     Driver-->>App: ResultSet with Page 2
-    
+
     Note over App: Continue until has_more_pages=false
 ```
 
@@ -73,15 +73,15 @@ sequenceDiagram
     participant App as Your App
     participant Driver as Driver Memory
     participant Cassandra
-    
+
     App->>Driver: execute() or await execute()
-    
+
     loop Until all pages fetched
         Driver->>Cassandra: Get page (5000 rows)
         Cassandra-->>Driver: Page data
         Note over Driver: Stores in memory<br/>(accumulating!)
     end
-    
+
     Driver-->>App: ResultSet with ALL rows in memory
     Note over App: 💥 Out of Memory!
 ```
@@ -148,15 +148,15 @@ Here's what happens when you try manual paging in an async application:
 async def process_with_manual_paging():
     # Even with async-cassandra, manual paging isn't truly async
     result = await session.execute("SELECT * FROM large_table")
-    
+
     while True:
         # Process current page
         for row in result.current_rows:
             await process_row(row)  # ✅ Async - doesn't block
-        
+
         if not result.has_more_pages:
             break
-            
+
         # This BLOCKS the event loop! 😱
         result.fetch_next_page()  # ❌ Synchronous - blocks EVERYTHING
 ```
@@ -175,7 +175,7 @@ sequenceDiagram
     participant R2 as Request 2
     participant EL as Event Loop
     participant DB as Cassandra
-    
+
     Note over EL: With blocking fetch_next_page()
     R1->>EL: Process page 1
     R2->>EL: New request arrives
@@ -184,7 +184,7 @@ sequenceDiagram
     DB-->>EL: Page 2 (after 50ms)
     EL-->>R1: Continue processing
     EL-->>R2: Finally handle request 2
-    
+
     Note over EL: With async streaming
     R1->>EL: Process page 1
     R2->>EL: New request arrives
@@ -229,19 +229,19 @@ sequenceDiagram
     participant Stream as Streaming Iterator
     participant Driver as Cassandra Driver
     participant Cassandra
-    
+
     App->>Stream: execute_stream()
     Stream->>Driver: Prepare query
     Driver->>Cassandra: Request first page (1000 rows)
     Cassandra-->>Driver: Page 1
     Driver-->>Stream: Page 1 data
-    
+
     loop For each row in page
         App->>Stream: Get next row
         Stream-->>App: Return row
         Note over App: Process single row
     end
-    
+
     Note over Stream: Page 1 exhausted
     App->>Stream: Get next row
     Stream->>Driver: Request next page
@@ -322,12 +322,12 @@ from async_cassandra.streaming import StreamConfig
 async def process_large_table():
     cluster = AsyncCluster(['localhost'])
     session = await cluster.connect('my_keyspace')
-    
+
     # Configure streaming
     config = StreamConfig(
         fetch_size=1000  # Same as statement.fetch_size - sets page size to 1000 rows
     )
-    
+
     # Start streaming query - ALWAYS USE CONTEXT MANAGER
     async with await session.execute_stream(
         "SELECT user_id, email, created_at FROM users",
@@ -340,13 +340,13 @@ async def process_large_table():
             # When we finish a page, the next one is fetched automatically
             await send_email(row.email)
             rows_processed += 1
-            
+
             if rows_processed % 1000 == 0:
                 print(f"Processed {rows_processed} users...")
-        
+
         print(f"Done! Processed {rows_processed} total users")
     # Result automatically closed here
-    
+
     await cluster.shutdown()
 ```
 
@@ -365,12 +365,12 @@ The `fetch_size` parameter in `StreamConfig` is exactly the same as the `fetch_s
 
 ```python
 # Small fetch_size = More network requests, less memory
-config_small = StreamConfig(fetch_size=100)  
+config_small = StreamConfig(fetch_size=100)
 # - Fetches 100 rows at a time (page size = 100)
 # - Good for: Large rows, limited memory
 # - Bad for: Network latency, small rows
 
-# Large fetch_size = Fewer network requests, more memory  
+# Large fetch_size = Fewer network requests, more memory
 config_large = StreamConfig(fetch_size=10000)
 # - Fetches 10,000 rows at a time (page size = 10,000)
 # - Good for: Small rows, good network
@@ -393,11 +393,11 @@ graph LR
     subgraph "fetch_size=100"
         A1[Page 1<br/>100 rows] --> A2[Page 2<br/>100 rows] --> A3[Page 3<br/>100 rows] --> A4[...]
     end
-    
+
     subgraph "fetch_size=5000"
         B1[Page 1<br/>5000 rows] --> B2[Page 2<br/>5000 rows] --> B3[...]
     end
-    
+
     subgraph "Memory Usage"
         A1 -.-> M1[~100KB]
         B1 -.-> M2[~5MB]
@@ -411,7 +411,7 @@ Sometimes you want to process entire pages at once (e.g., bulk operations):
 ```python
 async def bulk_process_users():
     config = StreamConfig(fetch_size=1000)
-    
+
     # ALWAYS use context manager for streaming
     async with await session.execute_stream(
         "SELECT * FROM users WHERE active = true",
@@ -421,11 +421,11 @@ async def bulk_process_users():
         async for page in result.pages():
             # 'page' is a list of up to 1000 rows
             print(f"Processing page {result.page_number} with {len(page)} rows")
-            
+
             # Bulk operation on entire page
             user_ids = [row.user_id for row in page]
             await bulk_update_last_seen(user_ids)
-            
+
             # The page is garbage collected after this iteration
     # Result automatically closed here
 ```
@@ -437,13 +437,13 @@ sequenceDiagram
     participant App
     participant Stream
     participant Cassandra
-    
+
     App->>Stream: async for page in pages()
     Stream->>Cassandra: Fetch page (1000 rows)
     Cassandra-->>Stream: Page data
     Stream-->>App: List of 1000 rows
     Note over App: Process entire page
-    
+
     App->>Stream: Next page
     Stream->>Cassandra: Fetch next page
     Note over Stream: Previous page can be<br/>garbage collected
@@ -461,19 +461,19 @@ async def export_with_progress():
     )
     total_rows = count_result.one()[0]
     print(f"Exporting {total_rows:,} events...")
-    
+
     # Stream with progress callback
     rows_processed = 0
-    
+
     def progress_callback(page_num: int, total_fetched: int):
         percent = (total_fetched / total_rows * 100) if total_rows > 0 else 0
         print(f"Page {page_num}: {total_fetched:,}/{total_rows:,} ({percent:.1f}%)")
-    
+
     config = StreamConfig(
         fetch_size=5000,
         page_callback=progress_callback
     )
-    
+
     async with await session.execute_stream(
         "SELECT * FROM events WHERE year = 2024",
         stream_config=config
@@ -490,12 +490,12 @@ async def export_to_parquet(table_name: str, output_file: str):
     """Export large table to Parquet without loading all data in memory"""
     import pyarrow as pa
     import pyarrow.parquet as pq
-    
+
     config = StreamConfig(fetch_size=10000)
-    
+
     schema = None
     writer = None
-    
+
     try:
         # ALWAYS use context manager for streaming
         async with await session.execute_stream(
@@ -511,21 +511,21 @@ async def export_to_parquet(table_name: str, output_file: str):
                         (field, pa.string()) for field in page[0]._fields
                     ])
                     writer = pq.ParquetWriter(output_file, schema)
-                
+
                 # Convert page to columnar format
                 data = {
                     field: [getattr(row, field) for row in page]
                     for field in page[0]._fields
                 }
-                
+
                 # Write batch to Parquet
                 batch = pa.record_batch(data, schema=schema)
                 writer.write_batch(batch)
-                
+
                 print(f"Exported page {result.page_number} "
                       f"({result.total_rows_fetched:,} rows total)")
         # Result automatically closed here
-    
+
     finally:
         if writer:
             writer.close()
@@ -536,9 +536,9 @@ async def export_to_parquet(table_name: str, output_file: str):
 ```python
 async def parallel_partition_processing():
     """Process multiple partitions in parallel with controlled concurrency"""
-    
+
     partitions = ['2024-01', '2024-02', '2024-03', '2024-04']
-    
+
     async def process_partition(partition: str):
         config = StreamConfig(
             fetch_size=2000,
@@ -546,11 +546,11 @@ async def parallel_partition_processing():
                 f"Partition {partition}: Page {p}, {t:,} rows"
             )
         )
-        
+
         stmt = await session.prepare(
             "SELECT * FROM events WHERE partition_date = ?"
         )
-        
+
         async with await session.execute_stream(
             stmt,
             parameters=[partition],
@@ -560,23 +560,23 @@ async def parallel_partition_processing():
             async for row in result:
                 await process_event(row)
                 count += 1
-            
+
             return partition, count
-    
+
     # Process up to 3 partitions concurrently
     # Each partition streams independently
     from asyncio import Semaphore
-    
+
     sem = Semaphore(3)  # Limit concurrent partitions
-    
+
     async def limited_process(partition):
         async with sem:
             return await process_partition(partition)
-    
+
     results = await asyncio.gather(*[
         limited_process(p) for p in partitions
     ])
-    
+
     for partition, count in results:
         print(f"Processed {count:,} events from partition {partition}")
 ```
@@ -598,13 +598,13 @@ async def parallel_partition_processing():
 ```python
 def calculate_memory_usage(avg_row_size_bytes: int, fetch_size: int) -> dict:
     """Calculate memory usage for different fetch sizes"""
-    
+
     page_memory_mb = (avg_row_size_bytes * fetch_size) / (1024 * 1024)
-    
+
     # For a table with 1 million rows
     total_rows = 1_000_000
     total_pages = total_rows // fetch_size
-    
+
     return {
         "memory_per_page_mb": round(page_memory_mb, 2),
         "total_pages": total_pages,
@@ -615,10 +615,10 @@ def calculate_memory_usage(avg_row_size_bytes: int, fetch_size: int) -> dict:
 # Example calculations
 small_rows = calculate_memory_usage(100, 5000)    # 100-byte rows
 print(f"Small rows: {small_rows}")
-# Output: {'memory_per_page_mb': 0.48, 'total_pages': 200, 
+# Output: {'memory_per_page_mb': 0.48, 'total_pages': 200,
 #          'network_round_trips': 200, 'max_memory_mb': 0.48}
 
-large_rows = calculate_memory_usage(10240, 500)   # 10KB rows  
+large_rows = calculate_memory_usage(10240, 500)   # 10KB rows
 print(f"Large rows: {large_rows}")
 # Output: {'memory_per_page_mb': 4.88, 'total_pages': 2000,
 #          'network_round_trips': 2000, 'max_memory_mb': 4.88}
@@ -683,14 +683,14 @@ result = await session.execute("SELECT * FROM users LIMIT 100")
 # DO implement retry logic for large streams
 async def reliable_stream_processing():
     last_processed_id = None
-    
+
     while True:
         try:
             query = "SELECT * FROM events"
             if last_processed_id:
                 query += f" WHERE id > '{last_processed_id}'"
             query += " ALLOW FILTERING"  # Be careful with this!
-            
+
             async with await session.execute_stream(
                 query,
                 stream_config=StreamConfig(fetch_size=5000)
@@ -698,9 +698,9 @@ async def reliable_stream_processing():
                 async for row in result:
                     await process_event(row)
                     last_processed_id = row.id
-                
+
                 break  # Success, exit loop
-            
+
         except Exception as e:
             print(f"Stream failed after {last_processed_id}, retrying: {e}")
             await asyncio.sleep(5)
@@ -733,16 +733,16 @@ graph TD
     A[Query Result Size] --> B{"More than 5000 rows?"}
     B -->|Yes| C{"Memory constrained?"}
     B -->|No| D["Use regular execute()"]
-    
+
     C -->|Yes| E["Use execute_stream()<br/>with small fetch_size"]
     C -->|No| F{"Need progress tracking?"}
-    
+
     F -->|Yes| G["Use execute_stream()<br/>with callbacks"]
     F -->|No| H{"Process incrementally?"}
-    
+
     H -->|Yes| G
     H -->|No| I{"Network latency high?"}
-    
+
     I -->|Yes| J["Consider regular execute()<br/>or large fetch_size"]
     I -->|No| G
 ```
@@ -768,13 +768,13 @@ async def etl_pipeline(
     start_time = datetime.now()
     total_processed = 0
     failed_rows = []
-    
+
     # Prepare insert statement for destination
     insert_stmt = await session.prepare(
         f"INSERT INTO {destination_table} (id, data, processed_at) "
         "VALUES (?, ?, ?)"
     )
-    
+
     # Stream from source table
     config = StreamConfig(
         fetch_size=batch_size,
@@ -782,7 +782,7 @@ async def etl_pipeline(
             f"[ETL] Page {p}: Extracted {t:,} rows from {source_table}"
         )
     )
-    
+
     # Stream from source - ALWAYS use context manager
     async with await session.execute_stream(
         f"SELECT * FROM {source_table}",
@@ -790,34 +790,34 @@ async def etl_pipeline(
     ) as result:
         # Process in batches for efficiency
         batch = []
-        
+
         async for row in result:
             try:
                 # Transform
                 transformed = await transform_func(row)
-                
+
                 # Add to batch
                 batch.append((
                     transformed['id'],
                     transformed['data'],
                     datetime.now()
                 ))
-                
+
                 # Load batch when full
                 if len(batch) >= batch_size:
                     await load_batch(insert_stmt, batch)
                     total_processed += len(batch)
                     batch = []
-                    
+
             except Exception as e:
                 failed_rows.append((row.id, str(e)))
-        
+
         # Load final partial batch
         if batch:
             await load_batch(insert_stmt, batch)
             total_processed += len(batch)
     # Result automatically closed here
-    
+
     # Report results
     duration = (datetime.now() - start_time).total_seconds()
     print(f"\nETL Pipeline Complete:")
@@ -825,7 +825,7 @@ async def etl_pipeline(
     print(f"- Failed: {len(failed_rows)} rows")
     print(f"- Duration: {duration:.1f} seconds")
     print(f"- Rate: {total_processed/duration:.1f} rows/second")
-    
+
     return {
         'processed': total_processed,
         'failed': failed_rows,
@@ -836,7 +836,7 @@ async def load_batch(prepared_stmt, batch):
     """Load a batch of transformed data"""
     # Use execute_concurrent for parallel inserts
     from cassandra.concurrent import execute_concurrent_with_args
-    
+
     await asyncio.get_event_loop().run_in_executor(
         None,
         lambda: execute_concurrent_with_args(

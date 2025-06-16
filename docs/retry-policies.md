@@ -51,15 +51,15 @@ SELECTs are inherently idempotent - running the same query multiple times doesn'
 def on_read_timeout(self, ...):
     if retry_num >= self.max_retries:
         return self.RETHROW, None
-    
+
     # If we got some data, retry might succeed
     if data_retrieved:
         return self.RETRY, consistency
-    
+
     # If we got enough responses, retry at same consistency
     if received_responses >= required_responses:
         return self.RETRY, consistency
-    
+
     return self.RETHROW, None
 ```
 
@@ -77,16 +77,16 @@ Writes are where idempotency becomes critical:
 def on_write_timeout(self, query, ...):
     if retry_num >= self.max_retries:
         return self.RETHROW, None
-    
+
     # CRITICAL: Only retry if query is explicitly marked as idempotent
     if getattr(query, "is_idempotent", None) is not True:
         # Query is not idempotent - do not retry
         return self.RETHROW, None
-    
+
     # Only retry simple and batch writes that are explicitly idempotent
     if write_type in ("SIMPLE", "BATCH"):
         return self.RETRY, consistency
-    
+
     return self.RETHROW, None
 This means:
 - **Safe writes are retried** - If you mark a query as idempotent, it will be retried on timeout

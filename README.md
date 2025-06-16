@@ -122,13 +122,13 @@ cluster = AsyncCluster(['localhost'], protocol_version=4)  # ❌ Not supported
    - Testing against Cassandra 2.x/3.x (v3/v4 protocols)
    - Handling protocol-specific quirks and limitations
    - Maintaining compatibility code for deprecated features
-   
+
 3. **Security & Features**: Older protocols lack:
    - Modern authentication mechanisms
    - Proper error reporting for async contexts
    - Features required for cloud-native deployments
 
-4. **Industry Standards**: 
+4. **Industry Standards**:
    - Cassandra 4.0 (with v5) was released in July 2021
    - Major cloud providers default to v5+
    - Cassandra 3.x reached EOL in 2023
@@ -173,11 +173,11 @@ async def main():
     # Connect to Cassandra
     cluster = AsyncCluster(['localhost'])
     session = await cluster.connect()
-    
+
     # Execute queries
     result = await session.execute("SELECT * FROM system.local")
     print(f"Connected to: {result.one().cluster_name}")
-    
+
     # Clean up
     await session.close()
     await cluster.shutdown()

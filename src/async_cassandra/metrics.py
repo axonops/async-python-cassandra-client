@@ -67,7 +67,7 @@ class InMemoryMetricsCollector(MetricsCollector):
 
     def __init__(self, max_entries: int = 10000):
         self.max_entries = max_entries
-        self.query_metrics: deque = deque(maxlen=max_entries)
+        self.query_metrics: deque[QueryMetrics] = deque(maxlen=max_entries)
         self.connection_metrics: Dict[str, ConnectionMetrics] = {}
         self.error_counts: Dict[str, int] = defaultdict(int)
         self.query_counts: Dict[str, int] = defaultdict(int)

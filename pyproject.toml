@@ -94,7 +94,7 @@ markers = [
     # Test speed markers
     "quick: Tests that run in <1 second (for smoke testing)",
     "slow: Tests that take >10 seconds",
-    
+
     # Test categories
     "core: Core functionality - must pass for any commit",
     "resilience: Error handling and recovery",
@@ -103,15 +103,15 @@ markers = [
     "fastapi: FastAPI integration tests",
     "bdd: Business-driven development tests",
     "performance: Performance and stress tests",
-    
+
     # Priority markers
     "critical: Business-critical functionality",
     "smoke: Minimal tests for PR validation",
-    
+
     # Special markers
     "flaky: Known flaky tests (quarantined)",
     "wip: Work in progress tests",
-    
+
     # Legacy markers (kept for compatibility)
     "stress: marks tests as stress tests for high load scenarios",
     "benchmark: marks tests as performance benchmarks with thresholds",

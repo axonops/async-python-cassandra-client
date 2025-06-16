@@ -31,7 +31,7 @@ else
     tail -20 /tmp/core_tests.log
 fi
 
-# Unit tests  
+# Unit tests
 echo "2. Unit Tests..."
 if pytest tests/unit/ -v --tb=short -x --timeout=60 > /tmp/unit_tests.log 2>&1; then
     echo "   ✅ Unit tests PASSED"

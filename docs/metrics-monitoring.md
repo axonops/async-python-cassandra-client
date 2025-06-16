@@ -71,20 +71,20 @@ async def main():
     # Create cluster with metrics
     cluster = AsyncCluster(['localhost'])
     collector = InMemoryMetricsCollector(max_queries=1000)
-    
+
     # Wrap session with metrics middleware
     base_session = await cluster.connect()
     session = create_metrics_system(base_session, [collector])
-    
+
     # Use session normally - metrics are collected automatically
     await session.execute("SELECT * FROM system.local")
-    
+
     # Get metrics
     stats = collector.get_stats()
     print(f"Total queries: {stats['total_queries']}")
     print(f"Failed queries: {stats['failed_queries']}")
     print(f"Average latency: {stats['avg_latency']:.3f}s")
-    
+
     # Get detailed query metrics
     for query, metrics in stats['queries'].items():
         print(f"{query}: {metrics['count']} calls, "
@@ -129,11 +129,11 @@ session = create_metrics_system(base_session, [prometheus_collector])
 
 ```
 # Query metrics
-cassandra_queries_total{query="SELECT...", status="success"} 
+cassandra_queries_total{query="SELECT...", status="success"}
 cassandra_query_duration_seconds{query="SELECT...", quantile="0.5"}
 cassandra_queries_in_flight
 
-# Connection metrics  
+# Connection metrics
 cassandra_connection_up{host="127.0.0.1", port="9042"}
 cassandra_connection_errors_total{host="127.0.0.1"}
 cassandra_connection_check_duration_seconds{host="127.0.0.1"}
@@ -161,15 +161,15 @@ from async_cassandra.monitoring import ConnectionMonitor
 
 async def monitor_connections():
     monitor = ConnectionMonitor(session)
-    
+
     # Get cluster metrics once
     metrics = await monitor.get_cluster_metrics()
     print(f"Healthy hosts: {metrics.healthy_hosts}")
     print(f"Unhealthy hosts: {metrics.unhealthy_hosts}")
-    
+
     # Start continuous monitoring
     await monitor.start_monitoring(interval=30)  # Check every 30 seconds
-    
+
     # Later, stop monitoring
     await monitor.stop_monitoring()
 ```
@@ -198,11 +198,11 @@ import json
 
 class FileMetricsCollector(MetricsCollector):
     """Collector that writes metrics to a file."""
-    
+
     def __init__(self, filename: str):
         self.filename = filename
         self.file = open(filename, 'a')
-    
+
     def record_query(self, metrics: QueryMetrics):
         # Write query metrics to file
         self.file.write(json.dumps({
@@ -213,7 +213,7 @@ class FileMetricsCollector(MetricsCollector):
             'timestamp': metrics.timestamp.isoformat()
         }) + '\n')
         self.file.flush()
-    
+
     def record_connection_health(self, metrics: ConnectionMetrics):
         # Write connection metrics to file
         self.file.write(json.dumps({
@@ -223,10 +223,10 @@ class FileMetricsCollector(MetricsCollector):
             'timestamp': metrics.last_check_time.isoformat()
         }) + '\n')
         self.file.flush()
-    
+
     def get_stats(self) -> dict:
         return {'filename': self.filename}
-    
+
     def clear(self):
         self.file.close()
         self.file = open(self.filename, 'w')
@@ -269,11 +269,11 @@ class FilteredCollector(MetricsCollector):
     def __init__(self, pattern: str):
         self.pattern = pattern
         self.metrics = []
-    
+
     def record_query(self, metrics: QueryMetrics):
         if self.pattern in metrics.query:
             self.metrics.append(metrics)
-    
+
     # ... rest of implementation
 
 # Only collect SELECT query metrics
@@ -304,7 +304,7 @@ async def startup_event():
     global session
     cluster = AsyncCluster(['localhost'])
     base_session = await cluster.connect()
-    
+
     # Wrap with metrics
     session = create_metrics_system(
         base_session,
@@ -436,7 +436,7 @@ groups:
         for: 5m
         annotations:
           summary: "High query latency detected"
-          
+
       - alert: ConnectionDown
         expr: cassandra_connection_up == 0
         for: 1m
@@ -453,7 +453,7 @@ async def handle_request(request_id: str):
     query = f"SELECT * FROM users WHERE id = ? -- req:{request_id}"
     stmt = await session.prepare(query)
     result = await session.execute(stmt, [user_id])
-    
+
     # Can now correlate slow queries with specific requests
 ```
 

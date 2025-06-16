@@ -1,21 +1,21 @@
 import asyncio
 import json
-from typing import Optional, List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from cassandra import ConsistencyLevel
 from cassandra.cluster import Session
 from pydantic import ValidationError
 
-from . import cassandra
-from .asyncio import execute_async
 from ...config import config
 from ...logcfg.logcfg import log, logexc
-from ...metrics.metrics import CASSANDRA_TIME, CASSANDRA_ERRORS, BAD_DATA_CASSANDRA
+from ...metrics.metrics import BAD_DATA_CASSANDRA, CASSANDRA_ERRORS, CASSANDRA_TIME
 from ...models.connection import Connection
 from ...models.device import Device
-from ...models.errors import SLPBaseException, InvalidDataException
+from ...models.errors import InvalidDataException, SLPBaseException
 from ...models.service_location import ServiceLocation
-from ...models.technical_eligibilities import TechnicalEligibilitiesEmbed, Eligibility
+from ...models.technical_eligibilities import Eligibility, TechnicalEligibilitiesEmbed
+from . import cassandra
+from .asyncio import execute_async
 
 # Names for referring to prepared statements
 stmt_svcloc = "svcloc"
@@ -63,13 +63,16 @@ class ServiceLocationDB:
         if self._prepared_session_id is None or self._prepared_session_id != sess.session_id:
             consistency = ConsistencyLevel.name_to_value[config.cassandra_consistency]
             svcloc = sess.prepare(
-                f"SELECT {field_id}, {field_service_location}, {field_deleted} FROM {table_name} WHERE {field_id}=? LIMIT 1")
+                f"SELECT {field_id}, {field_service_location}, {field_deleted} FROM {table_name} WHERE {field_id}=? LIMIT 1"
+            )
             svcloc.consistency_level = consistency
             eligibilities = sess.prepare(
-                f"SELECT {field_id}, {field_eligibilities}, {field_deleted}, WRITETIME({field_eligibilities}) AS ts FROM {table_name} WHERE {field_id}=? LIMIT 1")
+                f"SELECT {field_id}, {field_eligibilities}, {field_deleted}, WRITETIME({field_eligibilities}) AS ts FROM {table_name} WHERE {field_id}=? LIMIT 1"
+            )
             eligibilities.consistency_level = consistency
             both = sess.prepare(
-                f"SELECT  {field_id}, {field_service_location}, {field_eligibilities}, {field_deleted} FROM {table_name} WHERE {field_id}=? LIMIT 1")
+                f"SELECT  {field_id}, {field_service_location}, {field_eligibilities}, {field_deleted} FROM {table_name} WHERE {field_id}=? LIMIT 1"
+            )
             both.consistency_level = consistency
             self._statements = {
                 stmt_svcloc: svcloc,
@@ -88,7 +91,9 @@ class ServiceLocationDB:
             try:
                 with CASSANDRA_TIME.time(), CASSANDRA_ERRORS.count_exceptions():
                     sess = self._prepare()
-                    return await execute_async(sess, self._statements[stmt_name], (service_location_id,))
+                    return await execute_async(
+                        sess, self._statements[stmt_name], (service_location_id,)
+                    )
             except Exception as e:
                 attempts += 1
                 if attempts > 1:
@@ -96,8 +101,9 @@ class ServiceLocationDB:
                 # Force reconnection to Cassandra on the first error and try again
                 cassandra.get_session(True)
 
-    async def get_servicelocation(self, service_location_id: str, include_eligibilities: bool = False) \
-            -> Optional[ServiceLocation]:
+    async def get_servicelocation(
+        self, service_location_id: str, include_eligibilities: bool = False
+    ) -> Optional[ServiceLocation]:
         if include_eligibilities:
             rows = await self._run_stmt(stmt_both, service_location_id)
         else:
@@ -108,8 +114,9 @@ class ServiceLocationDB:
             logexc("InvalidDataException")
         return None
 
-    async def get_servicelocation_multi(self, service_location_ids: List[str], include_eligibilities: bool = False) \
-            -> Dict[str, ServiceLocation]:
+    async def get_servicelocation_multi(
+        self, service_location_ids: List[str], include_eligibilities: bool = False
+    ) -> Dict[str, ServiceLocation]:
         tasks = []
         for id in service_location_ids:
             tasks.append(self.get_servicelocation(id, include_eligibilities))
@@ -127,7 +134,9 @@ class ServiceLocationDB:
         return decode_eligibilities(row[field_eligibilities]), ts
 
 
-def rows_to_service_location(rows: List[Dict], include_eligibilities: bool) -> Optional[ServiceLocation]:
+def rows_to_service_location(
+    rows: List[Dict], include_eligibilities: bool
+) -> Optional[ServiceLocation]:
     """
     Map a row from Cassandra into a ServiceLocation object
     """
@@ -138,18 +147,16 @@ def rows_to_service_location(rows: List[Dict], include_eligibilities: bool) -> O
 
     service_location_id = first_row.get(field_id, None)
     service_location_json = first_row.get(field_service_location, None)
-    if not service_location_id \
-            or not service_location_json \
-            or first_row.get(field_deleted, False):
+    if not service_location_id or not service_location_json or first_row.get(field_deleted, False):
         return None
 
     try:
         # Split out connections and devices and parse them separately to improve resilience against bad data
         svcloc_dict = json.loads(service_location_json)
-        devices_list = svcloc_dict['devices'] if 'devices' in svcloc_dict else []
-        connections_list = svcloc_dict['connections'] if 'connections' in svcloc_dict else []
-        svcloc_dict['devices'] = []
-        svcloc_dict['connections'] = []
+        devices_list = svcloc_dict["devices"] if "devices" in svcloc_dict else []
+        connections_list = svcloc_dict["connections"] if "connections" in svcloc_dict else []
+        svcloc_dict["devices"] = []
+        svcloc_dict["connections"] = []
         svcloc = ServiceLocation.parse_obj(svcloc_dict)
 
         devices = []
@@ -157,13 +164,18 @@ def rows_to_service_location(rows: List[Dict], include_eligibilities: bool) -> O
         for device_dict in devices_list:
             try:
                 devices.append(Device.parse_obj(device_dict))
-            except (ValidationError, ValueError) as e:
-                log.warn("Found invalid device data in Service Location DB for ID " + service_location_id)
+            except (ValidationError, ValueError):
+                log.warn(
+                    "Found invalid device data in Service Location DB for ID " + service_location_id
+                )
         for conn_dict in connections_list:
             try:
                 connections.append(Connection.parse_obj(conn_dict))
-            except (ValidationError, ValueError) as e:
-                log.warn("Found invalid connection data in Service Location DB for ID " + service_location_id)
+            except (ValidationError, ValueError):
+                log.warn(
+                    "Found invalid connection data in Service Location DB for ID "
+                    + service_location_id
+                )
         svcloc.devices = devices
         svcloc.connections = connections
 
@@ -176,10 +188,13 @@ def rows_to_service_location(rows: List[Dict], include_eligibilities: bool) -> O
         if field_eligibilities in first_row:
             try:
                 svcloc.embedded = TechnicalEligibilitiesEmbed(
-                    technical_eligibilities=decode_eligibilities(first_row[field_eligibilities]))
+                    technical_eligibilities=decode_eligibilities(first_row[field_eligibilities])
+                )
             except (ValidationError, ValueError) as e:
                 BAD_DATA_CASSANDRA.inc()
-                raise InvalidDataException("Service Location Database", service_location_id, e) from e
+                raise InvalidDataException(
+                    "Service Location Database", service_location_id, e
+                ) from e
     else:
         svcloc.embedded = None
     return svcloc

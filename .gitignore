@@ -179,4 +179,3 @@ testresults/
 # Cassandra test data
 cassandra_data/
 test_keyspace/
-

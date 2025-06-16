@@ -15,9 +15,7 @@ import uuid
 from datetime import datetime
 
 from async_cassandra import AsyncCluster
-from async_cassandra.metrics import (
-    create_metrics_system,
-)
+from async_cassandra.metrics import create_metrics_system
 
 
 async def main():

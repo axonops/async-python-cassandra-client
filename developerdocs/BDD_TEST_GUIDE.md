@@ -281,7 +281,7 @@ Scenario: Streaming continues despite transient network errors
        async def _operation():
            result = await async_function()
            return result
-       
+
        result = run_async(_operation(), event_loop)
        context['result'] = result
    ```

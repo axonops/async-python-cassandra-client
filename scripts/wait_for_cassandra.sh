@@ -13,14 +13,14 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
         echo "Port $PORT is open (attempt $i/$MAX_ATTEMPTS)"
         # Give it a moment to fully initialize
         sleep 2
-        
+
         # Try a simple CQL command
         if echo "SELECT now() FROM system.local;" | cqlsh $HOST $PORT 2>/dev/null | grep -q "(1 rows)"; then
             echo "Cassandra is ready!"
             exit 0
         fi
     fi
-    
+
     if [ $i -lt $MAX_ATTEMPTS ]; then
         echo "Waiting for Cassandra... ($i/$MAX_ATTEMPTS)"
         sleep 1

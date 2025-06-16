@@ -69,13 +69,13 @@ async def main():
         contact_points=['localhost'],
         executor_threads=8
     )
-    
+
     # Connect and use the cluster
     session = await cluster.connect()
-    
+
     # Your queries will be executed using the configured thread pool
     result = await session.execute("SELECT * FROM system.local")
-    
+
     # Cleanup
     await session.close()
     await cluster.shutdown()

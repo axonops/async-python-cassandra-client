@@ -27,7 +27,7 @@ sequenceDiagram
     participant Driver as Cassandra Driver
     participant ThreadPool as Thread Pool
     participant Cassandra as Cassandra DB
-    
+
     App->>Driver: execute(query)
     Driver->>ThreadPool: Submit to thread
     Note over ThreadPool: Thread blocked
@@ -49,7 +49,7 @@ sequenceDiagram
     participant Driver as Cassandra Driver
     participant EventLoop as Event Loop
     participant Cassandra as Cassandra DB
-    
+
     App->>AsyncWrapper: await execute(query)
     AsyncWrapper->>Driver: execute_async(query)
     Note over AsyncWrapper: Create Future
@@ -81,14 +81,14 @@ classDiagram
         +register_user_type(keyspace, type_name, klass)
         +shutdown()
     }
-    
+
     class Cluster {
         <<DataStax Driver>>
         +connect()
         +shutdown()
         +metadata
     }
-    
+
     AsyncCluster --> Cluster : wraps
 ```
 
@@ -106,7 +106,7 @@ classDiagram
         +set_keyspace(keyspace)
         +close()
     }
-    
+
     class Session {
         <<DataStax Driver>>
         +execute_async()
@@ -114,7 +114,7 @@ classDiagram
         +set_keyspace()
         +shutdown()
     }
-    
+
     AsyncCassandraSession --> Session : wraps
     AsyncCassandraSession --> MetricsMiddleware : uses
 ```
@@ -133,14 +133,14 @@ classDiagram
         +has_more_pages bool
         +paging_state bytes
     }
-    
+
     class ResultSet {
         <<DataStax Driver>>
         +current_rows
         +has_more_pages
         +paging_state
     }
-    
+
     AsyncResultSet --> ResultSet : wraps
 ```
 
@@ -159,12 +159,12 @@ classDiagram
         +page_number int
         +total_rows_fetched int
     }
-    
+
     class StreamConfig {
         +fetch_size int
         +page_callback Callable
     }
-    
+
     AsyncStreamingResultSet --> StreamConfig : configured by
 ```
 
@@ -183,26 +183,26 @@ classDiagram
         +enable()
         +disable()
     }
-    
+
     class MetricsCollector {
         <<Interface>>
         +record_query(metrics: QueryMetrics)*
         +record_connection_health(metrics: ConnectionMetrics)*
         +get_stats()*
     }
-    
+
     class InMemoryMetricsCollector {
         +query_metrics deque
         +connection_metrics dict
         +max_entries int
     }
-    
+
     class PrometheusMetricsCollector {
         +query_duration Histogram
         +query_success_total Counter
         +query_error_total Counter
     }
-    
+
     MetricsMiddleware --> MetricsCollector : manages
     InMemoryMetricsCollector --|> MetricsCollector : implements
     PrometheusMetricsCollector --|> MetricsCollector : implements
@@ -220,16 +220,16 @@ classDiagram
         +on_write_timeout(...) (decision, consistency)
         +on_unavailable(...) (decision, consistency)
     }
-    
+
     class RetryPolicy {
         <<DataStax Driver>>
         +RETRY
         +RETHROW
         +RETRY_NEXT_HOST
     }
-    
+
     AsyncRetryPolicy --|> RetryPolicy : extends
-    
+
     note for AsyncRetryPolicy "Only retries writes if query.is_idempotent == True"
 ```
 
@@ -244,16 +244,16 @@ sequenceDiagram
     participant Handler as AsyncResultHandler
     participant Driver as Cassandra Driver
     participant DB as Cassandra
-    
+
     User->>Session: await execute(query)
     Session->>Driver: execute_async(query)
     Driver-->>Session: ResponseFuture
     Session->>Handler: new AsyncResultHandler(ResponseFuture)
     Handler->>Handler: Register callbacks
     Session-->>User: Return Future
-    
+
     Note over User,DB: Async execution in progress
-    
+
     DB-->>Driver: Query result
     Driver-->>Handler: Trigger callback
     Handler->>Handler: Process result/pages
@@ -270,14 +270,14 @@ sequenceDiagram
     participant Handler as StreamingResultHandler
     participant Driver as Cassandra Driver
     participant DB as Cassandra
-    
+
     App->>Session: await execute_stream(query, config)
     Session->>Driver: execute_async(query)
     Driver-->>Session: ResponseFuture
     Session->>Handler: StreamingResultHandler(future, config)
     Handler->>Stream: Create AsyncStreamingResultSet
     Session-->>App: Return Stream
-    
+
     loop For each page request
         App->>Stream: async for row in stream
         Stream->>Handler: Request next page
@@ -298,7 +298,7 @@ sequenceDiagram
     participant Session as AsyncCassandraSession
     participant Batch as BatchStatement
     participant DB as Cassandra
-    
+
     App->>Batch: Create BatchStatement
     App->>Batch: Add multiple statements
     App->>Session: await execute(batch)
@@ -333,7 +333,7 @@ graph LR
         T3 --> DB1
         Note1[Threads blocked during I/O]
     end
-    
+
     subgraph "Async Wrapper"
         A1[Request 1] --> EL[Event Loop]
         A2[Request 2] --> EL
@@ -353,16 +353,16 @@ graph TB
         C1[Coroutine 1]
         C2[Coroutine 2]
         C3[Coroutine 3]
-        
+
         EL --> C1
         EL --> C2
         EL --> C3
-        
+
         C1 -.->|await| IO1[I/O Operation]
         C2 -.->|await| IO2[I/O Operation]
         C3 -.->|await| IO3[I/O Operation]
     end
-    
+
     Note[All coroutines share same thread,<br/>switching context during I/O waits]
 ```
 
@@ -376,14 +376,14 @@ graph LR
         SM[Memory: High]
         SC[Context Switches: Many]
     end
-    
+
     subgraph "Async Wrapper"
         direction TB
         AT[Threads: 1-4]
         AM[Memory: Low]
         AC[Context Switches: Few]
     end
-    
+
     ST --> |"Under Load"| SP[Performance Degradation]
     AT --> |"Under Load"| AP[Stable Performance]
 ```
@@ -405,7 +405,7 @@ sequenceDiagram
     participant Deps as Dependencies
     participant Session as AsyncCassandraSession
     participant DB as Cassandra
-    
+
     Client->>FastAPI: HTTP Request
     FastAPI->>Deps: Get session dependency
     Deps-->>FastAPI: Inject session
@@ -432,21 +432,21 @@ classDiagram
         +closed bool
         #_close_lock Lock
     }
-    
+
     class AsyncContextManageable {
         <<abstract>>
         +__aenter__()
         +__aexit__()
     }
-    
+
     class AsyncCluster {
         +shutdown()
     }
-    
+
     class AsyncCassandraSession {
         +close()
     }
-    
+
     AsyncCloseable <|-- AsyncCluster
     AsyncCloseable <|-- AsyncCassandraSession
     AsyncContextManageable <|-- AsyncCluster
@@ -467,7 +467,7 @@ graph LR
         S --> MW
         MW --> R[Result]
     end
-    
+
     subgraph "Metrics Collection"
         MW --> MC1[InMemoryCollector]
         MW --> MC2[PrometheusCollector]
@@ -485,17 +485,17 @@ classDiagram
         <<interface>>
         +handle_response(response_future)
     }
-    
+
     class AsyncResultHandler {
         +get_result() AsyncResultSet
         -_convert_to_async(response_future)
     }
-    
+
     class StreamingResultHandler {
         +get_streaming_result() AsyncStreamingResultSet
         -_setup_streaming(response_future)
     }
-    
+
     ResultHandler <|-- AsyncResultHandler
     ResultHandler <|-- StreamingResultHandler
 ```
@@ -508,14 +508,14 @@ stateDiagram-v2
     Executing --> Success: No errors
     Executing --> Retryable: Timeout/Unavailable
     Executing --> NonRetryable: Invalid query
-    
+
     Retryable --> CheckIdempotent: Write operation?
     CheckIdempotent --> Retry: is_idempotent=True
     CheckIdempotent --> Fail: is_idempotent=False
-    
+
     Retry --> Executing: Retry with policy
     Retry --> Fail: Max retries exceeded
-    
+
     Success --> [*]: Return result
     Fail --> [*]: Raise exception
     NonRetryable --> [*]: Raise exception

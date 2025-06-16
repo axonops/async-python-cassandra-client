@@ -65,9 +65,11 @@ async def export_table_async(session, table_name: str, output_file: str):
 
     # Start streaming
     start_time = datetime.now()
-    
+
     # CRITICAL: Use context manager for streaming to prevent memory leaks
-    async with await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config) as result:
+    async with await session.execute_stream(
+        f"SELECT * FROM {table_name}", stream_config=config
+    ) as result:
         # Export to CSV
         async with aiofiles.open(output_file, "w", newline="") as f:
             writer = None
@@ -129,9 +131,11 @@ def export_table_sync(session, table_name: str, output_file: str):
         )
 
         start_time = datetime.now()
-        
+
         # Use context manager for proper streaming cleanup
-        async with await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config) as result:
+        async with await session.execute_stream(
+            f"SELECT * FROM {table_name}", stream_config=config
+        ) as result:
             # Export to CSV synchronously
             with open(output_file, "w", newline="") as f:
                 writer = None

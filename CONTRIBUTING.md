@@ -159,7 +159,7 @@ docker run -d --name cassandra-test -p 9042:9042 cassandra:4.1
 This project uses several tools to maintain code quality and consistency:
 
 - **black** for code formatting
-- **isort** for import sorting  
+- **isort** for import sorting
 - **ruff** for linting
 - **mypy** for type checking
 

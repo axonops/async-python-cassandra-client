@@ -3,6 +3,22 @@
 
 set -e
 
+# Cleanup handler
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ] && [ "${KEEP_CONTAINERS:-0}" != "1" ]; then
+        echo "Cleaning up containers after test failure..."
+        ./scripts/manage_test_containers.sh kill 2>/dev/null || true
+        ./scripts/quick_cassandra.sh stop 2>/dev/null || true
+    fi
+    exit $exit_code
+}
+
+# Set trap for cleanup on script exit (but not for the clean command)
+if [ "${1:-}" != "clean" ]; then
+    trap cleanup_on_exit EXIT INT TERM
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -40,9 +56,9 @@ ensure_cassandra() {
 run_test_suite() {
     local suite_name=$1
     local test_command=$2
-    
+
     print_status "info" "Running $suite_name..."
-    
+
     if eval "$test_command"; then
         print_status "success" "$suite_name passed"
         return 0
@@ -57,23 +73,23 @@ case "${1:-all}" in
     unit)
         run_test_suite "Unit Tests" "pytest tests/unit/ tests/_core/ tests/_resilience/ tests/_features/ -v"
         ;;
-    
+
     integration)
         ensure_cassandra
         run_test_suite "Integration Tests" "pytest tests/integration/ -v -m integration"
         ;;
-    
+
     fastapi)
         ensure_cassandra
         run_test_suite "FastAPI Tests (tests/fastapi)" "pytest tests/fastapi -v || true"
         run_test_suite "FastAPI Example Tests" "cd examples/fastapi_app && pytest test_fastapi_app.py -v"
         ;;
-    
+
     bdd)
         ensure_cassandra
         run_test_suite "BDD Tests" "pytest tests/bdd -v"
         ;;
-    
+
     critical)
         ensure_cassandra
         print_status "info" "Running critical tests as per..."
@@ -82,24 +98,24 @@ case "${1:-all}" in
         run_test_suite "FastAPI Example" "cd examples/fastapi_app && pytest test_fastapi_app.py -v"
         run_test_suite "BDD Critical Tests" "pytest tests/bdd -m 'critical' -v || true"
         ;;
-    
+
     all)
         print_status "info" "Running complete test suite..."
-        
+
         # Lint first
         print_status "info" "Running linters..."
         make lint
-        
+
         # Then run all tests
         ensure_cassandra
-        
+
         failed=0
-        
+
         run_test_suite "Unit Tests" "pytest tests/unit/ tests/_core/ tests/_resilience/ tests/_features/ -v" || failed=1
         run_test_suite "Integration Tests" "pytest tests/integration/ -v -m integration" || failed=1
         run_test_suite "FastAPI Tests" "cd examples/fastapi_app && pytest test_fastapi_app.py -v" || failed=1
         run_test_suite "BDD Tests" "pytest tests/bdd -v" || failed=1
-        
+
         if [ $failed -eq 0 ]; then
             print_status "success" "All tests passed!"
         else
@@ -107,14 +123,14 @@ case "${1:-all}" in
             exit 1
         fi
         ;;
-    
+
     clean)
         print_status "info" "Cleaning up test containers..."
         ./scripts/manage_test_containers.sh kill
         ./scripts/quick_cassandra.sh stop 2>/dev/null || true
         print_status "success" "Cleanup complete"
         ;;
-    
+
     *)
         echo "Usage: $0 {unit|integration|fastapi|bdd|critical|all|clean}"
         echo ""

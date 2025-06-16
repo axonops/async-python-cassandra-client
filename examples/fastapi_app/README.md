@@ -56,7 +56,7 @@ This example teaches essential patterns for production Cassandra applications:
 ### 2. Streaming Operations
 - `GET /users/stream` - Stream large datasets efficiently
   - **Purpose**: Demonstrates memory-efficient streaming for large result sets
-  - **Query params**: 
+  - **Query params**:
     - `limit`: Total rows to stream
     - `fetch_size`: Rows per page (controls memory usage)
     - `age_filter`: Filter users by minimum age
@@ -97,34 +97,34 @@ These endpoints validate critical safety properties of context managers:
   - **Purpose**: Verifies query errors don't close the session
   - **Tests**: Executes invalid query, then valid query
   - **Validates**: Error isolation, session stability after errors
-  
-- `POST /context_manager_safety/streaming_error`  
+
+- `POST /context_manager_safety/streaming_error`
   - **Purpose**: Ensures streaming errors don't affect the session
   - **Tests**: Attempts invalid streaming, then valid streaming
   - **Validates**: Streaming context cleanup without session impact
-  
+
 - `POST /context_manager_safety/concurrent_streams`
   - **Purpose**: Tests multiple concurrent streams don't interfere
   - **Tests**: Runs 3 concurrent streams with different filters
   - **Validates**: Stream isolation, independent lifecycles
-  
+
 - `POST /context_manager_safety/nested_contexts`
   - **Purpose**: Verifies proper cleanup order in nested contexts
   - **Tests**: Creates cluster → session → stream nested contexts
-  - **Validates**: 
+  - **Validates**:
     - Innermost (stream) closes first
     - Middle (session) closes without affecting cluster
     - Outer (cluster) closes last
     - Main app session unaffected
-  
+
 - `POST /context_manager_safety/cancellation`
   - **Purpose**: Tests cancelled streaming operations clean up properly
   - **Tests**: Starts stream, cancels mid-flight, verifies cleanup
-  - **Validates**: 
+  - **Validates**:
     - No resource leaks on cancellation
     - Session remains usable
     - New streams can be started
-  
+
 - `GET /context_manager_safety/status`
   - **Purpose**: Monitor resource state
   - **Returns**: Current state of session, cluster, and keyspace
@@ -369,7 +369,7 @@ curl -H "X-Request-Timeout: 10" http://localhost:8000/slow_query
 # Test query error isolation
 curl -X POST http://localhost:8000/context_manager_safety/query_error
 
-# Test streaming error containment  
+# Test streaming error containment
 curl -X POST http://localhost:8000/context_manager_safety/streaming_error
 
 # Test concurrent streams
@@ -416,7 +416,7 @@ Key patterns implemented in this example:
 - Statements prepared once and reused for better performance
 - Protection against CQL injection attacks
 
-### Streaming for Large Results  
+### Streaming for Large Results
 - Memory-efficient processing using `execute_stream()`
 - Configurable fetch size for memory control
 - Automatic cleanup with context managers
@@ -444,7 +444,7 @@ For comprehensive patterns and best practices when using async-cassandra:
 
 The code in this example demonstrates these patterns in action. Key takeaways:
 - Use a single global session shared across all requests
-- Handle specific Cassandra errors and convert to appropriate HTTP responses  
+- Handle specific Cassandra errors and convert to appropriate HTTP responses
 - Use streaming for large datasets to prevent memory exhaustion
 - Always use context managers for proper resource cleanup
 

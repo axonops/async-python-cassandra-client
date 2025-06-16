@@ -88,7 +88,7 @@ The driver doesn't provide async context managers:
 # This doesn't work with cassandra-driver
 async with cluster.connect() as session:  # Not supported
     await session.execute(query)
-    
+
 # You can't do this either
 async with cluster:  # Not supported
     pass
@@ -125,11 +125,11 @@ The driver's API wasn't designed for async/await:
    # cassandra-driver returns ResponseFuture
    future = session.execute_async(query)
    result = future.result()  # Not awaitable
-   
+
    # async-cassandra returns coroutines
    result = await session.execute(query)  # Natural async/await
    ```
-   
+
    See [ResponseFuture API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.ResponseFuture)
 
 2. **No Async Iteration**
@@ -214,7 +214,7 @@ except QueryError as e:
    cluster.shutdown()  # Synchronous method
    session.shutdown()  # Synchronous method
    ```
-   
+
    See [Cluster.shutdown() API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Cluster.shutdown)
 
 2. **No Graceful Async Cleanup**
@@ -325,13 +325,13 @@ The wrapper provides a **bridge** between the thread-based driver and asyncio:
 # What happens under the hood
 def _asyncio_future_from_response_future(response_future):
     asyncio_future = asyncio.Future()
-    
+
     def callback(result):
         # Bridge from thread to event loop
         loop.call_soon_threadsafe(
             asyncio_future.set_result, result
         )
-    
+
     response_future.add_callback(callback)
     return asyncio_future
 ```

@@ -79,7 +79,7 @@ class ConnectionMonitor:
             "last_health_check": None,
             "monitoring_started": datetime.now(timezone.utc),
         }
-        self._monitoring_task: Optional[asyncio.Task] = None
+        self._monitoring_task: Optional[asyncio.Task[None]] = None
         self._callbacks: List[Callable[[ClusterMetrics], Any]] = []
 
     def add_callback(self, callback: Callable[[ClusterMetrics], Any]) -> None:

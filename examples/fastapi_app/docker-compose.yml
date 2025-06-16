@@ -15,26 +15,26 @@ services:
       - CASSANDRA_CLUSTER_NAME=FastAPICluster
       - CASSANDRA_DC=datacenter1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-      
+
       # Memory settings for development (adjust for production)
       - HEAP_NEWSIZE=128M
       - MAX_HEAP_SIZE=512M
-      
+
       # Enable authentication (optional)
       # - CASSANDRA_AUTHENTICATOR=PasswordAuthenticator
       # - CASSANDRA_AUTHORIZER=CassandraAuthorizer
-    
+
     volumes:
       # Persist data between container restarts
       - cassandra_data:/var/lib/cassandra
-    
+
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
       interval: 30s
       timeout: 10s
       retries: 10
       start_period: 60s
-    
+
     networks:
       - app-network
 
@@ -50,21 +50,21 @@ services:
       # Cassandra connection settings
       - CASSANDRA_HOSTS=cassandra
       - CASSANDRA_PORT=9042
-      
+
       # Application settings
       - LOG_LEVEL=INFO
-      
+
       # Optional: Authentication (if enabled in Cassandra)
       # - CASSANDRA_USERNAME=cassandra
       # - CASSANDRA_PASSWORD=cassandra
-    
+
     depends_on:
       cassandra:
         condition: service_healthy
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Resource limits (adjust based on needs)
     deploy:
       resources:
@@ -74,14 +74,14 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
-    
+
     networks:
       - app-network
-    
+
     # Mount source code for development (remove in production)
     volumes:
       - ./main.py:/app/main.py:ro
-    
+
     # Override command for development with auto-reload
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

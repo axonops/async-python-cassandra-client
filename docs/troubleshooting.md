@@ -26,7 +26,7 @@ This guide helps you diagnose and fix common issues with async-cassandra.
    ```bash
    # Check if Cassandra is listening
    netstat -an | grep 9042
-   
+
    # Or with ss
    ss -tlnp | grep 9042
    ```
@@ -35,7 +35,7 @@ This guide helps you diagnose and fix common issues with async-cassandra.
    ```python
    # Wrong - using hostname without DNS
    cluster = AsyncCluster(['cassandra-server'])
-   
+
    # Right - use IP or ensure DNS works
    cluster = AsyncCluster(['192.168.1.10'])
    ```
@@ -44,7 +44,7 @@ This guide helps you diagnose and fix common issues with async-cassandra.
    ```python
    # Default port is 9042
    cluster = AsyncCluster(['localhost'], port=9042)
-   
+
    # If using custom port
    cluster = AsyncCluster(['localhost'], port=9043)
    ```
@@ -103,7 +103,7 @@ cluster = AsyncCluster(
 2. **Use paging for large results:**
    ```python
    from cassandra.query import SimpleStatement
-   
+
    statement = SimpleStatement(
        "SELECT * FROM large_table",
        fetch_size=100  # Fetch 100 rows at a time
@@ -154,7 +154,7 @@ await session.set_keyspace('my_keyspace')
    prepared = await session.prepare(
        "SELECT * FROM users WHERE id = ?"
    )
-   
+
    # Execute many times
    for user_id in user_ids:
        result = await session.execute(prepared, [user_id])
@@ -163,12 +163,12 @@ await session.set_keyspace('my_keyspace')
 2. **Batch related operations:**
    ```python
    from cassandra.query import BatchStatement
-   
+
    # Prepare the statement first
    insert_stmt = await session.prepare(
        "INSERT INTO table (id, data) VALUES (?, ?)"
    )
-   
+
    batch = BatchStatement()
    for item in items:
        batch.add(insert_stmt, [item.id, item.data])
@@ -178,7 +178,7 @@ await session.set_keyspace('my_keyspace')
 3. **Use connection warmup:**
    ```python
    from async_cassandra import ConnectionMonitor
-   
+
    monitor = ConnectionMonitor(session)
    await monitor.warmup_connections()
    ```
@@ -198,7 +198,7 @@ await session.set_keyspace('my_keyspace')
    all_rows = result.all()
    for row in all_rows:
        process(row)
-   
+
    # Good - processes one row at a time
    async for row in result:
        process(row)
@@ -226,7 +226,7 @@ await session.set_keyspace('my_keyspace')
    ```python
    # Wrong
    result = session.execute("SELECT * FROM users")
-   
+
    # Right
    result = await session.execute("SELECT * FROM users")
    ```
@@ -235,10 +235,10 @@ await session.set_keyspace('my_keyspace')
    ```python
    # Wrong - in Jupyter/IPython
    asyncio.run(main())
-   
+
    # Right - in Jupyter/IPython
    await main()
-   
+
    # Right - in scripts
    if __name__ == "__main__":
        asyncio.run(main())

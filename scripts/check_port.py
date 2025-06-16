@@ -4,7 +4,8 @@
 import socket
 import sys
 
-def check_port(host='localhost', port=9042, timeout=1):
+
+def check_port(host="localhost", port=9042, timeout=1):
     """Check if a port is open."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -15,10 +16,11 @@ def check_port(host='localhost', port=9042, timeout=1):
     except Exception:
         return False
 
+
 if __name__ == "__main__":
-    host = sys.argv[1] if len(sys.argv) > 1 else 'localhost'
+    host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 9042
-    
+
     if check_port(host, port):
         sys.exit(0)
     else:

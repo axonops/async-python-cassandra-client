@@ -2,7 +2,7 @@ import asyncio
 from asyncio import Future
 from typing import List, Union
 
-from cassandra.cluster import Session, ResponseFuture, _NOT_SET, EXEC_PROFILE_DEFAULT
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, ResponseFuture, Session
 from cassandra.query import PreparedStatement
 
 
@@ -10,6 +10,7 @@ class AsyncResultHandler:
     """
     This class receives asynchronous results from Cassandra queries and wraps the response in an asyncio.Future
     """
+
     fut: Future
     response_fut: ResponseFuture
     rows: List = []
@@ -32,16 +33,18 @@ class AsyncResultHandler:
         self.fut.get_loop().call_soon_threadsafe(self.fut.set_exception, exc)
 
 
-def execute_async(session: Session,
-                  statement: Union[str, PreparedStatement],
-                  parameters=None,
-                  trace=False,
-                  custom_payload=None,
-                  timeout=_NOT_SET,
-                  execution_profile=EXEC_PROFILE_DEFAULT,
-                  paging_state=None,
-                  host=None,
-                  execute_as=None) -> Future:
+def execute_async(
+    session: Session,
+    statement: Union[str, PreparedStatement],
+    parameters=None,
+    trace=False,
+    custom_payload=None,
+    timeout=_NOT_SET,
+    execution_profile=EXEC_PROFILE_DEFAULT,
+    paging_state=None,
+    host=None,
+    execute_as=None,
+) -> Future:
     """
     This function wraps session.execute_async() and returns an awaitable Future that will contain the list of rows
     in its result
@@ -56,6 +59,6 @@ def execute_async(session: Session,
             execution_profile,
             paging_state,
             host,
-            execute_as
+            execute_as,
         )
     ).fut

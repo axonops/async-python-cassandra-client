@@ -4,8 +4,19 @@
 set -e
 
 CONTAINER_NAME="async-cassandra-test-quick"
-CASSANDRA_IMAGE="cassandra:4.1"
+CASSANDRA_IMAGE="cassandra:5"
 PORT=9042
+
+# Cleanup handler
+cleanup() {
+    if [ "${CLEANUP_NEEDED:-0}" = "1" ]; then
+        echo "Caught signal, cleaning up..."
+        stop_cassandra
+    fi
+    exit 1
+}
+
+# Set trap for cleanup on script exit/interrupt (will be set conditionally)
 
 # Detect container runtime
 if command -v podman &> /dev/null; then
@@ -31,22 +42,22 @@ check_cassandra() {
 # Function to start Cassandra
 start_cassandra() {
     echo "Checking for Cassandra..."
-    
+
     # First check if ANY Cassandra is available
     if check_cassandra; then
         echo "Cassandra is already running and ready!"
         exit 0
     fi
-    
+
     # Check if our container exists but isn't responding
     if $CONTAINER_CMD ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
         echo "Container exists but not responding, removing..."
         $CONTAINER_CMD rm -f $CONTAINER_NAME 2>/dev/null || true
     fi
-    
+
     # Remove any existing container
     $CONTAINER_CMD rm -f $CONTAINER_NAME 2>/dev/null || true
-    
+
     # Start new container
     $CONTAINER_CMD run -d \
         --name $CONTAINER_NAME \
@@ -55,18 +66,22 @@ start_cassandra() {
         -e CASSANDRA_DC=datacenter1 \
         -e CASSANDRA_ENDPOINT_SNITCH=SimpleSnitch \
         $CASSANDRA_IMAGE
-    
+
+    # Mark that cleanup is needed if interrupted
+    CLEANUP_NEEDED=1
+
     # Wait for readiness
     echo "Waiting for Cassandra to be ready..."
     for i in {1..30}; do
         if check_cassandra; then
             echo "Cassandra is ready!"
+            CLEANUP_NEEDED=0
             exit 0
         fi
         echo -n "."
         sleep 1
     done
-    
+
     echo -e "\nTimeout waiting for Cassandra"
     exit 1
 }
@@ -82,7 +97,11 @@ stop_cassandra() {
 # Main logic
 case "${1:-start}" in
     start)
+        # Only set trap for start command
+        trap cleanup EXIT INT TERM
         start_cassandra
+        # Disable trap on successful start
+        trap - EXIT INT TERM
         ;;
     stop)
         stop_cassandra

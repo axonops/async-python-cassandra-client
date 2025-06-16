@@ -116,19 +116,19 @@ Example structure:
 async def test_new_performance_metric(benchmark_session):
     """
     Benchmark description.
-    
+
     GIVEN initial conditions
     WHEN operation is performed
     THEN performance should meet thresholds
     """
     thresholds = BenchmarkConfig.DEFAULT_THRESHOLDS
-    
+
     # Warm up
     # ... warm up code ...
-    
+
     # Measure performance
     # ... measurement code ...
-    
+
     # Verify thresholds
     assert metric < threshold, f"Metric {metric} exceeds threshold {threshold}"
 ```

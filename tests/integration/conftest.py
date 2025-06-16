@@ -60,6 +60,16 @@ def pytest_unconfigure(config):
         except Exception as e:
             print(f"Warning: Failed to stop containers: {e}")
 
+        # Also try to clean up using the shell scripts as a backup
+        try:
+            import subprocess
+
+            subprocess.run(
+                ["./scripts/manage_test_containers.sh", "kill"], capture_output=True, timeout=10
+            )
+        except Exception:
+            pass
+
 
 @pytest_asyncio.fixture(scope="function")
 async def cassandra_cluster():

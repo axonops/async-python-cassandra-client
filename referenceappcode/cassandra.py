@@ -1,14 +1,18 @@
-from ssl import PROTOCOL_TLS, SSLContext, CERT_REQUIRED
+from ssl import CERT_REQUIRED, PROTOCOL_TLS, SSLContext
 from threading import Lock
 from typing import Optional
 
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster, Session
-from cassandra.policies import ExponentialReconnectionPolicy, DCAwareRoundRobinPolicy, TokenAwarePolicy
+from cassandra.policies import (
+    DCAwareRoundRobinPolicy,
+    ExponentialReconnectionPolicy,
+    TokenAwarePolicy,
+)
 from cassandra.query import dict_factory
 
-from .retry_policy import LimitedRetryPolicy
 from ...config import config
+from .retry_policy import LimitedRetryPolicy
 
 _mu: Lock = Lock()
 _cluster: Optional[Cluster] = None
@@ -29,10 +33,12 @@ def connect():
     close()
 
     # Configure authentication
-    if config.cassandra_username == '':
+    if config.cassandra_username == "":
         auth_provider = None
     else:
-        auth_provider = PlainTextAuthProvider(username=config.cassandra_username, password=config.cassandra_password)
+        auth_provider = PlainTextAuthProvider(
+            username=config.cassandra_username, password=config.cassandra_password
+        )
 
     # Configure TLS options
     sslctx = None
@@ -42,11 +48,13 @@ def connect():
             sslctx.load_verify_locations(config.cassandra_tls_ca)
             sslctx.verify_mode = CERT_REQUIRED
         if config.cassandra_tls_crt and config.cassandra_tls_key:
-            sslctx.load_cert_chain(certfile=config.cassandra_tls_crt, keyfile=config.cassandra_tls_key)
+            sslctx.load_cert_chain(
+                certfile=config.cassandra_tls_crt, keyfile=config.cassandra_tls_key
+            )
 
     contact_points = []
     for host_port in config.cassandra_hosts:
-        contact_points.append(host_port.split(':')[0])
+        contact_points.append(host_port.split(":")[0])
 
     _cluster = Cluster(
         contact_points=contact_points,
@@ -55,7 +63,10 @@ def connect():
         reconnection_policy=ExponentialReconnectionPolicy(0.01, 0.2, 64),
         default_retry_policy=LimitedRetryPolicy(),
         ssl_context=sslctx,
-        load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy(local_dc=config.cassandra_dc)))
+        load_balancing_policy=TokenAwarePolicy(
+            DCAwareRoundRobinPolicy(local_dc=config.cassandra_dc)
+        ),
+    )
 
     _session = _cluster.connect(keyspace=config.cassandra_keyspace)
     _session.row_factory = dict_factory

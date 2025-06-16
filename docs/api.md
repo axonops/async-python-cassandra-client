@@ -412,7 +412,7 @@ AsyncRetryPolicy(max_retries: int = 3)
 #### `on_read_timeout`
 ```python
 def on_read_timeout(
-    query, consistency, required_responses, 
+    query, consistency, required_responses,
     received_responses, data_retrieved, retry_num
 ) -> Tuple[int, Optional[ConsistencyLevel]]
 ```
@@ -552,11 +552,11 @@ async def main():
         username='cassandra',
         password='cassandra'
     )
-    
+
     try:
         # Connect to cluster
         session = await cluster.connect()
-        
+
         # Create keyspace
         await session.execute("""
             CREATE KEYSPACE IF NOT EXISTS example
@@ -565,10 +565,10 @@ async def main():
                 'replication_factor': 1
             }
         """)
-        
+
         # Use keyspace
         await session.set_keyspace('example')
-        
+
         # Create table
         await session.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -577,26 +577,26 @@ async def main():
                 email TEXT
             )
         """)
-        
+
         # Prepare statement
         insert_stmt = await session.prepare(
             "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
         )
-        
+
         # Insert data
         user_id = uuid.uuid4()
         await session.execute(
             insert_stmt,
             [user_id, "John Doe", "john@example.com"]
         )
-        
+
         # Query data (prepare the statement first)
         select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
         result = await session.execute(select_stmt, [user_id])
-        
+
         user = result.one()
         print(f"User: {user['name']} ({user['email']})")
-        
+
     except ConnectionError as e:
         print(f"Connection failed: {e}")
     except QueryError as e:

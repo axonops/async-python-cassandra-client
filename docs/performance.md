@@ -35,7 +35,7 @@ graph LR
         W --> TP[Thread Pool]
         TP --> DB[(Cassandra)]
     end
-    
+
     Note[async-cassandra bridges async ↔ thread pool]
 ```
 
@@ -49,17 +49,17 @@ To understand the performance characteristics of async-cassandra in your specifi
 # Example benchmark setup
 async def benchmark_async(session, queries=1000):
     start = time.time()
-    
+
     # Prepare statement once before the benchmark
     select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    
+
     tasks = [
         session.execute(select_stmt, [uuid.uuid4()])
         for _ in range(queries)
     ]
-    
+
     await asyncio.gather(*tasks)
-    
+
     return time.time() - start
 ```
 
@@ -143,12 +143,12 @@ from cassandra.query import BatchStatement, BatchType
 # GOOD: Batch writes to same partition
 async def update_user_profile(user_id, updates):
     batch = BatchStatement(batch_type=BatchType.UNLOGGED)
-    
+
     # All these updates go to the same partition (user_id)
     batch.add("UPDATE users SET email = ? WHERE id = ?", (updates['email'], user_id))
     batch.add("UPDATE users SET name = ? WHERE id = ?", (updates['name'], user_id))
     batch.add("UPDATE users SET updated_at = ? WHERE id = ?", (datetime.now(), user_id))
-    
+
     await session.execute(batch)
 
 # BAD: Batch writes to different partitions - DON'T DO THIS!
@@ -163,7 +163,7 @@ async def bulk_update_users(updates):
     update_stmt = await session.prepare(
         "UPDATE users SET email = ? WHERE id = ?"
     )
-    
+
     # Execute concurrently, not in a batch!
     tasks = [
         session.execute(update_stmt, (email, user_id))
@@ -208,15 +208,15 @@ Leverage asyncio for parallel operations:
 async def process_users(user_ids):
     # Prepare statement once
     select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    
+
     # Fetch all users concurrently
     tasks = [
         session.execute(select_stmt, [uid])
         for uid in user_ids
     ]
-    
+
     results = await asyncio.gather(*tasks)
-    
+
     # Process results
     users = [result.one() for result in results]
     return users
@@ -230,12 +230,12 @@ Pre-warm connections at startup:
 async def warmup_connections(session, hosts=3, queries_per_host=10):
     """Pre-establish connections to all nodes."""
     warmup_query = "SELECT key FROM system.local"
-    
+
     tasks = [
         session.execute(warmup_query)
         for _ in range(hosts * queries_per_host)
     ]
-    
+
     await asyncio.gather(*tasks, return_exceptions=True)
 ```
 
@@ -343,7 +343,7 @@ class QueryMetrics:
     query_count: int = 0
     total_time: float = 0.0
     error_count: int = 0
-    
+
     @property
     def avg_latency(self) -> float:
         return self.total_time / self.query_count if self.query_count > 0 else 0
@@ -352,11 +352,11 @@ class MonitoredSession:
     def __init__(self, session: AsyncCassandraSession):
         self._session = session
         self._metrics: Dict[str, QueryMetrics] = {}
-    
+
     async def execute(self, query, parameters=None):
         query_str = query if isinstance(query, str) else "prepared"
         metrics = self._metrics.setdefault(query_str, QueryMetrics())
-        
+
         start = time.time()
         try:
             result = await self._session.execute(query, parameters)
@@ -366,7 +366,7 @@ class MonitoredSession:
         except Exception as e:
             metrics.error_count += 1
             raise
-    
+
     def get_metrics(self) -> Dict[str, QueryMetrics]:
         return self._metrics.copy()
 ```
@@ -377,7 +377,7 @@ class MonitoredSession:
 def log_cluster_metrics(cluster):
     """Log connection pool metrics."""
     metadata = cluster.metadata
-    
+
     for host in metadata.all_hosts():
         pool = cluster.get_connection_pool(host)
         if pool:

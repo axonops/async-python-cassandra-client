@@ -79,7 +79,7 @@ async def check_connection_health(session):
     """Check health of all connections"""
     healthy_hosts = []
     unhealthy_hosts = []
-    
+
     for host in session.cluster.metadata.all_hosts():
         try:
             # Use host-specific routing to test each connection
@@ -91,7 +91,7 @@ async def check_connection_health(session):
             healthy_hosts.append(host)
         except Exception as e:
             unhealthy_hosts.append((host, str(e)))
-    
+
     return {
         "healthy": len(healthy_hosts),
         "unhealthy": len(unhealthy_hosts),
@@ -108,11 +108,11 @@ from asyncio import Semaphore
 
 class RateLimitedSession:
     """Wrapper to limit concurrent requests per session"""
-    
+
     def __init__(self, session, max_concurrent=1000):
         self.session = session
         self.semaphore = Semaphore(max_concurrent)
-    
+
     async def execute(self, query, parameters=None, **kwargs):
         async with self.semaphore:
             return await self.session.execute(query, parameters, **kwargs)
@@ -127,13 +127,13 @@ cluster = AsyncCluster(
     contact_points=['localhost'],
     # Increase I/O threads for better concurrency
     executor_threads=4,  # Default is 2
-    
+
     # Keep connections alive
     idle_heartbeat_interval=30,  # Default is 30
-    
+
     # Connection timeout
     connect_timeout=10,  # Default is 5
-    
+
     # Control query timeout
     request_timeout=10  # Default is 10
 )
@@ -151,7 +151,7 @@ from cassandra.cluster import Host
 
 class ConnectionMonitor:
     """Monitor async-cassandra connection health and metrics"""
-    
+
     def __init__(self, session):
         self.session = session
         self.metrics = {
@@ -160,7 +160,7 @@ class ConnectionMonitor:
             "requests_failed": 0,
             "last_health_check": None
         }
-    
+
     async def get_connection_stats(self) -> Dict[str, Any]:
         """Get detailed connection statistics"""
         stats = {
@@ -169,7 +169,7 @@ class ConnectionMonitor:
             "protocol_version": self.session.cluster.protocol_version,
             "hosts": []
         }
-        
+
         for host in self.session.cluster.metadata.all_hosts():
             host_info = {
                 "address": str(host.address),
@@ -179,7 +179,7 @@ class ConnectionMonitor:
                 "release_version": host.release_version,
                 "connection_count": 1 if host.is_up else 0  # Always 1 for protocol v3+
             }
-            
+
             # Test connection latency
             if host.is_up:
                 try:
@@ -192,29 +192,29 @@ class ConnectionMonitor:
                 except Exception as e:
                     host_info["error"] = str(e)
                     host_info["latency_ms"] = None
-            
+
             stats["hosts"].append(host_info)
-        
+
         stats["total_connections"] = sum(1 for h in stats["hosts"] if h.get("is_up"))
         stats["app_metrics"] = self.metrics.copy()
-        
+
         return stats
-    
+
     async def continuous_monitoring(self, interval: int = 60):
         """Run continuous monitoring"""
         while True:
             try:
                 stats = await self.get_connection_stats()
                 self.metrics["last_health_check"] = stats["timestamp"]
-                
+
                 # Log or send to monitoring system
                 print(f"Connection Stats: {stats}")
-                
+
                 # Alert on issues
                 down_hosts = [h for h in stats["hosts"] if not h.get("is_up")]
                 if down_hosts:
                     print(f"WARNING: {len(down_hosts)} hosts are down")
-                
+
                 await asyncio.sleep(interval)
             except Exception as e:
                 print(f"Monitoring error: {e}")
