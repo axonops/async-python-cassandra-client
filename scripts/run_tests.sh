@@ -3,6 +3,11 @@
 
 set -e
 
+# Ensure we're in the project root directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT" || exit 1
+
 # Cleanup handler
 cleanup_on_exit() {
     local exit_code=$?
@@ -60,6 +65,8 @@ run_test_suite() {
     local test_command=$2
 
     print_status "info" "Running $suite_name..."
+    print_status "info" "Command: $test_command"
+    print_status "info" "Current directory: $(pwd)"
 
     if eval "$test_command"; then
         print_status "success" "$suite_name passed"
@@ -83,11 +90,14 @@ case "${1:-all}" in
 
     fastapi)
         ensure_cassandra
-        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v"
+        # Save current directory and restore it after
+        run_test_suite "FastAPI Integration Tests" "(cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v)"
         ;;
 
     bdd)
         ensure_cassandra
+        # Ensure we're in the project root
+        cd "${0%/*}/.." || exit 1
         run_test_suite "BDD Tests" "pytest tests/bdd -v"
         ;;
 
@@ -95,7 +105,9 @@ case "${1:-all}" in
         ensure_cassandra
         print_status "info" "Running critical tests as per"
         run_test_suite "Core Critical Tests" "pytest tests/unit -v -x -m 'critical'"
-        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v"
+        run_test_suite "FastAPI Integration Tests" "(cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v)"
+        # Ensure we're back in project root
+        cd "${0%/*}/.." || exit 1
         run_test_suite "BDD Critical Tests" "pytest tests/bdd -m 'critical' -v || true"
         ;;
 
@@ -113,7 +125,12 @@ case "${1:-all}" in
 
         run_test_suite "Unit Tests" "pytest tests/unit/ -v" || failed=1
         run_test_suite "Integration Tests" "pytest tests/integration/ -v -m integration" || failed=1
-        run_test_suite "FastAPI Integration Tests" "cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v" || failed=1
+
+        # Run FastAPI tests in subshell to preserve directory
+        run_test_suite "FastAPI Integration Tests" "(cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v)" || failed=1
+
+        # Ensure we're back in project root before BDD tests
+        cd "${0%/*}/.." || exit 1
         run_test_suite "BDD Tests" "pytest tests/bdd -v" || failed=1
 
         if [ $failed -eq 0 ]; then
