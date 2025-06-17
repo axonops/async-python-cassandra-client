@@ -471,30 +471,54 @@ class TestFastAPIReconnectionBDD:
                 # Minimal wait before next cycle
                 await asyncio.sleep(1)
 
-            print("\nThen: Application should remain stable")
+            print("\nThen: Application should remain stable and recover")
 
-            # Give time for any reconnection to stabilize
-            await asyncio.sleep(5)
+            # The FastAPI app has ConstantReconnectionPolicy with 2 second delay
+            # So it should recover automatically once Cassandra is available
+            print("Waiting for FastAPI app to automatically recover...")
+            recovery_start = time.time()
+            app_recovered = False
 
-            # Verify application is still functional
+            # Wait for the app to recover - checking via health endpoint and actual operations
+            while time.time() - recovery_start < 15:
+                try:
+                    # Test with a real operation
+                    test_user = {
+                        "name": "Recovery Test User",
+                        "email": "recovery@test.com",
+                        "age": 30,
+                    }
+                    response = await app_client.post("/users", json=test_user, timeout=3.0)
+                    if response.status_code == 201:
+                        app_recovered = True
+                        recovery_time = time.time() - recovery_start
+                        print(f"✓ App recovered and accepting requests (took {recovery_time:.1f}s)")
+                        break
+                    else:
+                        print(f"  - Got status {response.status_code}, waiting for recovery...")
+                except Exception as e:
+                    print(f"  - Still recovering: {type(e).__name__}")
+
+                await asyncio.sleep(1)
+
+            assert (
+                app_recovered
+            ), "FastAPI app should automatically recover when Cassandra is available"
+
+            # Verify health check also shows recovery
             health_response = await app_client.get("/health")
             assert health_response.status_code == 200
-            print("✓ Health endpoint responsive")
+            assert health_response.json()["cassandra_connected"] is True
+            print("✓ Health check confirms full recovery")
 
-            # Try to create a new user
-            final_user = {"name": "Post-Cycling User", "email": "postcycle@test.com", "age": 30}
-            response = await app_client.post("/users", json=final_user)
-            assert response.status_code == 201
-            print("✓ Can create users after rapid cycling")
-
-            # Verify streaming still works
+            # Verify streaming works after recovery
             stream_response = await app_client.get("/users/stream?limit=5")
             assert stream_response.status_code == 200
-            print("✓ Streaming functionality intact")
+            print("✓ Streaming functionality recovered")
 
             print("\n✅ Rapid connection cycling test completed!")
             print("   - Application remained stable during rapid cycling")
-            print("   - No apparent resource leaks or crashes")
-            print("   - Full functionality maintained")
+            print("   - Automatic recovery worked as expected")
+            print("   - All functionality restored after Cassandra recovery")
 
         run_async(test_scenario())

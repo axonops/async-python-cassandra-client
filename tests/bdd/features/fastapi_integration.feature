@@ -159,16 +159,16 @@ Feature: FastAPI Integration
     And shutdown should complete within 30 seconds
 
   @fastapi @middleware
-  Scenario: Middleware integration with async-cassandra
-    Given a middleware that logs Cassandra query metrics
+  Scenario: Track Cassandra query metrics in middleware
+    Given a middleware that tracks Cassandra query execution
     And a FastAPI application with async-cassandra
     And a running Cassandra cluster with test data
     And the FastAPI test client is initialized
-    And a user endpoint that queries Cassandra
-    When I make requests through the middleware
-    Then query count should be tracked per request
-    And query timing should be measured accurately
-    And middleware should not interfere with async operations
+    And endpoints that perform different numbers of queries
+    When I make requests to endpoints with varying query counts
+    Then the middleware should accurately count queries per request
+    And query execution time should be measured
+    And async operations should not be blocked by tracking
 
   @critical @fastapi @connection_failure
   Scenario: Handle Cassandra connection failures gracefully

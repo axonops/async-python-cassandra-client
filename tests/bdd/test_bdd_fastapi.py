@@ -137,9 +137,9 @@ def test_graceful_shutdown():
     pass
 
 
-@scenario("features/fastapi_integration.feature", "Middleware integration with async-cassandra")
-def test_middleware_integration():
-    """Test middleware integration."""
+@scenario("features/fastapi_integration.feature", "Track Cassandra query metrics in middleware")
+def test_track_cassandra_query_metrics():
+    """Test tracking Cassandra query metrics in middleware."""
     pass
 
 
@@ -215,6 +215,54 @@ def fastapi_app(fastapi_context):
         app.state.session = session
         fastapi_context["cluster"] = cluster
         fastapi_context["session"] = session
+
+        # If we need to track queries, wrap the execute method now
+        if fastapi_context.get("needs_query_tracking"):
+            import time
+
+            original_execute = app.state.session.execute
+
+            async def tracked_execute(query, *args, **kwargs):
+                """Wrapper to track query execution."""
+                start_time = time.time()
+                app.state.query_metrics["total_queries"] += 1
+
+                # Track which request this query belongs to
+                current_request_id = getattr(app.state, "current_request_id", None)
+                if current_request_id:
+                    if current_request_id not in app.state.query_metrics["queries_per_request"]:
+                        app.state.query_metrics["queries_per_request"][current_request_id] = 0
+                    app.state.query_metrics["queries_per_request"][current_request_id] += 1
+
+                try:
+                    result = await original_execute(query, *args, **kwargs)
+                    execution_time = time.time() - start_time
+
+                    # Track execution time
+                    if current_request_id:
+                        if current_request_id not in app.state.query_metrics["query_times"]:
+                            app.state.query_metrics["query_times"][current_request_id] = []
+                        app.state.query_metrics["query_times"][current_request_id].append(
+                            execution_time
+                        )
+
+                    return result
+                except Exception as e:
+                    execution_time = time.time() - start_time
+                    # Still track failed queries
+                    if (
+                        current_request_id
+                        and current_request_id in app.state.query_metrics["query_times"]
+                    ):
+                        app.state.query_metrics["query_times"][current_request_id].append(
+                            execution_time
+                        )
+                    raise e
+
+            # Store original for later restoration
+            tracked_execute.__wrapped__ = original_execute
+            app.state.session.execute = tracked_execute
+
         fastapi_context["startup_complete"] = True
 
         yield
@@ -232,9 +280,28 @@ def fastapi_app(fastapi_context):
     if fastapi_context.get("middleware_needed") and fastapi_context.get(
         "query_metrics_middleware_class"
     ):
-        app.state.query_metrics = {"requests": [], "queries_per_request": {}}
+        app.state.query_metrics = {
+            "requests": [],
+            "queries_per_request": {},
+            "query_times": {},
+            "total_queries": 0,
+        }
         app.add_middleware(fastapi_context["query_metrics_middleware_class"])
+
+        # Mark that we need to track queries after session is created
+        fastapi_context["needs_query_tracking"] = fastapi_context.get(
+            "track_query_execution", False
+        )
+
         fastapi_context["middleware_added"] = True
+    else:
+        # Initialize empty metrics anyway for the test
+        app.state.query_metrics = {
+            "requests": [],
+            "queries_per_request": {},
+            "query_times": {},
+            "total_queries": 0,
+        }
 
     # Add monitoring middleware if needed
     if fastapi_context.get("monitoring_setup_needed"):
@@ -298,7 +365,13 @@ def fastapi_app(fastapi_context):
 
         fastapi_context["monitoring_enabled"] = True
 
+    # Store the app in context
     fastapi_context["app"] = app
+
+    # If we already have a client, recreate it with the new app
+    if fastapi_context.get("client"):
+        fastapi_context["client"] = TestClient(app)
+        fastapi_context["client_entered"] = True
 
     # Initialize state
     app.state.cluster = None
@@ -397,6 +470,11 @@ def user_endpoint(fastapi_context):
     async def get_user(user_id: int):
         """Get user by ID."""
         session = app.state.session
+
+        # Track query count
+        if not hasattr(app.state, "total_queries"):
+            app.state.total_queries = 0
+        app.state.total_queries += 1
 
         result = await session.execute("SELECT * FROM users WHERE id = %s", [user_id])
 
@@ -688,33 +766,86 @@ def setup_heavy_load(fastapi_context):
     fastapi_context["load_test_endpoint_added"] = True
 
 
-@given("a middleware that logs Cassandra query metrics")
+@given("a middleware that tracks Cassandra query execution")
 def setup_query_metrics_middleware(fastapi_context):
-    """Setup query metrics middleware."""
+    """Setup middleware to track Cassandra queries."""
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
 
-    app = fastapi_context["app"]
-
-    # Initialize metrics storage
-    app.state.query_metrics = {"requests": [], "queries_per_request": {}}
-
     class QueryMetricsMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
-            # Track request
+            app = request.app
+            # Generate unique request ID
             request_id = len(app.state.query_metrics["requests"]) + 1
             app.state.query_metrics["requests"].append(request_id)
-            app.state.query_metrics["queries_per_request"][request_id] = 0
 
-            # Store request_id in request state for tracking
-            request.state.request_id = request_id
+            # Set current request ID for query tracking
+            app.state.current_request_id = request_id
 
-            response = await call_next(request)
-            return response
+            try:
+                response = await call_next(request)
+                return response
+            finally:
+                # Clear current request ID
+                app.state.current_request_id = None
 
-    # Mark that we need middleware, it will be added when creating the app
+    # Mark that we need middleware and query tracking
     fastapi_context["query_metrics_middleware_class"] = QueryMetricsMiddleware
     fastapi_context["middleware_needed"] = True
+    fastapi_context["track_query_execution"] = True
+
+
+@given("endpoints that perform different numbers of queries")
+def setup_endpoints_with_varying_queries(fastapi_context):
+    """Setup endpoints that perform different numbers of Cassandra queries."""
+    app = fastapi_context["app"]
+
+    @app.get("/no-queries")
+    async def no_queries():
+        """Endpoint that doesn't query Cassandra."""
+        return {"message": "No queries executed"}
+
+    @app.get("/single-query")
+    async def single_query():
+        """Endpoint that executes one query."""
+        session = app.state.session
+        result = await session.execute("SELECT now() FROM system.local")
+        return {"timestamp": str(result.one()[0])}
+
+    @app.get("/multiple-queries")
+    async def multiple_queries():
+        """Endpoint that executes multiple queries."""
+        session = app.state.session
+        results = []
+
+        # Execute 3 different queries
+        result1 = await session.execute("SELECT now() FROM system.local")
+        results.append(str(result1.one()[0]))
+
+        result2 = await session.execute("SELECT count(*) FROM products")
+        results.append(result2.one()[0])
+
+        result3 = await session.execute("SELECT * FROM products LIMIT 1")
+        results.append(1 if result3.one() else 0)
+
+        return {"query_count": 3, "results": results}
+
+    @app.get("/batch-queries/{count}")
+    async def batch_queries(count: int):
+        """Endpoint that executes a variable number of queries."""
+        if count > 10:
+            count = 10  # Limit to prevent abuse
+
+        session = app.state.session
+        results = []
+
+        for i in range(count):
+            result = await session.execute("SELECT * FROM products WHERE id = %s", [i])
+            results.append(result.one() is not None)
+
+        return {"requested_count": count, "executed_count": len(results)}
+
+    fastapi_context["query_endpoints_added"] = True
 
 
 @given("a healthy API with established connections")
@@ -729,7 +860,13 @@ def setup_healthy_api(fastapi_context):
             result = await session.execute("SELECT now() FROM system.local")
             return {"status": "healthy", "timestamp": str(result.one()[0])}
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)}
+            # Return 503 when Cassandra is unavailable
+            from cassandra import NoHostAvailable, OperationTimedOut, Unavailable
+
+            if isinstance(e, (NoHostAvailable, OperationTimedOut, Unavailable)):
+                raise HTTPException(status_code=503, detail="Database service unavailable")
+            # Return 500 for other errors
+            raise HTTPException(status_code=500, detail="Internal server error")
 
     fastapi_context["health_endpoint_added"] = True
 
@@ -935,11 +1072,19 @@ def setup_pagination_endpoint(fastapi_context):
             start_id = int(base64.b64decode(cursor).decode())
 
         # Query with limit + 1 to check if there's next page
-        # Order by id to ensure consistent pagination
-        result = await session.execute(
-            "SELECT * FROM products WHERE id > %s ORDER BY id LIMIT %s ALLOW FILTERING",
-            [start_id, limit + 1],
-        )
+        # Use token-based pagination for better performance and to avoid ALLOW FILTERING
+        if cursor:
+            # Use token-based pagination for subsequent pages
+            result = await session.execute(
+                "SELECT * FROM products WHERE token(id) > token(%s) LIMIT %s",
+                [start_id, limit + 1],
+            )
+        else:
+            # First page - no token restriction needed
+            result = await session.execute(
+                "SELECT * FROM products LIMIT %s",
+                [limit + 1],
+            )
 
         items = list(result)
         has_next = len(items) > limit
@@ -1067,18 +1212,46 @@ def trigger_shutdown_signal(fastapi_context):
     # For testing, we'll simulate by marking shutdown requested
 
 
-@when("I make requests through the middleware")
-def make_middleware_requests(fastapi_context):
-    """Make requests to test middleware."""
-    # The middleware should already be added
-    responses = []
+@when("I make requests to endpoints with varying query counts")
+def make_requests_with_varying_queries(fastapi_context):
+    """Make requests to endpoints that execute different numbers of queries."""
+    client = fastapi_context["client"]
+    app = fastapi_context["app"]
 
-    # Make several requests to test metrics
-    for i in range(5):
-        response = fastapi_context["client"].get("/users/1")
-        responses.append(response)
+    # Reset metrics before testing
+    app.state.query_metrics["total_queries"] = 0
+    app.state.query_metrics["requests"].clear()
+    app.state.query_metrics["queries_per_request"].clear()
+    app.state.query_metrics["query_times"].clear()
 
-    fastapi_context["middleware_responses"] = responses
+    test_requests = []
+
+    # Test 1: No queries
+    response = client.get("/no-queries")
+    test_requests.append({"endpoint": "/no-queries", "response": response, "expected_queries": 0})
+
+    # Test 2: Single query
+    response = client.get("/single-query")
+    test_requests.append({"endpoint": "/single-query", "response": response, "expected_queries": 1})
+
+    # Test 3: Multiple queries (3)
+    response = client.get("/multiple-queries")
+    test_requests.append(
+        {"endpoint": "/multiple-queries", "response": response, "expected_queries": 3}
+    )
+
+    # Test 4: Batch queries (5)
+    response = client.get("/batch-queries/5")
+    test_requests.append(
+        {"endpoint": "/batch-queries/5", "response": response, "expected_queries": 5}
+    )
+
+    # Test 5: Another single query to verify tracking continues
+    response = client.get("/single-query")
+    test_requests.append({"endpoint": "/single-query", "response": response, "expected_queries": 1})
+
+    fastapi_context["test_requests"] = test_requests
+    fastapi_context["metrics"] = app.state.query_metrics
 
 
 @when("Cassandra becomes temporarily unavailable")
@@ -1372,32 +1545,109 @@ def verify_shutdown_timeout(timeout, fastapi_context):
     assert timeout >= 30
 
 
-@then("query count should be tracked per request")
+@then("the middleware should accurately count queries per request")
 def verify_query_count_tracking(fastapi_context):
-    """Verify query count is tracked."""
-    app = fastapi_context["app"]
+    """Verify query count is accurately tracked per request."""
+    test_requests = fastapi_context["test_requests"]
+    metrics = fastapi_context["metrics"]
 
-    # Check that metrics were collected
-    if hasattr(app.state, "query_metrics"):
-        assert len(app.state.query_metrics["requests"]) > 0
-        # Each request should have query count tracked
-        assert len(app.state.query_metrics["queries_per_request"]) > 0
+    # Verify all requests succeeded
+    for req in test_requests:
+        assert req["response"].status_code == 200, f"Request to {req['endpoint']} failed"
+
+    # Verify we tracked the right number of requests
+    assert len(metrics["requests"]) == len(test_requests), "Request count mismatch"
+
+    # Verify query counts per request
+    for i, req in enumerate(test_requests):
+        request_id = i + 1  # Request IDs start at 1
+        actual_queries = metrics["queries_per_request"].get(request_id, 0)
+        expected_queries = req["expected_queries"]
+
+        assert actual_queries == expected_queries, (
+            f"Request {request_id} to {req['endpoint']}: "
+            f"expected {expected_queries} queries, got {actual_queries}"
+        )
+
+    # Verify total query count
+    expected_total = sum(req["expected_queries"] for req in test_requests)
+    assert (
+        metrics["total_queries"] == expected_total
+    ), f"Total queries mismatch: expected {expected_total}, got {metrics['total_queries']}"
 
 
-@then("query timing should be measured accurately")
+@then("query execution time should be measured")
 def verify_query_timing(fastapi_context):
-    """Verify query timing is measured."""
-    # Verify responses were successful
-    assert all(r.status_code == 200 for r in fastapi_context.get("middleware_responses", []))
+    """Verify query execution time is measured."""
+    metrics = fastapi_context["metrics"]
+    test_requests = fastapi_context["test_requests"]
+
+    # Verify timing data was collected for requests with queries
+    for i, req in enumerate(test_requests):
+        request_id = i + 1
+        expected_queries = req["expected_queries"]
+
+        if expected_queries > 0:
+            # Should have timing data for this request
+            assert (
+                request_id in metrics["query_times"]
+            ), f"No timing data for request {request_id} to {req['endpoint']}"
+
+            times = metrics["query_times"][request_id]
+            assert (
+                len(times) == expected_queries
+            ), f"Expected {expected_queries} timing entries, got {len(times)}"
+
+            # Verify all times are reasonable (between 0 and 1 second)
+            for time_val in times:
+                assert 0 < time_val < 1.0, f"Unreasonable query time: {time_val}s"
+        else:
+            # No queries, so no timing data expected
+            assert (
+                request_id not in metrics["query_times"]
+                or len(metrics["query_times"][request_id]) == 0
+            )
 
 
-@then("middleware should not interfere with async operations")
+@then("async operations should not be blocked by tracking")
 def verify_middleware_no_interference(fastapi_context):
-    """Verify middleware doesn't interfere."""
-    # All requests should complete successfully
-    responses = fastapi_context.get("middleware_responses", [])
-    assert len(responses) == 5
-    assert all(r.status_code == 200 for r in responses)
+    """Verify middleware doesn't block async operations."""
+    test_requests = fastapi_context["test_requests"]
+
+    # All requests should have completed successfully
+    assert all(req["response"].status_code == 200 for req in test_requests)
+
+    # Verify concurrent capability by checking response times
+    # The middleware tracking should add minimal overhead
+    import time
+
+    client = fastapi_context["client"]
+
+    # Time a request without tracking (remove the monkey patch temporarily)
+    app = fastapi_context["app"]
+    tracked_execute = app.state.session.execute
+    original_execute = getattr(tracked_execute, "__wrapped__", None)
+
+    if original_execute:
+        # Temporarily restore original
+        app.state.session.execute = original_execute
+        start = time.time()
+        response = client.get("/single-query")
+        baseline_time = time.time() - start
+        assert response.status_code == 200
+
+        # Restore tracking
+        app.state.session.execute = tracked_execute
+
+        # Time with tracking
+        start = time.time()
+        response = client.get("/single-query")
+        tracked_time = time.time() - start
+        assert response.status_code == 200
+
+        # Tracking should add less than 50% overhead
+        overhead = (tracked_time - baseline_time) / baseline_time
+        assert overhead < 0.5, f"Tracking overhead too high: {overhead:.2%}"
 
 
 @then("API should return 503 Service Unavailable")

@@ -17,6 +17,7 @@ from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
 
 # Import Cassandra driver exceptions for proper error detection
 from cassandra.cluster import NoHostAvailable
+from cassandra.policies import ConstantReconnectionPolicy
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -113,10 +114,12 @@ async def lifespan(app: FastAPI):
     global session, cluster
 
     try:
-        # Startup - connect to Cassandra
+        # Startup - connect to Cassandra with aggressive reconnection policy
         cluster = AsyncCluster(
             contact_points=os.getenv("CASSANDRA_HOSTS", "localhost").split(","),
             port=int(os.getenv("CASSANDRA_PORT", "9042")),
+            reconnection_policy=ConstantReconnectionPolicy(delay=2.0),  # Reconnect every 2 seconds
+            connect_timeout=10.0,  # Quick connection timeout
         )
         session = await cluster.connect()
     except Exception as e:
