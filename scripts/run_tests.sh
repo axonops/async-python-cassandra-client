@@ -15,8 +15,7 @@ cleanup_on_exit() {
     if [ $exit_code -ne 0 ] && [ "${KEEP_CONTAINERS:-0}" != "1" ] && [ "${CLEANUP_DONE:-0}" != "1" ]; then
         export CLEANUP_DONE=1
         echo "Cleaning up containers after test failure..."
-        ./scripts/manage_test_containers.sh kill 2>/dev/null || true
-        ./scripts/quick_cassandra.sh stop 2>/dev/null || true
+        make cassandra-stop 2>/dev/null || true
     fi
     exit $exit_code
 }
@@ -51,11 +50,13 @@ print_status() {
 
 # Function to ensure Cassandra is running
 ensure_cassandra() {
-    if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then
-        print_status "info" "Cassandra not running, starting container..."
-        ./scripts/quick_cassandra.sh start
+    # The cassandra-wait target will start Cassandra if needed
+    print_status "info" "Ensuring Cassandra is ready..."
+    if make cassandra-wait; then
+        print_status "success" "Cassandra is ready"
     else
-        print_status "success" "Cassandra is already running"
+        print_status "error" "Failed to start Cassandra"
+        exit 1
     fi
 }
 
@@ -143,8 +144,7 @@ case "${1:-all}" in
 
     clean)
         print_status "info" "Cleaning up test containers..."
-        ./scripts/manage_test_containers.sh kill
-        ./scripts/quick_cassandra.sh stop 2>/dev/null || true
+        make cassandra-stop 2>/dev/null || true
         print_status "success" "Cleanup complete"
         ;;
 

@@ -20,219 +20,140 @@ class TestContextManagerSafetyIntegration:
     """Test context manager safety with real Cassandra connections."""
 
     @pytest.mark.asyncio
-    async def test_session_remains_open_after_query_error(self, cassandra_cluster):
+    async def test_session_remains_open_after_query_error(self, cassandra_session):
         """
         Test that session remains usable after a query error occurs.
         """
-        cluster = AsyncCluster(["localhost"])
-        session = await cluster.connect()
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
 
-        try:
-            # Create test keyspace and table
-            await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_context_safety
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
-            )
-            await session.set_keyspace("test_context_safety")
+        # Try a bad query
+        with pytest.raises(InvalidRequest):
+            await cassandra_session.execute("SELECT * FROM non_existent_table")
 
-            await session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id UUID PRIMARY KEY,
-                    name TEXT
-                )
-                """
-            )
+        # Session should still be usable
+        user_id = uuid.uuid4()
+        await cassandra_session.execute(
+            f"INSERT INTO {users_table} (id, name) VALUES (%s, %s)", [user_id, "Test User"]
+        )
 
-            # Try a bad query
-            with pytest.raises(InvalidRequest):
-                await session.execute("SELECT * FROM non_existent_table")
-
-            # Session should still be usable
-            user_id = uuid.uuid4()
-            await session.execute(
-                "INSERT INTO users (id, name) VALUES (%s, %s)", [user_id, "Test User"]
-            )
-
-            # Verify insert worked
-            result = await session.execute("SELECT * FROM users WHERE id = %s", [user_id])
-            row = result.one()
-            assert row.name == "Test User"
-
-        finally:
-            await session.execute("DROP KEYSPACE IF EXISTS test_context_safety")
-            await session.close()
-            await cluster.shutdown()
+        # Verify insert worked
+        result = await cassandra_session.execute(
+            f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
+        )
+        row = result.one()
+        assert row.name == "Test User"
 
     @pytest.mark.asyncio
-    async def test_streaming_error_doesnt_close_session(self, cassandra_cluster):
+    async def test_streaming_error_doesnt_close_session(self, cassandra_session):
         """
         Test that an error during streaming doesn't close the session.
         """
-        cluster = AsyncCluster(["localhost"])
-        session = await cluster.connect()
+        # Create test table
+        await cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_stream_data (
+                id UUID PRIMARY KEY,
+                value INT
+            )
+            """
+        )
 
+        # Insert some data
+        for i in range(10):
+            await cassandra_session.execute(
+                "INSERT INTO test_stream_data (id, value) VALUES (%s, %s)", [uuid.uuid4(), i]
+            )
+
+        # Stream with an error (simulate by using bad query)
         try:
-            # Create test data
-            await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_stream_safety
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
-            )
-            await session.set_keyspace("test_stream_safety")
-
-            await session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS data (
-                    id UUID PRIMARY KEY,
-                    value INT
-                )
-                """
-            )
-
-            # Insert some data
-            for i in range(10):
-                await session.execute(
-                    "INSERT INTO data (id, value) VALUES (%s, %s)", [uuid.uuid4(), i]
-                )
-
-            # Stream with an error (simulate by using bad query)
-            try:
-                async with await session.execute_stream(
-                    "SELECT * FROM non_existent_table"
-                ) as stream:
-                    async for row in stream:
-                        pass
-            except Exception:
-                pass  # Expected
-
-            # Session should still work
-            result = await session.execute("SELECT COUNT(*) FROM data")
-            assert result.one()[0] == 10
-
-            # Try another streaming query - should work
-            count = 0
-            async with await session.execute_stream("SELECT * FROM data") as stream:
+            async with await cassandra_session.execute_stream(
+                "SELECT * FROM non_existent_table"
+            ) as stream:
                 async for row in stream:
-                    count += 1
-            assert count == 10
+                    pass
+        except Exception:
+            pass  # Expected
 
-        finally:
-            await session.execute("DROP KEYSPACE IF EXISTS test_stream_safety")
-            await session.close()
-            await cluster.shutdown()
+        # Session should still work
+        result = await cassandra_session.execute("SELECT COUNT(*) FROM test_stream_data")
+        assert result.one()[0] == 10
+
+        # Try another streaming query - should work
+        count = 0
+        async with await cassandra_session.execute_stream(
+            "SELECT * FROM test_stream_data"
+        ) as stream:
+            async for row in stream:
+                count += 1
+        assert count == 10
 
     @pytest.mark.asyncio
-    async def test_concurrent_streaming_sessions(self, cassandra_cluster):
+    async def test_concurrent_streaming_sessions(self, cassandra_session, cassandra_cluster):
         """
         Test that multiple sessions can stream concurrently without interference.
         """
-        cluster = AsyncCluster(["localhost"])
-
-        try:
-            # Create test data
-            setup_session = await cluster.connect()
-            await setup_session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_concurrent_streams
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
+        # Create test table
+        await cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_concurrent_data (
+                partition INT,
+                id UUID,
+                value TEXT,
+                PRIMARY KEY (partition, id)
             )
-            await setup_session.set_keyspace("test_concurrent_streams")
+            """
+        )
 
-            await setup_session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS data (
-                    partition INT,
-                    id UUID,
-                    value TEXT,
-                    PRIMARY KEY (partition, id)
+        # Insert data in different partitions
+        for partition in range(3):
+            for i in range(100):
+                await cassandra_session.execute(
+                    "INSERT INTO test_concurrent_data (partition, id, value) VALUES (%s, %s, %s)",
+                    [partition, uuid.uuid4(), f"value_{partition}_{i}"],
                 )
-                """
-            )
 
-            # Insert data in different partitions
-            for partition in range(3):
-                for i in range(100):
-                    await setup_session.execute(
-                        "INSERT INTO data (partition, id, value) VALUES (%s, %s, %s)",
-                        [partition, uuid.uuid4(), f"value_{partition}_{i}"],
-                    )
+        # Stream from multiple sessions concurrently
+        async def stream_partition(partition_id):
+            # Create new session and connect to the shared keyspace
+            session = await cassandra_cluster.connect()
+            await session.set_keyspace("integration_test")
+            try:
+                count = 0
+                config = StreamConfig(fetch_size=10)
 
-            await setup_session.close()
+                query = "SELECT * FROM test_concurrent_data WHERE partition = %s"
+                async with await session.execute_stream(
+                    query, [partition_id], stream_config=config
+                ) as stream:
+                    async for row in stream:
+                        assert row.value.startswith(f"value_{partition_id}_")
+                        count += 1
 
-            # Stream from multiple sessions concurrently
-            async def stream_partition(partition_id):
-                session = await cluster.connect("test_concurrent_streams")
-                try:
-                    count = 0
-                    config = StreamConfig(fetch_size=10)
+                return count
+            finally:
+                await session.close()
 
-                    query = "SELECT * FROM data WHERE partition = %s"
-                    async with await session.execute_stream(
-                        query, [partition_id], stream_config=config
-                    ) as stream:
-                        async for row in stream:
-                            assert row.value.startswith(f"value_{partition_id}_")
-                            count += 1
+        # Run streams concurrently
+        results = await asyncio.gather(
+            stream_partition(0), stream_partition(1), stream_partition(2)
+        )
 
-                    return count
-                finally:
-                    await session.close()
-
-            # Run streams concurrently
-            results = await asyncio.gather(
-                stream_partition(0), stream_partition(1), stream_partition(2)
-            )
-
-            # Each partition should have 100 rows
-            assert all(count == 100 for count in results)
-
-        finally:
-            # Cleanup
-            cleanup_session = await cluster.connect()
-            await cleanup_session.execute("DROP KEYSPACE IF EXISTS test_concurrent_streams")
-            await cleanup_session.close()
-            await cluster.shutdown()
+        # Each partition should have 100 rows
+        assert all(count == 100 for count in results)
 
     @pytest.mark.asyncio
     async def test_session_context_manager_with_streaming(self, cassandra_cluster):
         """
         Test using session context manager with streaming operations.
         """
-        cluster = AsyncCluster(["localhost"])
-
         try:
-            # Setup
-            setup_session = await cluster.connect()
-            await setup_session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_session_context
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
-            )
-            await setup_session.close()
-
             # Use session in context manager
-            async with await cluster.connect("test_session_context") as session:
+            async with await cassandra_cluster.connect() as session:
+                await session.set_keyspace("integration_test")
                 await session.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS data (
+                    CREATE TABLE IF NOT EXISTS test_session_ctx_data (
                         id UUID PRIMARY KEY,
                         value TEXT
                     )
@@ -242,12 +163,15 @@ class TestContextManagerSafetyIntegration:
                 # Insert data
                 for i in range(50):
                     await session.execute(
-                        "INSERT INTO data (id, value) VALUES (%s, %s)", [uuid.uuid4(), f"value_{i}"]
+                        "INSERT INTO test_session_ctx_data (id, value) VALUES (%s, %s)",
+                        [uuid.uuid4(), f"value_{i}"],
                     )
 
                 # Stream data
                 count = 0
-                async with await session.execute_stream("SELECT * FROM data") as stream:
+                async with await session.execute_stream(
+                    "SELECT * FROM test_session_ctx_data"
+                ) as stream:
                     async for row in stream:
                         count += 1
 
@@ -262,14 +186,13 @@ class TestContextManagerSafetyIntegration:
             pass
 
         # Cluster should still be usable
-        verify_session = await cluster.connect("test_session_context")
-        result = await verify_session.execute("SELECT COUNT(*) FROM data")
+        verify_session = await cassandra_cluster.connect()
+        await verify_session.set_keyspace("integration_test")
+        result = await verify_session.execute("SELECT COUNT(*) FROM test_session_ctx_data")
         assert result.one()[0] == 50
 
         # Cleanup
-        await verify_session.execute("DROP KEYSPACE IF EXISTS test_session_context")
         await verify_session.close()
-        await cluster.shutdown()
 
     @pytest.mark.asyncio
     async def test_cluster_context_manager_multiple_sessions(self, cassandra_cluster):
@@ -307,85 +230,70 @@ class TestContextManagerSafetyIntegration:
             await cluster.connect()
 
     @pytest.mark.asyncio
-    async def test_nested_streaming_contexts(self, cassandra_cluster):
+    async def test_nested_streaming_contexts(self, cassandra_session):
         """
         Test nested streaming context managers.
         """
-        cluster = AsyncCluster(["localhost"])
-        session = await cluster.connect()
-
-        try:
-            # Setup
-            await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_nested_streams
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
-                """
+        # Create test tables
+        await cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_nested_categories (
+                id UUID PRIMARY KEY,
+                name TEXT
             )
-            await session.set_keyspace("test_nested_streams")
+            """
+        )
 
-            await session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS categories (
-                    id UUID PRIMARY KEY,
-                    name TEXT
-                )
-                """
+        await cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_nested_items (
+                category_id UUID,
+                id UUID,
+                name TEXT,
+                PRIMARY KEY (category_id, id)
             )
+            """
+        )
 
-            await session.execute(
-                """
-                CREATE TABLE IF NOT EXISTS items (
-                    category_id UUID,
-                    id UUID,
-                    name TEXT,
-                    PRIMARY KEY (category_id, id)
-                )
-                """
+        # Insert test data
+        categories = []
+        for i in range(3):
+            cat_id = uuid.uuid4()
+            categories.append(cat_id)
+            await cassandra_session.execute(
+                "INSERT INTO test_nested_categories (id, name) VALUES (%s, %s)",
+                [cat_id, f"Category {i}"],
             )
 
-            # Insert test data
-            categories = []
-            for i in range(3):
-                cat_id = uuid.uuid4()
-                categories.append(cat_id)
-                await session.execute(
-                    "INSERT INTO categories (id, name) VALUES (%s, %s)", [cat_id, f"Category {i}"]
+            # Insert items for this category
+            for j in range(5):
+                await cassandra_session.execute(
+                    "INSERT INTO test_nested_items (category_id, id, name) VALUES (%s, %s, %s)",
+                    [cat_id, uuid.uuid4(), f"Item {i}-{j}"],
                 )
 
-                # Insert items for this category
-                for j in range(5):
-                    await session.execute(
-                        "INSERT INTO items (category_id, id, name) VALUES (%s, %s, %s)",
-                        [cat_id, uuid.uuid4(), f"Item {i}-{j}"],
-                    )
+        # Nested streaming
+        category_count = 0
+        item_count = 0
 
-            # Nested streaming
-            category_count = 0
-            item_count = 0
+        # Stream categories
+        async with await cassandra_session.execute_stream(
+            "SELECT * FROM test_nested_categories"
+        ) as cat_stream:
+            async for category in cat_stream:
+                category_count += 1
 
-            # Stream categories
-            async with await session.execute_stream("SELECT * FROM categories") as cat_stream:
-                async for category in cat_stream:
-                    category_count += 1
+                # For each category, stream its items
+                query = "SELECT * FROM test_nested_items WHERE category_id = %s"
+                async with await cassandra_session.execute_stream(
+                    query, [category.id]
+                ) as item_stream:
+                    async for item in item_stream:
+                        item_count += 1
 
-                    # For each category, stream its items
-                    query = "SELECT * FROM items WHERE category_id = %s"
-                    async with await session.execute_stream(query, [category.id]) as item_stream:
-                        async for item in item_stream:
-                            item_count += 1
+        assert category_count == 3
+        assert item_count == 15  # 3 categories * 5 items each
 
-            assert category_count == 3
-            assert item_count == 15  # 3 categories * 5 items each
-
-            # Session should still be usable
-            result = await session.execute("SELECT COUNT(*) FROM categories")
-            assert result.one()[0] == 3
-
-        finally:
-            await session.execute("DROP KEYSPACE IF EXISTS test_nested_streams")
-            await session.close()
-            await cluster.shutdown()
+        # Session should still be usable
+        result = await cassandra_session.execute("SELECT COUNT(*) FROM test_nested_categories")
+        assert result.one()[0] == 3

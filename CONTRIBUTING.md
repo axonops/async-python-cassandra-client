@@ -100,9 +100,10 @@ Here's how to set up `async-python-cassandra-client` for local development:
    mypy src
 
    # Run tests
-   pytest tests/unit  # Unit tests only
-   pytest tests/integration  # Integration tests (requires Docker)
-   pytest  # All tests
+   make test-unit  # Unit tests only (no Cassandra needed)
+   make test-integration  # Integration tests (starts Cassandra automatically)
+   make test  # All tests except stress tests
+   make test-all  # Complete test suite including linting
    ```
 
 7. Commit your changes and push your branch to GitHub:
@@ -133,11 +134,11 @@ Before you submit a pull request, check that it meets these guidelines:
 # Install test dependencies
 pip install -e ".[test]"
 
-# Run unit tests
-pytest tests/unit -v
+# Run unit tests (no Cassandra needed)
+make test-unit
 
-# Run integration tests (requires Docker)
-pytest tests/integration -v
+# Run integration tests (automatically starts Cassandra)
+make test-integration
 
 # Run specific test file
 pytest tests/unit/test_session.py -v
@@ -146,13 +147,26 @@ pytest tests/unit/test_session.py -v
 pytest --cov=src/async_cassandra --cov-report=html
 ```
 
-### Running Cassandra for Integration Tests
+### Cassandra Management for Testing
 
-Integration tests require a running Cassandra instance. The easiest way is using Docker:
+Integration tests require a running Cassandra instance. The test infrastructure handles this automatically:
 
 ```bash
-docker run -d --name cassandra-test -p 9042:9042 cassandra:4.1
+# Automatically handled by test commands:
+make test-integration  # Starts Cassandra if needed
+make test             # Starts Cassandra if needed
+
+# Manual Cassandra management:
+make cassandra-start  # Start Cassandra container
+make cassandra-stop   # Stop and remove container
+make cassandra-status # Check if Cassandra is running
+
+# Using your own Cassandra instance:
+export CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2
+make test-integration
 ```
+
+The test infrastructure supports both Docker and Podman automatically.
 
 ## Code Style
 

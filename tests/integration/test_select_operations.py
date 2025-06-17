@@ -19,10 +19,13 @@ class TestSelectOperations:
     @pytest.mark.asyncio
     async def test_select_with_consistency_levels(self, cassandra_session):
         """Test SELECT queries with different consistency levels."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert test data
         user_id = uuid.uuid4()
         await cassandra_session.execute(
-            "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
             [user_id, "Test User", "test@example.com", 25],
         )
 
@@ -35,7 +38,7 @@ class TestSelectOperations:
 
         for cl in consistency_levels:
             statement = SimpleStatement(
-                "SELECT * FROM users WHERE id = %s",
+                f"SELECT * FROM {users_table} WHERE id = %s",
                 consistency_level=cl,
             )
             result = await cassandra_session.execute(statement, [user_id])
@@ -49,11 +52,14 @@ class TestSelectOperations:
     @pytest.mark.asyncio
     async def test_select_with_large_result_set(self, cassandra_session):
         """Test SELECT with large result sets to verify paging and retries work."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert many rows
         insert_tasks = []
         for i in range(1000):
             task = cassandra_session.execute(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [uuid.uuid4(), f"User {i}", f"user{i}@example.com", 20 + (i % 50)],
             )
             insert_tasks.append(task)
@@ -64,7 +70,7 @@ class TestSelectOperations:
 
         # Query with small fetch size to test paging
         statement = SimpleStatement(
-            "SELECT * FROM users WHERE age >= 20 AND age <= 30 ALLOW FILTERING",
+            f"SELECT * FROM {users_table} WHERE age >= 20 AND age <= 30 ALLOW FILTERING",
             fetch_size=50,
         )
         result = await cassandra_session.execute(statement)
@@ -80,15 +86,18 @@ class TestSelectOperations:
     @pytest.mark.asyncio
     async def test_select_with_prepared_statements(self, cassandra_session):
         """Test SELECT retry behavior with prepared statements."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Prepare the statement
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
         # Insert and query multiple times
         for i in range(10):
             user_id = uuid.uuid4()
             # Insert
             await cassandra_session.execute(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [user_id, f"User {i}", f"user{i}@test.com", 25 + i],
             )
 
@@ -104,19 +113,24 @@ class TestSelectOperations:
     @pytest.mark.asyncio
     async def test_concurrent_selects(self, cassandra_session):
         """Test concurrent SELECT queries to verify retry mechanism under load."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert test data
         user_ids = []
         for i in range(100):
             user_id = uuid.uuid4()
             user_ids.append(user_id)
             await cassandra_session.execute(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [user_id, f"Concurrent User {i}", f"concurrent{i}@test.com", 30],
             )
 
         # Execute many concurrent selects
         async def select_user(user_id):
-            result = await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
+            result = await cassandra_session.execute(
+                f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
+            )
             rows = []
             async for row in result:
                 rows.append(row)
@@ -138,9 +152,12 @@ class TestSelectOperations:
     @pytest.mark.asyncio
     async def test_select_non_existent_data(self, cassandra_session):
         """Test SELECT behavior when querying non-existent data."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Query for non-existent user
         result = await cassandra_session.execute(
-            "SELECT * FROM users WHERE id = %s", [uuid.uuid4()]
+            f"SELECT * FROM {users_table} WHERE id = %s", [uuid.uuid4()]
         )
 
         rows = []

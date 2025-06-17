@@ -22,6 +22,22 @@ def generate_unique_table(prefix: str = "table") -> str:
     return f"{prefix}_{unique_id}"
 
 
+async def create_test_table(
+    session, table_name: Optional[str] = None, schema: str = "(id int PRIMARY KEY, data text)"
+) -> str:
+    """Create a test table with the given schema and register it for cleanup."""
+    if table_name is None:
+        table_name = generate_unique_table()
+
+    await session.execute(f"CREATE TABLE IF NOT EXISTS {table_name} {schema}")
+
+    # Register table for cleanup if session tracks created tables
+    if hasattr(session, "_created_tables"):
+        session._created_tables.append(table_name)
+
+    return table_name
+
+
 async def create_test_keyspace(session, keyspace: Optional[str] = None) -> str:
     """Create a test keyspace with proper replication."""
     if keyspace is None:
@@ -115,22 +131,33 @@ async def run_with_timeout(coro, timeout: float):
 class TestTableManager:
     """Context manager for creating and cleaning up test tables."""
 
-    def __init__(self, session, keyspace: Optional[str] = None):
+    def __init__(self, session, keyspace: Optional[str] = None, use_shared_keyspace: bool = False):
         self.session = session
         self.keyspace = keyspace or generate_unique_keyspace()
         self.tables = []
+        self.use_shared_keyspace = use_shared_keyspace
 
     async def __aenter__(self):
-        await create_test_keyspace(self.session, self.keyspace)
-        await self.session.execute(f"USE {self.keyspace}")
+        if not self.use_shared_keyspace:
+            await create_test_keyspace(self.session, self.keyspace)
+            await self.session.execute(f"USE {self.keyspace}")
+        # If using shared keyspace, assume it's already set on the session
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        # Clean up tables and keyspace
-        try:
-            await cleanup_keyspace(self.session, self.keyspace)
-        except Exception:
-            pass
+        # Clean up tables
+        for table in self.tables:
+            try:
+                await self.session.execute(f"DROP TABLE IF EXISTS {table}")
+            except Exception:
+                pass
+
+        # Only clean up keyspace if we created it
+        if not self.use_shared_keyspace:
+            try:
+                await cleanup_keyspace(self.session, self.keyspace)
+            except Exception:
+                pass
 
     async def create_table(
         self, table_name: Optional[str] = None, schema: str = "(id int PRIMARY KEY, data text)"

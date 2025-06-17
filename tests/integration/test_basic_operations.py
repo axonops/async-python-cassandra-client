@@ -5,6 +5,7 @@ Integration tests for basic Cassandra operations.
 import uuid
 
 import pytest
+from test_utils import generate_unique_table
 
 
 class TestBasicOperations:
@@ -12,28 +13,34 @@ class TestBasicOperations:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_connection_and_keyspace(self, cassandra_cluster):
-        """Test connecting to Cassandra and creating keyspace."""
+    async def test_connection_and_keyspace(
+        self, cassandra_cluster, shared_keyspace_setup, pytestconfig
+    ):
+        """Test connecting to Cassandra and using shared keyspace."""
         session = await cassandra_cluster.connect()
 
         try:
-            # Create keyspace
+            # Use the shared keyspace
+            keyspace = pytestconfig.shared_test_keyspace
+            await session.set_keyspace(keyspace)
+            assert session.keyspace == keyspace
+
+            # Create a test table in the shared keyspace
+            table_name = generate_unique_table("test_conn")
             await session.execute(
-                """
-                CREATE KEYSPACE IF NOT EXISTS test_connection
-                WITH REPLICATION = {
-                    'class': 'SimpleStrategy',
-                    'replication_factor': 1
-                }
+                f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INT PRIMARY KEY,
+                    data TEXT
+                )
             """
             )
 
-            # Use keyspace
-            await session.set_keyspace("test_connection")
-            assert session.keyspace == "test_connection"
+            # Verify table exists
+            await session.execute(f"SELECT * FROM {table_name} LIMIT 1")
 
-            # Cleanup
-            await session.execute("DROP KEYSPACE test_connection")
+            # Cleanup table
+            await session.execute(f"DROP TABLE IF EXISTS {table_name}")
         finally:
             await session.close()
 
@@ -41,16 +48,16 @@ class TestBasicOperations:
     @pytest.mark.integration
     async def test_insert_and_select(self, cassandra_session):
         """Test inserting and selecting data."""
-        # Clean up table
-        await cassandra_session.execute("TRUNCATE users")
+        # Use the unique users table created for this test
+        users_table = cassandra_session._test_users_table
 
         user_id = uuid.uuid4()
 
-        # Prepare statements
+        # Prepare statements with the unique table name
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
         # Insert data
         await cassandra_session.execute(insert_stmt, [user_id, "John Doe", "john@example.com", 30])
@@ -71,19 +78,19 @@ class TestBasicOperations:
     @pytest.mark.integration
     async def test_prepared_statements(self, cassandra_session):
         """Test using prepared statements."""
-        # Clean up table
-        await cassandra_session.execute("TRUNCATE users")
+        # Use the unique users table created for this test
+        users_table = cassandra_session._test_users_table
 
         # Prepare insert statement
         insert_stmt = await cassandra_session.prepare(
-            """
-            INSERT INTO users (id, name, email, age)
+            f"""
+            INSERT INTO {users_table} (id, name, email, age)
             VALUES (?, ?, ?, ?)
             """
         )
 
         # Prepare select statement
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
         # Insert multiple users
         users = [
@@ -111,12 +118,15 @@ class TestBasicOperations:
         """Test batch insert operations."""
         from cassandra.query import BatchStatement, BatchType
 
+        # Use the unique users table created for this test
+        users_table = cassandra_session._test_users_table
+
         batch = BatchStatement(batch_type=BatchType.LOGGED)
 
         # Prepare statement
         insert_stmt = await cassandra_session.prepare(
-            """
-            INSERT INTO users (id, name, email, age)
+            f"""
+            INSERT INTO {users_table} (id, name, email, age)
             VALUES (?, ?, ?, ?)
             """
         )
@@ -132,7 +142,7 @@ class TestBasicOperations:
         await cassandra_session.execute_batch(batch)
 
         # Verify all users were inserted
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
         for i, user_id in enumerate(user_ids):
             result = await cassandra_session.execute(select_stmt, [user_id])
             row = result.one()
@@ -142,13 +152,13 @@ class TestBasicOperations:
     @pytest.mark.integration
     async def test_async_iteration(self, cassandra_session):
         """Test async iteration over results."""
-        # Clean up table
-        await cassandra_session.execute("TRUNCATE users")
+        # Use the unique users table created for this test
+        users_table = cassandra_session._test_users_table
 
         # Insert test data
         insert_stmt = await cassandra_session.prepare(
-            """
-            INSERT INTO users (id, name, email, age)
+            f"""
+            INSERT INTO {users_table} (id, name, email, age)
             VALUES (?, ?, ?, ?)
             """
         )
@@ -159,7 +169,7 @@ class TestBasicOperations:
             )
 
         # Select all users
-        result = await cassandra_session.execute("SELECT * FROM users")
+        result = await cassandra_session.execute(f"SELECT * FROM {users_table}")
 
         # Iterate asynchronously
         count = 0
@@ -168,7 +178,7 @@ class TestBasicOperations:
             assert row.name.startswith("User")
             count += 1
 
-        assert count >= 10  # At least our inserted users
+        assert count == 10  # Exactly our inserted users (isolated table)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -192,10 +202,13 @@ class TestBasicOperations:
         """Test executing multiple queries concurrently."""
         import asyncio
 
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Prepare statement
         insert_stmt = await cassandra_session.prepare(
-            """
-            INSERT INTO users (id, name, email, age)
+            f"""
+            INSERT INTO {users_table} (id, name, email, age)
             VALUES (?, ?, ?, ?)
             """
         )
@@ -212,7 +225,7 @@ class TestBasicOperations:
         user_ids = await asyncio.gather(*[insert_user(i) for i in range(20)])
 
         # Verify all were inserted
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
         for user_id in user_ids:
             result = await cassandra_session.execute(select_stmt, [user_id])
             assert result.one() is not None

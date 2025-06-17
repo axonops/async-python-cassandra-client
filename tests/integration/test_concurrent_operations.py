@@ -20,9 +20,12 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_concurrent_reads(self, cassandra_session: AsyncCassandraSession):
         """Test high-concurrency read operations."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert test data first
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
 
         test_ids = []
@@ -34,7 +37,7 @@ class TestConcurrentOperations:
             )
 
         # Perform 1000 concurrent reads
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
         async def read_record(record_id):
             start = time.time()
@@ -75,8 +78,11 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_concurrent_writes(self, cassandra_session: AsyncCassandraSession):
         """Test high-concurrency write operations."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
 
         async def write_record(i):
@@ -114,12 +120,17 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_mixed_concurrent_operations(self, cassandra_session: AsyncCassandraSession):
         """Test mixed read/write operations under high concurrency."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Prepare statements
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
-        update_stmt = await cassandra_session.prepare("UPDATE users SET age = ? WHERE id = ?")
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
+        update_stmt = await cassandra_session.prepare(
+            f"UPDATE {users_table} SET age = ? WHERE id = ?"
+        )
 
         # Pre-populate some data
         existing_ids = []
@@ -191,16 +202,19 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_consistency_levels_concurrent(self, cassandra_session: AsyncCassandraSession):
         """Test concurrent operations with different consistency levels."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert with QUORUM, read with ONE and ALL
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
         insert_stmt.consistency_level = ConsistencyLevel.ONE
 
-        select_one = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_one = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
         select_one.consistency_level = ConsistencyLevel.ONE
 
-        select_all = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
+        select_all = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
         select_all.consistency_level = ConsistencyLevel.ALL
 
         # Insert and immediately read with different consistency levels

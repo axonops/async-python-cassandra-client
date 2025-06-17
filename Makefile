@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-quick test-core test-critical test-progressive test-all test-unit test-integration test-integration-keep test-stress test-bdd lint format type-check build clean container-start container-stop container-status container-clean container-list
+.PHONY: help install install-dev test test-quick test-core test-critical test-progressive test-all test-unit test-integration test-integration-keep test-stress test-bdd lint format type-check build clean cassandra-start cassandra-stop cassandra-status cassandra-wait
 
 help:
 	@echo "Available commands:"
@@ -28,12 +28,11 @@ help:
 	@echo "  test-fastapi   Run FastAPI integration tests"
 	@echo "  test-performance Run performance and benchmark tests"
 	@echo ""
-	@echo "Container Management:"
-	@echo "  container-start Start Cassandra container manually"
-	@echo "  container-stop  Stop Cassandra container"
-	@echo "  container-status Check if Cassandra container is running"
-	@echo "  container-list  List all test containers"
-	@echo "  container-clean Kill all test containers"
+	@echo "Cassandra Management:"
+	@echo "  cassandra-start Start Cassandra container"
+	@echo "  cassandra-stop  Stop Cassandra container"
+	@echo "  cassandra-status Check if Cassandra is running"
+	@echo "  cassandra-wait  Wait for Cassandra to be ready"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint           Run linters"
@@ -45,6 +44,7 @@ help:
 	@echo "  clean          Clean build artifacts"
 	@echo ""
 	@echo "Environment variables:"
+	@echo "  CASSANDRA_CONTACT_POINTS  Cassandra contact points (default: localhost)"
 	@echo "  SKIP_INTEGRATION_TESTS=1  Skip integration tests"
 	@echo "  KEEP_CONTAINERS=1         Keep containers running after tests"
 
@@ -55,6 +55,13 @@ install-dev:
 	pip install -e ".[dev,test]"
 	pip install -r requirements-lint.txt
 	pre-commit install
+
+# Environment setup
+CONTAINER_RUNTIME ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+CASSANDRA_CONTACT_POINTS ?= localhost
+CASSANDRA_PORT ?= 9042
+CASSANDRA_IMAGE ?= cassandra:5
+CASSANDRA_CONTAINER_NAME ?= async-cassandra-test
 
 # Quick validation (30s)
 test-quick:
@@ -67,24 +74,16 @@ test-core:
 	pytest tests/_core tests/_resilience -v -x
 
 # Critical path - MUST ALL PASS
-test-critical:
+test-critical: cassandra-wait
 	@echo "Running critical tests (including FastAPI)..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container for critical tests..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
 	pytest tests/_core -v -x -m "critical"
 	pytest tests/fastapi -v
 	cd examples/fastapi_app && pytest test_fastapi_app.py -v
 	pytest tests/bdd -m "critical" -v
 
 # Progressive execution - FAIL FAST
-test-progressive:
+test-progressive: cassandra-wait
 	@echo "Running tests in fail-fast order..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
 	@echo "=== Running Core Tests ==="
 	@pytest tests/_core -v -x || exit 1
 	@echo "=== Running Resilience Tests ==="
@@ -115,22 +114,14 @@ test-performance:
 	pytest tests/performance -v
 
 # BDD tests - MUST PASS
-test-bdd:
+test-bdd: cassandra-wait
 	@echo "Running BDD tests..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container for BDD tests..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
 	@mkdir -p reports
 	pytest tests/bdd -v --cucumber-json=reports/bdd.json
 
 # Standard test command - runs everything except stress
-test:
+test: cassandra-wait
 	@echo "Running standard test suite..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
 	pytest tests/ -v -m "not stress"
 
 test-unit:
@@ -138,36 +129,28 @@ test-unit:
 	pytest tests/unit/ -v --cov=async_cassandra --cov-report=html
 	@echo "Unit tests completed."
 
-test-integration:
+test-integration: cassandra-wait
 	@echo "Running integration tests..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
-	pytest tests/integration/ -v -m integration
+	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m integration
 	@echo "Integration tests completed."
 
-test-integration-keep:
+test-integration-keep: cassandra-wait
 	@echo "Running integration tests (keeping containers after tests)..."
-	KEEP_CONTAINERS=1 pytest tests/integration/ -v -m integration
+	KEEP_CONTAINERS=1 CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m integration
 	@echo "Integration tests completed. Containers are still running."
 
-test-fastapi:
+test-fastapi: cassandra-wait
 	@echo "Running FastAPI integration tests with real app and Cassandra..."
-	@if ! ./scripts/quick_cassandra.sh check 2>/dev/null; then \
-		echo "Starting Cassandra container..."; \
-		./scripts/quick_cassandra.sh start; \
-	fi
-	cd examples/fastapi_app && pytest ../../tests/fastapi_integration/ -v
+	cd examples/fastapi_app && CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest ../../tests/fastapi_integration/ -v
 	@echo "FastAPI integration tests completed."
 
-test-stress:
+test-stress: cassandra-wait
 	@echo "Running stress tests..."
-	pytest tests/integration/ tests/performance/ -v -m stress
+	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ tests/performance/ -v -m stress
 	@echo "Stress tests completed."
 
 # Full test suite - EVERYTHING MUST PASS
-test-all: lint
+test-all: lint cassandra-wait
 	@echo "Running complete test suite..."
 	@./scripts/run_tests.sh all
 
@@ -193,25 +176,81 @@ type-check:
 build:
 	python -m build
 
-# Container management
-container-start:
-	@echo "Starting test containers..."
-	@./scripts/quick_cassandra.sh start
+# Cassandra management
+cassandra-start:
+	@echo "Starting Cassandra container..."
+	@$(CONTAINER_RUNTIME) rm -f $(CASSANDRA_CONTAINER_NAME) 2>/dev/null || true
+	@$(CONTAINER_RUNTIME) run -d \
+		--name $(CASSANDRA_CONTAINER_NAME) \
+		-p $(CASSANDRA_PORT):9042 \
+		-e CASSANDRA_CLUSTER_NAME=TestCluster \
+		-e CASSANDRA_DC=datacenter1 \
+		-e CASSANDRA_ENDPOINT_SNITCH=SimpleSnitch \
+		$(CASSANDRA_IMAGE)
+	@echo "Cassandra container started"
 
-container-stop:
-	@echo "Stopping test containers..."
-	@./scripts/quick_cassandra.sh stop
+cassandra-stop:
+	@echo "Stopping Cassandra container..."
+	@$(CONTAINER_RUNTIME) stop $(CASSANDRA_CONTAINER_NAME) 2>/dev/null || true
+	@$(CONTAINER_RUNTIME) rm $(CASSANDRA_CONTAINER_NAME) 2>/dev/null || true
+	@echo "Cassandra container stopped"
 
-container-status:
-	@./scripts/quick_cassandra.sh check
+cassandra-status:
+	@if $(CONTAINER_RUNTIME) ps --format "{{.Names}}" | grep -q "^$(CASSANDRA_CONTAINER_NAME)$$"; then \
+		echo "Cassandra container is running"; \
+		if $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) nodetool info 2>&1 | grep -q "Native Transport active: true"; then \
+			if $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) cqlsh -e "SELECT release_version FROM system.local" 2>&1 | grep -q "[0-9]"; then \
+				echo "Cassandra is ready and accepting CQL queries"; \
+			else \
+				echo "Cassandra native transport is active but CQL not ready yet"; \
+			fi; \
+		else \
+			echo "Cassandra is starting up..."; \
+		fi; \
+	else \
+		echo "Cassandra container is not running"; \
+		exit 1; \
+	fi
 
-container-list:
-	@./scripts/manage_test_containers.sh list
-
-container-clean:
-	@echo "Cleaning up test containers..."
-	@./scripts/manage_test_containers.sh kill
-	@./scripts/quick_cassandra.sh stop 2>/dev/null || true
+cassandra-wait:
+	@echo "Ensuring Cassandra is ready..."
+	@if ! nc -z $(CASSANDRA_CONTACT_POINTS) $(CASSANDRA_PORT) 2>/dev/null; then \
+		echo "Cassandra not running on $(CASSANDRA_CONTACT_POINTS):$(CASSANDRA_PORT), starting container..."; \
+		$(MAKE) cassandra-start; \
+		echo "Waiting for Cassandra to be ready..."; \
+		for i in $$(seq 1 60); do \
+			if $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) nodetool info 2>&1 | grep -q "Native Transport active: true"; then \
+				if $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) cqlsh -e "SELECT release_version FROM system.local" 2>&1 | grep -q "[0-9]"; then \
+					echo "Cassandra is ready! (verified with SELECT query)"; \
+					exit 0; \
+				fi; \
+			fi; \
+			printf "."; \
+			sleep 2; \
+		done; \
+		echo ""; \
+		echo "Timeout waiting for Cassandra"; \
+		exit 1; \
+	else \
+		echo "Checking if Cassandra on $(CASSANDRA_CONTACT_POINTS):$(CASSANDRA_PORT) can accept queries..."; \
+		if [ "$(CASSANDRA_CONTACT_POINTS)" = "localhost" ] && $(CONTAINER_RUNTIME) ps --format "{{.Names}}" | grep -q "^$(CASSANDRA_CONTAINER_NAME)$$"; then \
+			if ! $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) cqlsh -e "SELECT release_version FROM system.local" 2>&1 | grep -q "[0-9]"; then \
+				echo "Cassandra is running but not accepting queries yet, waiting..."; \
+				for i in $$(seq 1 30); do \
+					if $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) cqlsh -e "SELECT release_version FROM system.local" 2>&1 | grep -q "[0-9]"; then \
+						echo "Cassandra is ready! (verified with SELECT query)"; \
+						exit 0; \
+					fi; \
+					printf "."; \
+					sleep 2; \
+				done; \
+				echo ""; \
+				echo "Timeout waiting for Cassandra to accept queries"; \
+				exit 1; \
+			fi; \
+		fi; \
+		echo "Cassandra is already running and accepting queries"; \
+	fi
 
 # Cleanup
 clean:
@@ -225,3 +264,6 @@ clean:
 	rm -rf reports/*.json reports/*.html reports/*.xml
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+clean-all: clean cassandra-stop
+	@echo "All cleaned up"

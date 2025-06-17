@@ -22,62 +22,74 @@ class TestNetworkFailures:
     """Test behavior under various network failure conditions."""
 
     @pytest.mark.asyncio
-    async def test_unavailable_handling(self, cassandra_cluster):
+    async def test_unavailable_handling(self, cassandra_session):
         """Test handling of Unavailable exceptions."""
-        # Create session with high consistency requirements
-        session = await cassandra_cluster.connect()
-
-        await session.execute(
+        # Create a table with high replication factor in a new keyspace
+        # This test needs its own keyspace to test replication
+        await cassandra_session.execute(
             """
             CREATE KEYSPACE IF NOT EXISTS test_unavailable
             WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 3}
             """
         )
-        await session.set_keyspace("test_unavailable")
 
-        await session.execute("DROP TABLE IF EXISTS unavailable_test")
-        await session.execute(
-            """
-            CREATE TABLE unavailable_test (
-                id UUID PRIMARY KEY,
-                data TEXT
-            )
-            """
-        )
-
-        # With replication factor 3 on a single node, QUORUM/ALL will fail
-        from cassandra import ConsistencyLevel
-        from cassandra.query import SimpleStatement
-
-        # This should fail with Unavailable
-        insert_stmt = SimpleStatement(
-            "INSERT INTO unavailable_test (id, data) VALUES (%s, %s)",
-            consistency_level=ConsistencyLevel.ALL,
-        )
+        # Use the new keyspace temporarily
+        original_keyspace = cassandra_session.keyspace
+        await cassandra_session.set_keyspace("test_unavailable")
 
         try:
-            await session.execute(insert_stmt, [uuid.uuid4(), "test data"])
-            pytest.fail("Should have raised Unavailable exception")
-        except (Unavailable, Exception) as e:
-            # Expected - we don't have 3 replicas
-            # The exception might be wrapped or not depending on the driver version
-            if isinstance(e, Unavailable):
-                assert e.alive_replicas < e.required_replicas
-            else:
-                # Check if it's wrapped
-                assert "Unavailable" in str(e) or "Cannot achieve consistency level ALL" in str(e)
+            await cassandra_session.execute("DROP TABLE IF EXISTS unavailable_test")
+            await cassandra_session.execute(
+                """
+                CREATE TABLE unavailable_test (
+                    id UUID PRIMARY KEY,
+                    data TEXT
+                )
+                """
+            )
 
-        await session.close()
+            # With replication factor 3 on a single node, QUORUM/ALL will fail
+            from cassandra import ConsistencyLevel
+            from cassandra.query import SimpleStatement
+
+            # This should fail with Unavailable
+            insert_stmt = SimpleStatement(
+                "INSERT INTO unavailable_test (id, data) VALUES (%s, %s)",
+                consistency_level=ConsistencyLevel.ALL,
+            )
+
+            try:
+                await cassandra_session.execute(insert_stmt, [uuid.uuid4(), "test data"])
+                pytest.fail("Should have raised Unavailable exception")
+            except (Unavailable, Exception) as e:
+                # Expected - we don't have 3 replicas
+                # The exception might be wrapped or not depending on the driver version
+                if isinstance(e, Unavailable):
+                    assert e.alive_replicas < e.required_replicas
+                else:
+                    # Check if it's wrapped
+                    assert "Unavailable" in str(e) or "Cannot achieve consistency level ALL" in str(
+                        e
+                    )
+
+        finally:
+            # Clean up and restore original keyspace
+            await cassandra_session.execute("DROP KEYSPACE IF EXISTS test_unavailable")
+            await cassandra_session.set_keyspace(original_keyspace)
 
     @pytest.mark.asyncio
     async def test_connection_pool_exhaustion(self, cassandra_session: AsyncCassandraSession):
         """Test behavior when connection pool is exhausted."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
 
         # Create many concurrent long-running queries
         async def long_query(i):
             try:
                 # This query will scan the entire table
-                result = await cassandra_session.execute("SELECT * FROM users ALLOW FILTERING")
+                result = await cassandra_session.execute(
+                    f"SELECT * FROM {users_table} ALLOW FILTERING"
+                )
                 count = 0
                 async for _ in result:
                     count += 1
@@ -88,7 +100,7 @@ class TestNetworkFailures:
         # Insert some data first
         for i in range(100):
             await cassandra_session.execute(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [uuid.uuid4(), f"User {i}", f"user{i}@test.com", 25],
             )
 
@@ -167,13 +179,16 @@ class TestNetworkFailures:
     @pytest.mark.asyncio
     async def test_concurrent_failures_recovery(self, cassandra_session: AsyncCassandraSession):
         """Test that the system recovers properly from concurrent failures."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Prepare test data
         test_ids = [uuid.uuid4() for _ in range(100)]
 
         # Insert test data
         for test_id in test_ids:
             await cassandra_session.execute(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [test_id, "Test User", "test@test.com", 30],
             )
 
@@ -185,7 +200,9 @@ class TestNetworkFailures:
             if random.random() < fail_rate:
                 raise Exception("Simulated failure")
 
-            result = await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
+            result = await cassandra_session.execute(
+                f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
+            )
             rows = []
             async for row in result:
                 rows.append(row)
@@ -239,6 +256,9 @@ class TestNetworkFailures:
     @pytest.mark.asyncio
     async def test_batch_operations_with_failures(self, cassandra_session: AsyncCassandraSession):
         """Test batch operation behavior during failures."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         from cassandra.query import BatchStatement, BatchType
 
         # Create a batch
@@ -247,7 +267,7 @@ class TestNetworkFailures:
         # Add multiple statements to the batch
         for i in range(20):
             batch.add(
-                "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
                 [uuid.uuid4(), f"Batch User {i}", f"batch{i}@test.com", 25],
             )
 
@@ -256,7 +276,7 @@ class TestNetworkFailures:
 
         # Verify data was inserted
         result = await cassandra_session.execute(
-            "SELECT COUNT(*) FROM users WHERE age = 25 ALLOW FILTERING"
+            f"SELECT COUNT(*) FROM {users_table} WHERE age = 25 ALLOW FILTERING"
         )
         count = result.one()[0]
         assert count >= 20  # At least our batch inserts

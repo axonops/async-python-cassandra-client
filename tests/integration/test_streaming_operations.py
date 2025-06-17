@@ -17,9 +17,12 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_basic_streaming(self, cassandra_session):
         """Test basic streaming functionality."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert test data
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
 
         # Insert 100 test records
@@ -35,7 +38,7 @@ class TestStreamingIntegration:
         # Stream through all users
         stream_config = StreamConfig(fetch_size=20)
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users", stream_config=stream_config
+            f"SELECT * FROM {users_table}", stream_config=stream_config
         )
 
         # Count rows
@@ -53,9 +56,12 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_page_based_streaming(self, cassandra_session):
         """Test streaming by pages."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert test data
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
 
         # Insert 50 test records
@@ -67,7 +73,8 @@ class TestStreamingIntegration:
         # Stream by pages
         stream_config = StreamConfig(fetch_size=10)
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = 25 ALLOW FILTERING", stream_config=stream_config
+            f"SELECT * FROM {users_table} WHERE age = 25 ALLOW FILTERING",
+            stream_config=stream_config,
         )
 
         page_count = 0
@@ -88,6 +95,9 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_with_progress_callback(self, cassandra_session):
         """Test streaming with progress callback."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         progress_calls = []
 
         def progress_callback(page_num, row_count):
@@ -96,7 +106,7 @@ class TestStreamingIntegration:
         stream_config = StreamConfig(fetch_size=15, page_callback=progress_callback)
 
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users LIMIT 50", stream_config=stream_config
+            f"SELECT * FROM {users_table} LIMIT 50", stream_config=stream_config
         )
 
         # Consume the stream
@@ -112,7 +122,12 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_statement_helper(self, cassandra_session):
         """Test using the streaming statement helper."""
-        statement = create_streaming_statement("SELECT * FROM users LIMIT 30", fetch_size=10)
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
+        statement = create_streaming_statement(
+            f"SELECT * FROM {users_table} LIMIT 30", fetch_size=10
+        )
 
         result = await cassandra_session.execute_stream(statement)
 
@@ -126,11 +141,14 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_with_parameters(self, cassandra_session):
         """Test streaming with parameterized queries."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         # Insert some specific test data
         user_id = uuid.uuid4()
         # Prepare statement first
         insert_stmt = await cassandra_session.prepare(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
         await cassandra_session.execute(
             insert_stmt, [user_id, "StreamTest", "streamtest@test.com", 99]
@@ -138,7 +156,7 @@ class TestStreamingIntegration:
 
         # Stream with parameters - use non-prepared statement with ALLOW FILTERING
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = %s ALLOW FILTERING",
+            f"SELECT * FROM {users_table} WHERE age = %s ALLOW FILTERING",
             parameters=[99],
             stream_config=StreamConfig(fetch_size=5),
         )
@@ -155,8 +173,11 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_empty_result(self, cassandra_session):
         """Test streaming with empty result set."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = 999 ALLOW FILTERING"  # Should return no results
+            f"SELECT * FROM {users_table} WHERE age = 999 ALLOW FILTERING"  # Should return no results
         )
 
         rows = []
@@ -169,7 +190,10 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_vs_regular_results(self, cassandra_session):
         """Test that streaming and regular execute return same data."""
-        query = "SELECT * FROM users LIMIT 20"
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
+        query = f"SELECT * FROM {users_table} LIMIT 20"
 
         # Get results with regular execute
         regular_result = await cassandra_session.execute(query)
@@ -195,10 +219,13 @@ class TestStreamingIntegration:
     @pytest.mark.asyncio
     async def test_streaming_max_pages_limit(self, cassandra_session):
         """Test streaming with maximum pages limit."""
+        # Get the unique table name
+        users_table = cassandra_session._test_users_table
+
         stream_config = StreamConfig(fetch_size=5, max_pages=2)  # Limit to 2 pages only
 
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users", stream_config=stream_config
+            f"SELECT * FROM {users_table}", stream_config=stream_config
         )
 
         rows = []
