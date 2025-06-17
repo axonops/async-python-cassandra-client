@@ -31,7 +31,7 @@ class TestFastAPIExample:
             await test_session.close()
             await test_cluster.shutdown()
         except Exception as e:
-            pytest.skip(f"Cassandra not available: {e}")
+            pytest.fail(f"Cassandra not available: {e}")
 
         from main import app, lifespan
 

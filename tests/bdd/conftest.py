@@ -50,8 +50,14 @@ def driver_configured():
 
 @pytest.fixture
 def cassandra_cluster_running(cassandra_container):  # noqa: F811
-    """Ensure Cassandra container is running."""
+    """Ensure Cassandra container is running and healthy."""
     assert cassandra_container.is_running()
+
+    # Check health before proceeding
+    health = cassandra_container.check_health()
+    if not health["native_transport"] or not health["cql_available"]:
+        pytest.fail(f"Cassandra not healthy: {health}")
+
     return cassandra_container
 
 
@@ -59,6 +65,11 @@ def cassandra_cluster_running(cassandra_container):  # noqa: F811
 async def cassandra_cluster(cassandra_container):  # noqa: F811
     """Provide an async Cassandra cluster for BDD tests."""
     from async_cassandra import AsyncCluster
+
+    # Ensure Cassandra is healthy before creating cluster
+    health = cassandra_container.check_health()
+    if not health["native_transport"] or not health["cql_available"]:
+        pytest.fail(f"Cassandra not healthy: {health}")
 
     cluster = AsyncCluster(["localhost"], protocol_version=5)
     yield cluster
@@ -137,6 +148,28 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "memory_pressure: mark test as memory pressure test")
     config.addinivalue_line("markers", "auth: mark test as authentication test")
     config.addinivalue_line("markers", "error_handling: mark test as error handling test")
+
+
+@pytest.fixture(scope="function", autouse=True)
+async def ensure_cassandra_healthy_bdd(cassandra_container):  # noqa: F811
+    """Ensure Cassandra is healthy before each BDD test."""
+    # Check health before test
+    health = cassandra_container.check_health()
+    if not health["native_transport"] or not health["cql_available"]:
+        # Try to wait a bit and check again
+        import asyncio
+
+        await asyncio.sleep(2)
+        health = cassandra_container.check_health()
+        if not health["native_transport"] or not health["cql_available"]:
+            pytest.fail(f"Cassandra not healthy before test: {health}")
+
+    yield
+
+    # Optional: Check health after test
+    health = cassandra_container.check_health()
+    if not health["native_transport"]:
+        print(f"Warning: Cassandra health degraded after test: {health}")
 
 
 # Automatically mark all BDD tests

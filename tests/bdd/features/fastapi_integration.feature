@@ -160,10 +160,10 @@ Feature: FastAPI Integration
 
   @fastapi @middleware
   Scenario: Middleware integration with async-cassandra
-    Given a FastAPI application with async-cassandra
+    Given a middleware that logs Cassandra query metrics
+    And a FastAPI application with async-cassandra
     And a running Cassandra cluster with test data
     And the FastAPI test client is initialized
-    And a middleware that logs Cassandra query metrics
     And a user endpoint that queries Cassandra
     When I make requests through the middleware
     Then query count should be tracked per request

@@ -74,7 +74,7 @@ class CassandraContainer:
             self.container_id = result.stdout.strip()
             subprocess.run([self.runtime, "start", self.container_id], check=True)
         else:
-            # Create new container
+            # Create new container with proper resources
             result = subprocess.run(
                 [
                     self.runtime,
@@ -90,6 +90,14 @@ class CassandraContainer:
                     "CASSANDRA_DC=datacenter1",
                     "-e",
                     "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch",
+                    "-e",
+                    "HEAP_NEWSIZE=3G",
+                    "-e",
+                    "MAX_HEAP_SIZE=12G",
+                    "-e",
+                    "JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300",
+                    "--memory=16g",
+                    "--memory-reservation=16g",
                     "cassandra:5.0",
                 ],
                 capture_output=True,
@@ -111,26 +119,45 @@ class CassandraContainer:
         if self.container_id:
             subprocess.run([self.runtime, "rm", "-f", self.container_id], capture_output=True)
 
-    def _wait_for_cassandra(self, timeout: int = 60):
+    def _wait_for_cassandra(self, timeout: int = 90):
         """Wait for Cassandra to be ready to accept connections."""
         start_time = time.time()
         while time.time() - start_time < timeout:
             # Use container name instead of ID for exec
             container_ref = self.container_name if self.container_name else self.container_id
-            result = subprocess.run(
+
+            # First check if native transport is active
+            health_result = subprocess.run(
                 [
                     self.runtime,
                     "exec",
                     container_ref,
-                    "cqlsh",
-                    "-e",
-                    "SELECT release_version FROM system.local",
+                    "nodetool",
+                    "info",
                 ],
                 capture_output=True,
+                text=True,
             )
-            if result.returncode == 0:
-                return
-            time.sleep(2)
+
+            if (
+                health_result.returncode == 0
+                and "Native Transport active: true" in health_result.stdout
+            ):
+                # Now check if CQL is responsive
+                cql_result = subprocess.run(
+                    [
+                        self.runtime,
+                        "exec",
+                        container_ref,
+                        "cqlsh",
+                        "-e",
+                        "SELECT release_version FROM system.local",
+                    ],
+                    capture_output=True,
+                )
+                if cql_result.returncode == 0:
+                    return
+            time.sleep(3)
         raise TimeoutError(f"Cassandra did not start within {timeout} seconds")
 
     def execute_cql(self, cql: str):
@@ -152,6 +179,59 @@ class CassandraContainer:
             text=True,
         )
         return result.stdout.strip() == "true"
+
+    def check_health(self) -> dict:
+        """Check Cassandra health using nodetool info."""
+        if not self.container_id:
+            return {
+                "native_transport": False,
+                "gossip": False,
+                "cql_available": False,
+            }
+
+        container_ref = self.container_name if self.container_name else self.container_id
+
+        # Run nodetool info
+        result = subprocess.run(
+            [
+                self.runtime,
+                "exec",
+                container_ref,
+                "nodetool",
+                "info",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        health_status = {
+            "native_transport": False,
+            "gossip": False,
+            "cql_available": False,
+        }
+
+        if result.returncode == 0:
+            info = result.stdout
+            health_status["native_transport"] = "Native Transport active: true" in info
+            health_status["gossip"] = (
+                "Gossip active" in info and "true" in info.split("Gossip active")[1].split("\n")[0]
+            )
+
+            # Check CQL availability
+            cql_result = subprocess.run(
+                [
+                    self.runtime,
+                    "exec",
+                    container_ref,
+                    "cqlsh",
+                    "-e",
+                    "SELECT now() FROM system.local",
+                ],
+                capture_output=True,
+            )
+            health_status["cql_available"] = cql_result.returncode == 0
+
+        return health_status
 
 
 @pytest.fixture(scope="session")

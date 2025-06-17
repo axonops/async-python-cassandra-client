@@ -229,7 +229,11 @@ class AsyncCluster(AsyncContextManageable):
                     # Small delay before retry to allow service to recover
                     # Use longer delay for NoHostAvailable errors
                     if "NoHostAvailable" in str(type(e).__name__):
-                        await asyncio.sleep(2.0 * (attempt + 1))
+                        # For connection reset errors, wait longer
+                        if "Connection reset by peer" in str(e):
+                            await asyncio.sleep(5.0 * (attempt + 1))
+                        else:
+                            await asyncio.sleep(2.0 * (attempt + 1))
                     else:
                         await asyncio.sleep(0.5 * (attempt + 1))
 

@@ -8,11 +8,18 @@ services:
       - CASSANDRA_CLUSTER_NAME=TestCluster
       - CASSANDRA_DC=datacenter1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-      - HEAP_NEWSIZE=128M
-      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=3G
+      - MAX_HEAP_SIZE=12G
+      - JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 16G
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      test: ["CMD", "nodetool", "info"]
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s

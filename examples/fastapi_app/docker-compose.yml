@@ -16,9 +16,10 @@ services:
       - CASSANDRA_DC=datacenter1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
 
-      # Memory settings for development (adjust for production)
-      - HEAP_NEWSIZE=128M
-      - MAX_HEAP_SIZE=512M
+      # Memory settings (optimized for stability)
+      - HEAP_NEWSIZE=3G
+      - MAX_HEAP_SIZE=12G
+      - JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300
 
       # Enable authentication (optional)
       # - CASSANDRA_AUTHENTICATOR=PasswordAuthenticator
@@ -28,12 +29,20 @@ services:
       # Persist data between container restarts
       - cassandra_data:/var/lib/cassandra
 
+    # Resource limits for stability
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 16G
+
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      test: ["CMD-SHELL", "nodetool info | grep -q 'Native Transport active: true' && cqlsh -e 'SELECT now() FROM system.local'"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 60s
+      start_period: 90s
 
     networks:
       - app-network

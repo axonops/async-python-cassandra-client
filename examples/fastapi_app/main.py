@@ -13,6 +13,10 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
+from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
+
+# Import Cassandra driver exceptions for proper error detection
+from cassandra.cluster import NoHostAvailable
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -45,6 +49,62 @@ class UserUpdate(BaseModel):
 session = None
 cluster = None
 keyspace = "example"
+
+
+def is_cassandra_unavailable_error(error: Exception) -> bool:
+    """
+    Determine if an error indicates Cassandra is unavailable.
+
+    This function checks for specific Cassandra driver exceptions that indicate
+    the database is not reachable or available.
+    """
+    # Direct Cassandra driver exceptions
+    if isinstance(
+        error, (NoHostAvailable, Unavailable, OperationTimedOut, ReadTimeout, WriteTimeout)
+    ):
+        return True
+
+    # Check error message for additional patterns
+    error_msg = str(error).lower()
+    unavailability_keywords = [
+        "no host available",
+        "all hosts",
+        "connection",
+        "timeout",
+        "unavailable",
+        "no replicas",
+        "not enough replicas",
+        "cannot achieve consistency",
+        "operation timed out",
+        "read timeout",
+        "write timeout",
+        "connection pool",
+        "connection closed",
+        "connection refused",
+        "unable to connect",
+    ]
+
+    return any(keyword in error_msg for keyword in unavailability_keywords)
+
+
+def handle_cassandra_error(error: Exception, operation: str = "operation") -> HTTPException:
+    """
+    Convert a Cassandra error to an appropriate HTTP exception.
+
+    Returns 503 for availability issues, 500 for other errors.
+    """
+    if is_cassandra_unavailable_error(error):
+        # Log the specific error type for debugging
+        error_type = type(error).__name__
+        return HTTPException(
+            status_code=503,
+            detail=f"Service temporarily unavailable: Cassandra connection issue ({error_type}: {str(error)})",
+        )
+    else:
+        # Other errors (like InvalidRequest) get 500
+        return HTTPException(
+            status_code=500, detail=f"Internal server error during {operation}: {str(error)}"
+        )
 
 
 @asynccontextmanager
@@ -141,44 +201,71 @@ async def health_check():
 @app.post("/users", response_model=User, status_code=201)
 async def create_user(user: UserCreate):
     """Create a new user."""
-    user_id = uuid.uuid4()
-    now = datetime.now()
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
 
-    # Use prepared statement for better performance
-    stmt = await session.prepare(
-        "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    await session.execute(stmt, [user_id, user.name, user.email, user.age, now, now])
+    try:
+        user_id = uuid.uuid4()
+        now = datetime.now()
 
-    return User(
-        id=str(user_id),
-        name=user.name,
-        email=user.email,
-        age=user.age,
-        created_at=now,
-        updated_at=now,
-    )
+        # Use prepared statement for better performance
+        stmt = await session.prepare(
+            "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        await session.execute(stmt, [user_id, user.name, user.email, user.age, now, now])
+
+        return User(
+            id=str(user_id),
+            name=user.name,
+            email=user.email,
+            age=user.age,
+            created_at=now,
+            updated_at=now,
+        )
+    except Exception as e:
+        raise handle_cassandra_error(e, "user creation")
 
 
 @app.get("/users", response_model=List[User])
 async def list_users(limit: int = 10):
     """List all users."""
-    result = await session.execute(f"SELECT * FROM users LIMIT {limit}")
-
-    users = []
-    async for row in result:
-        users.append(
-            User(
-                id=str(row.id),
-                name=row.name,
-                email=row.email,
-                age=row.age,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
-            )
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
         )
 
-    return users
+    try:
+        result = await session.execute(f"SELECT * FROM users LIMIT {limit}")
+
+        users = []
+        async for row in result:
+            users.append(
+                User(
+                    id=str(row.id),
+                    name=row.name,
+                    email=row.email,
+                    age=row.age,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                )
+            )
+
+        return users
+    except Exception as e:
+        error_msg = str(e)
+        if any(
+            keyword in error_msg.lower()
+            for keyword in ["unavailable", "nohost", "connection", "timeout"]
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service temporarily unavailable: Cassandra connection issue - {error_msg}",
+            )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {error_msg}")
 
 
 # Streaming endpoints - must come before /users/{user_id} to avoid route conflict
@@ -187,6 +274,12 @@ async def stream_users(
     limit: int = Query(1000, ge=0, le=10000), fetch_size: int = Query(100, ge=10, le=1000)
 ):
     """Stream users data for large result sets."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     try:
         # Handle special case where limit=0
         if limit == 0:
@@ -253,7 +346,7 @@ async def stream_users(
             }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stream users: {str(e)}")
+        raise handle_cassandra_error(e, "streaming users")
 
 
 @app.get("/users/stream/pages")
@@ -263,6 +356,12 @@ async def stream_users_by_pages(
     max_pages: int = Query(10, ge=0, le=100),
 ):
     """Stream users data page by page for memory efficiency."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     try:
         # Handle special case where limit=0 or max_pages=0
         if limit == 0 or max_pages == 0:
@@ -335,104 +434,149 @@ async def stream_users_by_pages(
             }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")
+        raise handle_cassandra_error(e, "streaming users by pages")
 
 
 @app.get("/users/{user_id}", response_model=User)
 async def get_user(user_id: str):
     """Get user by ID."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID")
 
-    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    result = await session.execute(stmt, [user_uuid])
-    row = result.one()
+    try:
+        stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+        result = await session.execute(stmt, [user_uuid])
+        row = result.one()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="User not found")
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    return User(
-        id=str(row.id),
-        name=row.name,
-        email=row.email,
-        age=row.age,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+        return User(
+            id=str(row.id),
+            name=row.name,
+            email=row.email,
+            age=row.age,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_cassandra_error(e, "checking user existence")
 
 
 @app.delete("/users/{user_id}", status_code=204)
 async def delete_user(user_id: str):
     """Delete user by ID."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
 
-    stmt = await session.prepare("DELETE FROM users WHERE id = ?")
-    await session.execute(stmt, [user_uuid])
+    try:
+        stmt = await session.prepare("DELETE FROM users WHERE id = ?")
+        await session.execute(stmt, [user_uuid])
 
-    return None  # 204 No Content
+        return None  # 204 No Content
+    except Exception as e:
+        error_msg = str(e)
+        if any(
+            keyword in error_msg.lower()
+            for keyword in ["unavailable", "nohost", "connection", "timeout"]
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service temporarily unavailable: Cassandra connection issue - {error_msg}",
+            )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {error_msg}")
 
 
 @app.put("/users/{user_id}", response_model=User)
 async def update_user(user_id: str, user_update: UserUpdate):
     """Update user by ID."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
 
-    # First check if user exists
-    check_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    result = await session.execute(check_stmt, [user_uuid])
-    existing_user = result.one()
+    try:
+        # First check if user exists
+        check_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+        result = await session.execute(check_stmt, [user_uuid])
+        existing_user = result.one()
 
-    if not existing_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_cassandra_error(e, "checking user existence")
 
-    # Build update query dynamically based on provided fields
-    update_fields = []
-    params = []
+    try:
+        # Build update query dynamically based on provided fields
+        update_fields = []
+        params = []
 
-    if user_update.name is not None:
-        update_fields.append("name = ?")
-        params.append(user_update.name)
+        if user_update.name is not None:
+            update_fields.append("name = ?")
+            params.append(user_update.name)
 
-    if user_update.email is not None:
-        update_fields.append("email = ?")
-        params.append(user_update.email)
+        if user_update.email is not None:
+            update_fields.append("email = ?")
+            params.append(user_update.email)
 
-    if user_update.age is not None:
-        update_fields.append("age = ?")
-        params.append(user_update.age)
+        if user_update.age is not None:
+            update_fields.append("age = ?")
+            params.append(user_update.age)
 
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
 
-    # Always update the updated_at timestamp
-    update_fields.append("updated_at = ?")
-    params.append(datetime.now())
-    params.append(user_uuid)  # WHERE clause
+        # Always update the updated_at timestamp
+        update_fields.append("updated_at = ?")
+        params.append(datetime.now())
+        params.append(user_uuid)  # WHERE clause
 
-    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
-    update_stmt = await session.prepare(query)
-    await session.execute(update_stmt, params)
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+        update_stmt = await session.prepare(query)
+        await session.execute(update_stmt, params)
 
-    # Return updated user
-    result = await session.execute(check_stmt, [user_uuid])
-    updated_user = result.one()
+        # Return updated user
+        result = await session.execute(check_stmt, [user_uuid])
+        updated_user = result.one()
 
-    return User(
-        id=str(updated_user.id),
-        name=updated_user.name,
-        email=updated_user.email,
-        age=updated_user.age,
-        created_at=updated_user.created_at,
-        updated_at=updated_user.updated_at,
-    )
+        return User(
+            id=str(updated_user.id),
+            name=updated_user.name,
+            email=updated_user.email,
+            age=updated_user.age,
+            created_at=updated_user.created_at,
+            updated_at=updated_user.updated_at,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_cassandra_error(e, "checking user existence")
 
 
 @app.patch("/users/{user_id}", response_model=User)
@@ -445,94 +589,121 @@ async def partial_update_user(user_id: str, user_update: UserUpdate):
 @app.get("/performance/async")
 async def test_async_performance(requests: int = Query(100, ge=1, le=1000)):
     """Test async performance with concurrent queries."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     import time
 
-    start_time = time.time()
+    try:
+        start_time = time.time()
 
-    # Prepare statement once
-    stmt = await session.prepare("SELECT * FROM users LIMIT 1")
+        # Prepare statement once
+        stmt = await session.prepare("SELECT * FROM users LIMIT 1")
 
-    # Execute queries concurrently
-    async def execute_query():
-        return await session.execute(stmt)
+        # Execute queries concurrently
+        async def execute_query():
+            return await session.execute(stmt)
 
-    tasks = [execute_query() for _ in range(requests)]
-    results = await asyncio.gather(*tasks)
+        tasks = [execute_query() for _ in range(requests)]
+        results = await asyncio.gather(*tasks)
 
-    end_time = time.time()
-    duration = end_time - start_time
+        end_time = time.time()
+        duration = end_time - start_time
 
-    return {
-        "requests": requests,
-        "total_time": duration,
-        "requests_per_second": requests / duration if duration > 0 else 0,
-        "avg_time_per_request": duration / requests if requests > 0 else 0,
-        "successful_requests": len(results),
-        "mode": "async",
-    }
+        return {
+            "requests": requests,
+            "total_time": duration,
+            "requests_per_second": requests / duration if duration > 0 else 0,
+            "avg_time_per_request": duration / requests if requests > 0 else 0,
+            "successful_requests": len(results),
+            "mode": "async",
+        }
+    except Exception as e:
+        raise handle_cassandra_error(e, "performance test")
 
 
 @app.get("/performance/sync")
 async def test_sync_performance(requests: int = Query(100, ge=1, le=1000)):
     """Test sync-style performance (sequential execution)."""
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
+        )
+
     import time
 
-    start_time = time.time()
+    try:
+        start_time = time.time()
 
-    # Prepare statement once
-    stmt = await session.prepare("SELECT * FROM users LIMIT 1")
+        # Prepare statement once
+        stmt = await session.prepare("SELECT * FROM users LIMIT 1")
 
-    # Execute queries sequentially
-    results = []
-    for _ in range(requests):
-        result = await session.execute(stmt)
-        results.append(result)
+        # Execute queries sequentially
+        results = []
+        for _ in range(requests):
+            result = await session.execute(stmt)
+            results.append(result)
 
-    end_time = time.time()
-    duration = end_time - start_time
+        end_time = time.time()
+        duration = end_time - start_time
 
-    return {
-        "requests": requests,
-        "total_time": duration,
-        "requests_per_second": requests / duration if duration > 0 else 0,
-        "avg_time_per_request": duration / requests if requests > 0 else 0,
-        "successful_requests": len(results),
-        "mode": "sync",
-    }
+        return {
+            "requests": requests,
+            "total_time": duration,
+            "requests_per_second": requests / duration if duration > 0 else 0,
+            "avg_time_per_request": duration / requests if requests > 0 else 0,
+            "successful_requests": len(results),
+            "mode": "sync",
+        }
+    except Exception as e:
+        raise handle_cassandra_error(e, "performance test")
 
 
 # Batch operations endpoint
 @app.post("/users/batch", status_code=201)
 async def create_users_batch(batch_data: dict):
     """Create multiple users in a batch."""
-    users = batch_data.get("users", [])
-    created_users = []
-
-    for user_data in users:
-        user_id = uuid.uuid4()
-        now = datetime.now()
-
-        # Create user dict with proper fields
-        user_dict = {
-            "id": str(user_id),
-            "name": user_data.get("name", user_data.get("username", "")),
-            "email": user_data["email"],
-            "age": user_data.get("age", 25),
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat(),
-        }
-
-        # Insert into database
-        stmt = await session.prepare(
-            "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-        )
-        await session.execute(
-            stmt, [user_id, user_dict["name"], user_dict["email"], user_dict["age"], now, now]
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable: Cassandra connection not established",
         )
 
-        created_users.append(user_dict)
+    try:
+        users = batch_data.get("users", [])
+        created_users = []
 
-    return {"created": created_users}
+        for user_data in users:
+            user_id = uuid.uuid4()
+            now = datetime.now()
+
+            # Create user dict with proper fields
+            user_dict = {
+                "id": str(user_id),
+                "name": user_data.get("name", user_data.get("username", "")),
+                "email": user_data["email"],
+                "age": user_data.get("age", 25),
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }
+
+            # Insert into database
+            stmt = await session.prepare(
+                "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            await session.execute(
+                stmt, [user_id, user_dict["name"], user_dict["email"], user_dict["age"], now, now]
+            )
+
+            created_users.append(user_dict)
+
+        return {"created": created_users}
+    except Exception as e:
+        raise handle_cassandra_error(e, "batch user creation")
 
 
 # Metrics endpoint

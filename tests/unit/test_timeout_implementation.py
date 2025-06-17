@@ -170,11 +170,14 @@ class TestStreamingTimeouts:
             stream._page_ready.set()
             stream._exhausted = True
 
-        asyncio.create_task(set_event())
+        task = asyncio.create_task(set_event())
 
         # Should complete without timeout
         result = await stream._fetch_next_page()
         assert result is False  # No more pages
+
+        # Clean up the task
+        await task
 
     @pytest.mark.asyncio
     async def test_streaming_iteration_timeout(self, mock_response_future):
@@ -220,7 +223,7 @@ class TestTimeoutConstants:
         """Test that default timeout constants are defined."""
         from async_cassandra.constants import DEFAULT_CONNECTION_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
 
-        assert DEFAULT_CONNECTION_TIMEOUT == 10.0
+        assert DEFAULT_CONNECTION_TIMEOUT == 30.0  # Increased for larger heap sizes
         assert DEFAULT_REQUEST_TIMEOUT == 120.0
 
     @pytest.mark.asyncio
@@ -244,7 +247,7 @@ class TestTimeoutConstants:
                 await cluster.connect()
 
         # Should use default timeout
-        assert create_called_with_timeout == 10.0
+        assert create_called_with_timeout == 30.0  # Increased for larger heap sizes
 
     @pytest.mark.asyncio
     async def test_prepare_uses_default_constant(self):

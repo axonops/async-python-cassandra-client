@@ -34,6 +34,12 @@ def pytest_configure(config):
     # Initialize container manager
     config.container_manager = ContainerManager()
 
+    # Check if we're running as part of integration tests specifically
+    # This prevents conflicts when running all tests together
+    if hasattr(config, "_integration_tests_initialized"):
+        return
+    config._integration_tests_initialized = True
+
     # Start containers if not already running
     if not config.container_manager.is_running():
         try:
@@ -72,12 +78,75 @@ def pytest_unconfigure(config):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def cassandra_cluster():
+async def cassandra_cluster(pytestconfig):
     """Create an async Cassandra cluster for testing."""
+    # Check Cassandra health before creating cluster
+    if hasattr(pytestconfig, "container_manager"):
+        health = pytestconfig.container_manager.check_health()
+        if not health["native_transport"] or not health["cql_available"]:
+            pytest.fail(f"Cassandra not healthy: {health}")
+    else:
+        # If no container manager, just check if Cassandra is available
+        import socket
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", 9042))
+            sock.close()
+            if result != 0:
+                pytest.fail("Cassandra not available on localhost:9042")
+        except Exception as e:
+            pytest.fail(f"Cannot connect to Cassandra: {e}")
+
     # Set protocol_version to 5 to avoid negotiation issues
-    cluster = AsyncCluster(contact_points=["localhost"], protocol_version=5)
+    # Use shorter timeout for tests
+    cluster = AsyncCluster(contact_points=["localhost"], protocol_version=5, connect_timeout=5.0)
     yield cluster
     await cluster.shutdown()
+
+
+@pytest_asyncio.fixture(scope="function", autouse=True)
+async def ensure_cassandra_healthy(pytestconfig):
+    """Ensure Cassandra is healthy before each test."""
+    if hasattr(pytestconfig, "container_manager"):
+        # Check health before test
+        try:
+            health = pytestconfig.container_manager.check_health()
+            if not health["native_transport"] or not health["cql_available"]:
+                # Try to wait a bit and check again
+                import asyncio
+
+                await asyncio.sleep(2)
+                health = pytestconfig.container_manager.check_health()
+                if not health["native_transport"] or not health["cql_available"]:
+                    pytest.fail(f"Cassandra not healthy before test: {health}")
+        except Exception as e:
+            pytest.fail(f"Error checking Cassandra health: {e}")
+    else:
+        # Minimal health check if no container manager
+        import socket
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", 9042))
+            sock.close()
+            if result != 0:
+                pytest.fail("Cassandra not available on localhost:9042")
+        except Exception as e:
+            pytest.fail(f"Cannot connect to Cassandra: {e}")
+
+    yield
+
+    # Optional: Check health after test
+    if hasattr(pytestconfig, "container_manager"):
+        try:
+            health = pytestconfig.container_manager.check_health()
+            if not health["native_transport"]:
+                print(f"Warning: Cassandra health degraded after test: {health}")
+        except Exception:
+            pass  # Don't fail on post-test health check
 
 
 @pytest_asyncio.fixture(scope="function")

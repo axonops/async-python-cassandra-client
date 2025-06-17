@@ -23,7 +23,7 @@ class TestConstants:
         """Test default values are reasonable."""
         assert DEFAULT_FETCH_SIZE == 1000
         assert DEFAULT_EXECUTOR_THREADS == 4
-        assert DEFAULT_CONNECTION_TIMEOUT == 10.0
+        assert DEFAULT_CONNECTION_TIMEOUT == 30.0  # Increased for larger heap sizes
         assert DEFAULT_REQUEST_TIMEOUT == 120.0
 
     def test_limits(self):
