@@ -64,6 +64,52 @@ Please follow these steps to have your contribution considered by the maintainer
 5. Make sure your code lints.
 6. Issue that pull request!
 
+#### Pull Request Title Format
+
+Please use the following format for your PR titles. This is important because PR titles become commit messages when squash-merged:
+
+```
+<type>: <description>
+
+# Examples:
+feat: Add support for async prepared statements
+fix: Resolve connection timeout in retry logic
+docs: Update streaming documentation
+test: Add integration tests for connection pooling
+refactor: Simplify error handling in AsyncSession
+chore: Update dependencies to latest versions
+perf: Optimize batch query execution
+ci: Add Python 3.13 to test matrix
+```
+
+**Types:**
+- `feat`: New feature or enhancement
+- `fix`: Bug fix
+- `docs`: Documentation only changes
+- `test`: Adding or updating tests
+- `refactor`: Code change that neither fixes a bug nor adds a feature
+- `chore`: Changes to build process, dependencies, or tooling
+- `perf`: Performance improvements
+- `ci`: Changes to CI configuration files and scripts
+- `style`: Code style changes (formatting, missing semi-colons, etc)
+- `revert`: Reverting a previous commit
+
+**Description Guidelines:**
+- Use imperative mood ("Add feature" not "Added feature")
+- Don't capitalize first letter after the type
+- No period at the end
+- Keep under 50 characters
+- Be specific but concise
+
+#### Pull Request Description
+
+Your PR description should include:
+- **What**: Brief summary of changes
+- **Why**: The motivation for the changes
+- **How**: Technical approach (if not obvious)
+- **Testing**: How you tested the changes
+- **Breaking changes**: Note any breaking changes
+
 ## Development Setup
 
 For detailed development instructions, see our [Developer Documentation](developerdocs/).
@@ -201,17 +247,15 @@ mypy src
 
 ## Commit Message Guidelines
 
+Since we use squash merging, your PR title becomes the commit message. However, if you're working locally:
+
+- Follow the same format as PR titles: `type: description`
 - Use the present tense ("Add feature" not "Added feature")
 - Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
 - Limit the first line to 72 characters or less
 - Reference issues and pull requests liberally after the first line
-- Consider starting the commit message with an applicable emoji:
-  - 🎨 `:art:` when improving the format/structure of the code
-  - 🐛 `:bug:` when fixing a bug
-  - 🔥 `:fire:` when removing code or files
-  - 📝 `:memo:` when writing docs
-  - ✅ `:white_check_mark:` when adding tests
-  - 🔧 `:wrench:` when changing configuration files
+
+**Note**: Individual commit messages within a PR don't need to be perfect since they'll be squashed. Focus on making the PR title excellent!
 
 ## Additional Notes
 
