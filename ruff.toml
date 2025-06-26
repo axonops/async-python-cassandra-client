@@ -1,0 +1,30 @@
+# Ruff configuration for async-python-cassandra-client
+
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+]
+
+ignore = [
+    "E203",  # Whitespace before ':' (conflicts with black)
+    "E501",  # Line too long (handled by formatter)
+    "E701",  # Multiple statements on one line (conflicts with black)
+    "E702",  # Multiple statements on one line (conflicts with black)
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101", "B011"]  # Allow assert and Exception in tests
+
+[lint.isort]
+known-first-party = ["async_cassandra"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

@@ -1,0 +1,12 @@
+# Bandit configuration file
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Skip B110 (try_except_pass) - we use this legitimately in cleanup code
+skips: [B110]
+
+# Exclude test directories from security scanning
+exclude_dirs:
+  - /tests
+  - /examples
+
+# We keep B101 (assert_used) to warn about potential issues with python -O

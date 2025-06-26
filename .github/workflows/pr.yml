@@ -1,0 +1,17 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci-base.yml
+    with:
+      run-integration-tests: false
+      run-full-suite: false

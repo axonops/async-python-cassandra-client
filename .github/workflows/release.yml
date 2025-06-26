@@ -1,0 +1,295 @@
+name: Release CI
+
+on:
+  push:
+    tags:
+      # Only trigger on version-like tags
+      - 'v[0-9]*'
+
+jobs:
+  full-ci:
+    uses: ./.github/workflows/ci-base.yml
+    with:
+      run-integration-tests: true
+      run-full-suite: true
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: full-ci
+    runs-on: ubuntu-latest
+    # Only publish for proper pre-release versions (PEP 440)
+    if: contains(github.ref, 'rc') || contains(github.ref, 'a') || contains(github.ref, 'b')
+
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: List distribution files
+        run: |
+          echo "Distribution files to be published:"
+          ls -la dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          verbose: true
+
+      - name: Create TestPyPI Summary
+        run: |
+          echo "## 📦 Published to TestPyPI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install with:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple async-cassandra" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View on TestPyPI: https://test.pypi.org/project/async-cassandra/" >> $GITHUB_STEP_SUMMARY
+
+  validate-testpypi:
+    name: Validate TestPyPI Package
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Wait for package availability
+        run: |
+          echo "Waiting for package to be available on TestPyPI..."
+          sleep 30
+
+      - name: Install from TestPyPI
+        run: |
+          # Strip 'v' prefix from tag
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Installing version: $VERSION"
+          pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple async-cassandra==$VERSION
+
+      - name: Test imports
+        run: |
+          cat > test_imports.py << 'EOF'
+          import async_cassandra
+          print(f'✅ Package version: {async_cassandra.__version__}')
+
+          # Test core imports
+          from async_cassandra import (
+              AsyncCluster,
+              AsyncCassandraSession,
+              AsyncResultSet,
+              AsyncRetryPolicy,
+              AsyncStreamingResultSet,
+              StreamConfig,
+              create_streaming_statement,
+          )
+          print('✅ Core async classes imported')
+
+          # Test exception imports
+          from async_cassandra import (
+              AsyncCassandraError,
+              ConnectionError,
+              QueryError,
+          )
+          print('✅ Exception classes imported')
+
+          # Test monitoring imports
+          from async_cassandra import (
+              ConnectionMonitor,
+              RateLimitedSession,
+              create_monitored_session,
+              HOST_STATUS_UP,
+              HOST_STATUS_DOWN,
+              HOST_STATUS_UNKNOWN,
+              HostMetrics,
+              ClusterMetrics,
+          )
+          print('✅ Monitoring classes imported')
+
+          # Test metrics imports
+          from async_cassandra import (
+              MetricsMiddleware,
+              MetricsCollector,
+              InMemoryMetricsCollector,
+              PrometheusMetricsCollector,
+              QueryMetrics,
+              ConnectionMetrics,
+              create_metrics_system,
+          )
+          print('✅ Metrics classes imported')
+
+          print('')
+          print('🎉 All imports successful!')
+          EOF
+
+          python test_imports.py
+
+      - name: Create validation summary
+        run: |
+          echo "## ✅ TestPyPI Validation Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Package successfully installed and imported from TestPyPI" >> $GITHUB_STEP_SUMMARY
+
+  release-info:
+    needs: [full-ci, publish-testpypi, validate-testpypi]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Get tag info
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tag: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ github.ref_name }}" =~ -rc ]] || [[ "${{ github.ref_name }}" =~ -beta ]] || [[ "${{ github.ref_name }}" =~ -alpha ]]; then
+            echo "✅ Pre-release published to TestPyPI" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Next steps:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Test the package from TestPyPI" >> $GITHUB_STEP_SUMMARY
+            echo "2. If everything works, create a release tag without suffix" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "This is a release tag. Ready for PyPI publishing." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: [full-ci]
+    runs-on: ubuntu-latest
+    if: success()
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for release notes
+
+      - name: Check if pre-release
+        id: check-prerelease
+        run: |
+          if [[ "${{ github.ref_name }}" =~ rc|a|b ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "Pre-release detected"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "Stable release detected"
+          fi
+
+      - name: Generate Release Notes
+        id: release-notes
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          # Create release notes based on type
+          if [[ "$VERSION" =~ rc|a|b ]]; then
+            cat > release-notes.md << 'EOF'
+          ## Pre-release for Testing
+
+          ⚠️ **This is a pre-release version available on TestPyPI**
+
+          ### Installation
+
+          ```bash
+          pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple async-cassandra==${{ github.ref_name }}
+          ```
+
+          ### Testing Instructions
+
+          Please test:
+          - Package installation
+          - Basic imports: `from async_cassandra import AsyncCluster`
+          - FastAPI integration if applicable
+          - Report any issues on GitHub
+
+          ### What's Changed
+
+          EOF
+          else
+            cat > release-notes.md << 'EOF'
+          ## Stable Release
+
+          ### Installation
+
+          ```bash
+          pip install async-cassandra
+          ```
+
+          ### What's Changed
+
+          EOF
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref }}
+          prerelease: ${{ steps.check-prerelease.outputs.prerelease }}
+          generate_release_notes: true
+          body_path: release-notes.md
+          draft: false
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: full-ci
+    runs-on: ubuntu-latest
+    # Only publish stable versions (no pre-release suffix)
+    # Pre-releases go to TestPyPI for now
+    if: |
+      !contains(github.ref, 'rc') &&
+      !contains(github.ref, 'a') &&
+      !contains(github.ref, 'b')
+
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: List distribution files
+        run: |
+          echo "Distribution files to be published to PyPI:"
+          ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          print-hash: true
+
+      - name: Create PyPI Summary
+        run: |
+          echo "## 🚀 Published to PyPI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install with:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install async-cassandra" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View on PyPI: https://pypi.org/project/async-cassandra/" >> $GITHUB_STEP_SUMMARY
