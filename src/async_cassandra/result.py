@@ -109,7 +109,7 @@ class AsyncResultHandler:
                 self._future.set_exception(self._early_error)
             elif self._early_result:
                 self._future.set_result(self._early_result)
-            elif not self.response_future.has_more_pages and self.rows:
+            elif not self.response_future.has_more_pages and self.rows is not None:
                 self._future.set_result(AsyncResultSet(list(self.rows)))
 
         # Use query timeout if no explicit timeout provided
