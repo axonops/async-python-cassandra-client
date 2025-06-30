@@ -74,22 +74,29 @@ test-core:
 	pytest tests/unit/test_basic_queries.py tests/unit/test_cluster.py tests/unit/test_session.py -v -x
 
 # Critical path - MUST ALL PASS
-test-critical: cassandra-wait
-	@echo "Running critical tests (including FastAPI)..."
-	pytest tests/unit -v -x -m "critical" || pytest tests/unit/test_critical_issues.py -v -x
+test-critical:
+	@echo "Running critical tests..."
+	@echo "=== Running Critical Unit Tests (No Cassandra) ==="
+	pytest tests/unit/test_critical_issues.py -v -x
+	@echo "=== Starting Cassandra for Integration Tests ==="
+	$(MAKE) cassandra-wait
+	@echo "=== Running Critical FastAPI Tests ==="
 	pytest tests/fastapi_integration -v
 	cd examples/fastapi_app && pytest tests/test_fastapi_app.py -v
-	pytest tests/bdd -m "critical" -v || pytest tests/bdd -v -x
+	@echo "=== Cleaning up Cassandra ==="
+	$(MAKE) cassandra-stop
 
 # Progressive execution - FAIL FAST
-test-progressive: cassandra-wait
+test-progressive:
 	@echo "Running tests in fail-fast order..."
-	@echo "=== Running Core Unit Tests ==="
+	@echo "=== Running Core Unit Tests (No Cassandra) ==="
 	@pytest tests/unit/test_basic_queries.py tests/unit/test_cluster.py tests/unit/test_session.py -v -x || exit 1
-	@echo "=== Running Resilience Tests ==="
+	@echo "=== Running Resilience Tests (No Cassandra) ==="
 	@pytest tests/unit/test_error_recovery.py tests/unit/test_retry_policy.py -v -x || exit 1
-	@echo "=== Running Feature Tests ==="
+	@echo "=== Running Feature Tests (No Cassandra) ==="
 	@pytest tests/unit/test_streaming.py tests/unit/test_prepared_statements.py -v || exit 1
+	@echo "=== Starting Cassandra for Integration Tests ==="
+	@$(MAKE) cassandra-wait || exit 1
 	@echo "=== Running Integration Tests ==="
 	@pytest tests/integration -v || exit 1
 	@echo "=== Running FastAPI Integration Tests ==="
@@ -98,6 +105,8 @@ test-progressive: cassandra-wait
 	@cd examples/fastapi_app && pytest tests/test_fastapi_app.py -v || exit 1
 	@echo "=== Running BDD Tests ==="
 	@pytest tests/bdd -v || exit 1
+	@echo "=== Cleaning up Cassandra ==="
+	@$(MAKE) cassandra-stop
 
 # Test suite commands
 test-resilience:
@@ -117,12 +126,19 @@ test-performance:
 test-bdd: cassandra-wait
 	@echo "Running BDD tests..."
 	@mkdir -p reports
-	pytest tests/bdd -v --cucumber-json=reports/bdd.json
+	pytest tests/bdd/ -v
 
 # Standard test command - runs everything except stress
-test: cassandra-wait
+test:
 	@echo "Running standard test suite..."
-	pytest tests/ -v -m "not stress"
+	@echo "=== Running Unit Tests (No Cassandra Required) ==="
+	pytest tests/unit/ -v
+	@echo "=== Starting Cassandra for Integration Tests ==="
+	$(MAKE) cassandra-wait
+	@echo "=== Running Integration/FastAPI/BDD Tests ==="
+	pytest tests/integration/ tests/fastapi_integration/ tests/bdd/ -v -m "not stress"
+	@echo "=== Cleaning up Cassandra ==="
+	$(MAKE) cassandra-stop
 
 test-unit:
 	@echo "Running unit tests (no Cassandra required)..."
@@ -131,12 +147,12 @@ test-unit:
 
 test-integration: cassandra-wait
 	@echo "Running integration tests..."
-	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m integration
+	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m "not stress"
 	@echo "Integration tests completed."
 
 test-integration-keep: cassandra-wait
 	@echo "Running integration tests (keeping containers after tests)..."
-	KEEP_CONTAINERS=1 CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m integration
+	KEEP_CONTAINERS=1 CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ -v -m "not stress"
 	@echo "Integration tests completed. Containers are still running."
 
 test-fastapi: cassandra-wait
@@ -152,9 +168,39 @@ test-stress: cassandra-wait
 	@echo "Stress tests completed."
 
 # Full test suite - EVERYTHING MUST PASS
-test-all: lint cassandra-wait
+test-all: lint
 	@echo "Running complete test suite..."
-	@./scripts/run_tests.sh all
+	@echo "=== Running Unit Tests (No Cassandra Required) ==="
+	pytest tests/unit/ -v --cov=async_cassandra --cov-report=html --cov-report=xml
+
+	@echo "=== Running Integration Tests ==="
+	$(MAKE) cassandra-stop || true
+	$(MAKE) cassandra-wait
+	pytest tests/integration/ -v -m "not stress"
+
+	@echo "=== Running FastAPI Integration Tests ==="
+	$(MAKE) cassandra-stop
+	$(MAKE) cassandra-wait
+	pytest tests/fastapi_integration/ -v
+
+	@echo "=== Running BDD Tests ==="
+	$(MAKE) cassandra-stop
+	$(MAKE) cassandra-wait
+	pytest tests/bdd/ -v
+
+	@echo "=== Running Example App Tests ==="
+	$(MAKE) cassandra-stop
+	$(MAKE) cassandra-wait
+	cd examples/fastapi_app && pytest tests/ -v
+
+	@echo "=== Running Stress Tests ==="
+	$(MAKE) cassandra-stop
+	$(MAKE) cassandra-wait
+	pytest tests/integration/ -v -m stress
+
+	@echo "=== Cleaning up Cassandra ==="
+	$(MAKE) cassandra-stop
+	@echo "✅ All tests completed!"
 
 # Code quality - MUST PASS
 lint:
@@ -240,7 +286,7 @@ cassandra-wait:
 		exit 1; \
 	else \
 		echo "Checking if Cassandra on $(CASSANDRA_CONTACT_POINTS):$(CASSANDRA_PORT) can accept queries..."; \
-		if [ "$(CASSANDRA_CONTACT_POINTS)" = "localhost" ] && $(CONTAINER_RUNTIME) ps --format "{{.Names}}" | grep -q "^$(CASSANDRA_CONTAINER_NAME)$$"; then \
+		if [ "$(CASSANDRA_CONTACT_POINTS)" = "127.0.0.1" ] && $(CONTAINER_RUNTIME) ps --format "{{.Names}}" | grep -q "^$(CASSANDRA_CONTAINER_NAME)$$"; then \
 			if ! $(CONTAINER_RUNTIME) exec $(CASSANDRA_CONTAINER_NAME) cqlsh -e "SELECT release_version FROM system.local" 2>&1 | grep -q "[0-9]"; then \
 				echo "Cassandra is running but not accepting queries yet, waiting..."; \
 				for i in $$(seq 1 30); do \

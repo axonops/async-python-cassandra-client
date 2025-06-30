@@ -3,7 +3,6 @@ Integration tests for FastAPI example application.
 """
 
 import asyncio
-import os
 import sys
 import uuid
 from pathlib import Path
@@ -245,7 +244,6 @@ class TestPerformance:
         assert data["requests_per_second"] > 0
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.getenv("CI") == "true", reason="Performance comparison unreliable in CI")
     async def test_performance_comparison(self, client: AsyncClient, cassandra_service):
         """Test that async is faster than sync for concurrent operations."""
         # Run async test

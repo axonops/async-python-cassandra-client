@@ -6,7 +6,6 @@ handles reconnection automatically, which is critical for rolling restarts and D
 """
 
 import asyncio
-import os
 import subprocess
 import time
 
@@ -219,7 +218,6 @@ class TestFastAPIReconnection:
         print("   - No manual intervention required")
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.getenv("CI") == "true", reason="Reconnection timing unreliable in CI")
     async def test_multiple_reconnection_cycles(self, app_client, cassandra_container):
         """Test multiple disconnect/reconnect cycles to ensure stability."""
         print("\n=== Testing Multiple Reconnection Cycles ===")
