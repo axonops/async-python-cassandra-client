@@ -123,6 +123,8 @@ async def unique_test_keyspace(cassandra_container):
     await cleanup_keyspace(session, keyspace)
     await session.close()
     await cluster.shutdown()
+    # Give extra time for driver's internal threads to fully stop
+    await asyncio.sleep(2)
 
 
 @pytest_asyncio.fixture

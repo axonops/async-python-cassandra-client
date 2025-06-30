@@ -71,9 +71,12 @@ async def cassandra_cluster(cassandra_container):  # noqa: F811
     if not health["native_transport"] or not health["cql_available"]:
         pytest.fail(f"Cassandra not healthy: {health}")
 
-    cluster = AsyncCluster(["localhost"], protocol_version=5)
+    cluster = AsyncCluster(["127.0.0.1"], protocol_version=5)
     yield cluster
     await cluster.shutdown()
+    # Give extra time for driver's internal threads to fully stop
+    # This prevents "cannot schedule new futures after shutdown" errors
+    await asyncio.sleep(2)
 
 
 @pytest.fixture
@@ -91,6 +94,8 @@ async def isolated_session(cassandra_cluster):
     # Cleanup
     await cleanup_keyspace(session, keyspace)
     await session.close()
+    # Give time for session cleanup
+    await asyncio.sleep(1)
 
 
 @pytest.fixture

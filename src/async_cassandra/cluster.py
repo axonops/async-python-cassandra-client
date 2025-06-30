@@ -258,6 +258,7 @@ class AsyncCluster(AsyncContextManageable):
                 )
                 # Give the driver's internal threads time to finish
                 # This helps prevent "cannot schedule new futures after shutdown" errors
+                # The driver has internal scheduler threads that may still be running
                 await asyncio.sleep(5.0)
 
     async def shutdown(self) -> None:

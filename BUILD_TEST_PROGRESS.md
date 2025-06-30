@@ -72,3 +72,7 @@
 2. Fixed integration test fixtures to use shared cluster
 3. Forced IPv4 (127.0.0.1) instead of localhost to prevent IPv6 issues
 4. Updated Cassandra memory settings to match GitHub CI (4GB/3GB)
+5. Fixed all linting errors:
+   - Changed bare except to `except Exception:`
+   - Fixed trailing whitespace
+   - Ensured proper file formatting
