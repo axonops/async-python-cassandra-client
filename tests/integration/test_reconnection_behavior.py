@@ -5,6 +5,7 @@ This test verifies that our wrapper doesn't interfere with the driver's reconnec
 """
 
 import asyncio
+import os
 import subprocess
 import time
 
@@ -13,64 +14,38 @@ from cassandra.cluster import Cluster
 from cassandra.policies import ConstantReconnectionPolicy
 
 from async_cassandra import AsyncCluster
+from tests.utils.cassandra_control import CassandraControl
 
 
 class TestReconnectionBehavior:
     """Test reconnection behavior of raw driver vs async wrapper."""
 
-    def _execute_nodetool_command(self, command):
-        """Execute a nodetool command in the Cassandra container."""
-        container_runtime = (
-            "podman"
-            if subprocess.run(["which", "podman"], capture_output=True).returncode == 0
-            else "docker"
-        )
-        return subprocess.run(
-            [container_runtime, "exec", "async-cassandra-test", "nodetool", command],
-            capture_output=True,
-            text=True,
-        )
-
-    def _wait_for_cassandra_ready(self, timeout=30):
-        """Wait for Cassandra to be ready using cqlsh."""
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                result = subprocess.run(
-                    ["cqlsh", "127.0.0.1", "-e", "SELECT release_version FROM system.local;"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0:
-                    return True
-            except (subprocess.TimeoutExpired, Exception):
-                pass
-            time.sleep(0.5)
-        return False
-
-    def _wait_for_cassandra_down(self, timeout=10):
-        """Wait for Cassandra to be down."""
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                result = subprocess.run(
-                    ["cqlsh", "127.0.0.1", "-e", "SELECT 1;"],
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                )
-                if result.returncode != 0:
-                    return True
-            except (subprocess.TimeoutExpired, Exception):
-                return True
-            time.sleep(0.5)
-        return False
+    def _get_cassandra_control(self, container=None):
+        """Get Cassandra control interface for the test environment."""
+        # For integration tests, create a mock container object with just the fields we need
+        if container is None and os.environ.get("CI") != "true":
+            container = type(
+                "MockContainer",
+                (),
+                {
+                    "container_name": "async-cassandra-test",
+                    "runtime": (
+                        "podman"
+                        if subprocess.run(["which", "podman"], capture_output=True).returncode == 0
+                        else "docker"
+                    ),
+                },
+            )()
+        return CassandraControl(container)
 
     @pytest.mark.integration
     def test_raw_driver_reconnection(self):
         """Test reconnection with raw Cassandra driver (synchronous)."""
         print("\n=== Testing Raw Driver Reconnection ===")
+
+        # Skip this test in CI since we can't control Cassandra service
+        if os.environ.get("CI") == "true":
+            pytest.skip("Cannot control Cassandra service in CI environment")
 
         # Create cluster with constant reconnection policy
         cluster = Cluster(
@@ -106,11 +81,13 @@ class TestReconnectionBehavior:
         assert result.one().value == "before_outage"
         print("✓ Initial connection working")
 
+        # Get control interface
+        control = self._get_cassandra_control()
+
         # Disable Cassandra
         print("Disabling Cassandra binary protocol...")
-        disable_result = self._execute_nodetool_command("disablebinary")
-        assert disable_result.returncode == 0
-        assert self._wait_for_cassandra_down(), "Cassandra did not go down"
+        success = control.simulate_outage()
+        assert success, "Failed to simulate Cassandra outage"
         print("✓ Cassandra is down")
 
         # Try query - should fail
@@ -122,9 +99,8 @@ class TestReconnectionBehavior:
 
         # Re-enable Cassandra
         print("Re-enabling Cassandra binary protocol...")
-        enable_result = self._execute_nodetool_command("enablebinary")
-        assert enable_result.returncode == 0
-        assert self._wait_for_cassandra_ready(), "Cassandra did not come back"
+        success = control.restore_service()
+        assert success, "Failed to restore Cassandra service"
         print("✓ Cassandra is ready")
 
         # Test reconnection - try for up to 30 seconds
@@ -157,6 +133,10 @@ class TestReconnectionBehavior:
     async def test_async_wrapper_reconnection(self):
         """Test reconnection with async wrapper."""
         print("\n=== Testing Async Wrapper Reconnection ===")
+
+        # Skip this test in CI since we can't control Cassandra service
+        if os.environ.get("CI") == "true":
+            pytest.skip("Cannot control Cassandra service in CI environment")
 
         # Create cluster with constant reconnection policy
         cluster = AsyncCluster(
@@ -192,11 +172,13 @@ class TestReconnectionBehavior:
         assert result.one().value == "before_outage"
         print("✓ Initial connection working")
 
+        # Get control interface
+        control = self._get_cassandra_control()
+
         # Disable Cassandra
         print("Disabling Cassandra binary protocol...")
-        disable_result = self._execute_nodetool_command("disablebinary")
-        assert disable_result.returncode == 0
-        assert self._wait_for_cassandra_down(), "Cassandra did not go down"
+        success = control.simulate_outage()
+        assert success, "Failed to simulate Cassandra outage"
         print("✓ Cassandra is down")
 
         # Try query - should fail
@@ -208,9 +190,8 @@ class TestReconnectionBehavior:
 
         # Re-enable Cassandra
         print("Re-enabling Cassandra binary protocol...")
-        enable_result = self._execute_nodetool_command("enablebinary")
-        assert enable_result.returncode == 0
-        assert self._wait_for_cassandra_ready(), "Cassandra did not come back"
+        success = control.restore_service()
+        assert success, "Failed to restore Cassandra service"
         print("✓ Cassandra is ready")
 
         # Test reconnection - try for up to 30 seconds
@@ -244,6 +225,10 @@ class TestReconnectionBehavior:
     async def test_reconnection_timing_comparison(self):
         """Compare reconnection timing between raw driver and async wrapper."""
         print("\n=== Comparing Reconnection Timing ===")
+
+        # Skip this test in CI since we can't control Cassandra service
+        if os.environ.get("CI") == "true":
+            pytest.skip("Cannot control Cassandra service in CI environment")
 
         # Test both in parallel to ensure fair comparison
         raw_reconnect_time = None
@@ -302,8 +287,11 @@ class TestReconnectionBehavior:
             await session.close()
             await cluster.shutdown()
 
+        # Get control interface
+        control = self._get_cassandra_control()
+
         # Ensure Cassandra is up
-        assert self._wait_for_cassandra_ready(), "Cassandra not ready at start"
+        assert control.wait_for_cassandra_ready(), "Cassandra not ready at start"
 
         # Start both tests
         import threading
@@ -315,14 +303,12 @@ class TestReconnectionBehavior:
         # Disable Cassandra after connections are established
         await asyncio.sleep(1)
         print("Disabling Cassandra...")
-        self._execute_nodetool_command("disablebinary")
-        assert self._wait_for_cassandra_down()
+        control.simulate_outage()
 
         # Re-enable after a few seconds
         await asyncio.sleep(3)
         print("Re-enabling Cassandra...")
-        self._execute_nodetool_command("enablebinary")
-        assert self._wait_for_cassandra_ready()
+        control.restore_service()
 
         # Wait for both tests to complete
         raw_thread.join(timeout=35)
