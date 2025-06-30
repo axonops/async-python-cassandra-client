@@ -58,7 +58,7 @@ class AsyncResultHandler:
             else:
                 # All pages fetched
                 # Create a copy of rows to avoid reference issues
-                final_result = AsyncResultSet(list(self.rows))
+                final_result = AsyncResultSet(list(self.rows), self.response_future)
 
                 if self._future and not self._future.done():
                     loop = getattr(self, "_loop", None)
@@ -141,9 +141,10 @@ class AsyncResultSet:
     Provides async iteration over result rows and metadata access.
     """
 
-    def __init__(self, rows: List[Any]):
+    def __init__(self, rows: List[Any], response_future: Any = None):
         self._rows = rows
         self._index = 0
+        self._response_future = response_future
 
     def __aiter__(self) -> AsyncIterator[Any]:
         """Return async iterator for the result set."""
@@ -189,3 +190,14 @@ class AsyncResultSet:
             List of all rows in the result set.
         """
         return self._rows
+
+    def get_query_trace(self) -> Any:
+        """
+        Get the query trace if available.
+
+        Returns:
+            Query trace object or None if tracing wasn't enabled.
+        """
+        if self._response_future and hasattr(self._response_future, "get_query_trace"):
+            return self._response_future.get_query_trace()
+        return None

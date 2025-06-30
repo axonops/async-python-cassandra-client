@@ -1,0 +1,555 @@
+"""
+Integration tests comparing async wrapper behavior with raw driver.
+
+This ensures our wrapper maintains compatibility and doesn't break any functionality.
+"""
+
+import asyncio
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+
+import pytest
+from cassandra import ConsistencyLevel
+from cassandra.cluster import Cluster as SyncCluster
+from cassandra.query import BatchStatement, BatchType, dict_factory
+
+
+@pytest.mark.integration
+class TestDriverCompatibility:
+    """Test async wrapper compatibility with raw driver features."""
+
+    @pytest.fixture
+    def sync_cluster(self):
+        """Create a synchronous cluster for comparison."""
+        cluster = SyncCluster(["127.0.0.1"])
+        yield cluster
+        cluster.shutdown()
+
+    @pytest.fixture
+    def sync_session(self, sync_cluster, unique_keyspace):
+        """Create a synchronous session."""
+        session = sync_cluster.connect()
+        session.execute(
+            f"""
+            CREATE KEYSPACE IF NOT EXISTS {unique_keyspace}
+            WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
+        """
+        )
+        session.set_keyspace(unique_keyspace)
+        yield session
+        session.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_basic_query_compatibility(self, sync_session, session_with_keyspace):
+        """Test basic query execution matches between sync and async."""
+        async_session, keyspace = session_with_keyspace
+
+        # Create table in both sessions' keyspace
+        table_name = f"compat_basic_{uuid.uuid4().hex[:8]}"
+        create_table = f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                name text,
+                value double
+            )
+        """
+
+        # Create in sync session's keyspace
+        sync_session.execute(create_table)
+
+        # Create in async session's keyspace
+        await async_session.execute(create_table)
+
+        # Prepare statements - both use ? for prepared statements
+        sync_prepared = sync_session.prepare(
+            f"INSERT INTO {table_name} (id, name, value) VALUES (?, ?, ?)"
+        )
+        async_prepared = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, name, value) VALUES (?, ?, ?)"
+        )
+
+        # Sync insert
+        sync_session.execute(sync_prepared, (1, "sync", 1.23))
+
+        # Async insert
+        await async_session.execute(async_prepared, (2, "async", 4.56))
+
+        # Both should see their own rows (different keyspaces)
+        sync_result = list(sync_session.execute(f"SELECT * FROM {table_name}"))
+        async_result = list(await async_session.execute(f"SELECT * FROM {table_name}"))
+
+        assert len(sync_result) == 1  # Only sync's insert
+        assert len(async_result) == 1  # Only async's insert
+        assert sync_result[0].name == "sync"
+        assert async_result[0].name == "async"
+
+    @pytest.mark.asyncio
+    async def test_prepared_statement_compatibility(self, sync_session, session_with_keyspace):
+        """Test prepared statements work identically."""
+        async_session, keyspace = session_with_keyspace
+
+        # Create table in both keyspaces
+        table_name = f"compat_prepared_{uuid.uuid4().hex[:8]}"
+        create_table = f"""
+            CREATE TABLE {table_name} (
+                id uuid PRIMARY KEY,
+                data text,
+                timestamp timestamp
+            )
+        """
+        sync_session.execute(create_table)
+        await async_session.execute(create_table)
+
+        # Prepare statements
+        query = f"INSERT INTO {table_name} (id, data, timestamp) VALUES (?, ?, ?)"
+        sync_prepared = sync_session.prepare(query)
+        async_prepared = await async_session.prepare(query)
+
+        # Execute prepared statements
+        test_id = uuid.uuid4()
+        test_time = datetime.utcnow()
+
+        sync_session.execute(sync_prepared, [test_id, "sync_data", test_time])
+
+        test_id2 = uuid.uuid4()
+        await async_session.execute(async_prepared, [test_id2, "async_data", test_time])
+
+        # Verify both work
+        sync_result = list(sync_session.execute(f"SELECT * FROM {table_name}"))
+        async_result = list(await async_session.execute(f"SELECT * FROM {table_name}"))
+
+        assert len(sync_result) == 1
+        assert len(async_result) == 1
+        assert sync_result[0].data == "sync_data"
+        assert async_result[0].data == "async_data"
+
+    @pytest.mark.asyncio
+    async def test_batch_compatibility(self, sync_session, session_with_keyspace):
+        """Test batch operations compatibility."""
+        async_session, keyspace = session_with_keyspace
+
+        # Create tables in both keyspaces
+        table_name = f"compat_batch_{uuid.uuid4().hex[:8]}"
+        counter_table = f"compat_counter_{uuid.uuid4().hex[:8]}"
+
+        # Create in sync keyspace
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+        sync_session.execute(
+            f"""
+            CREATE TABLE {counter_table} (
+                id text PRIMARY KEY,
+                count counter
+            )
+        """
+        )
+
+        # Create in async keyspace
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {counter_table} (
+                id text PRIMARY KEY,
+                count counter
+            )
+        """
+        )
+
+        # Prepare statements
+        sync_stmt = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
+        async_stmt = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
+        )
+
+        # Test logged batch
+        sync_batch = BatchStatement()
+        async_batch = BatchStatement()
+
+        for i in range(5):
+            sync_batch.add(sync_stmt, (i, f"sync_{i}"))
+            async_batch.add(async_stmt, (i + 10, f"async_{i}"))
+
+        sync_session.execute(sync_batch)
+        await async_session.execute(async_batch)
+
+        # Test counter batch
+        sync_counter_stmt = sync_session.prepare(
+            f"UPDATE {counter_table} SET count = count + ? WHERE id = ?"
+        )
+        async_counter_stmt = await async_session.prepare(
+            f"UPDATE {counter_table} SET count = count + ? WHERE id = ?"
+        )
+
+        sync_counter_batch = BatchStatement(batch_type=BatchType.COUNTER)
+        async_counter_batch = BatchStatement(batch_type=BatchType.COUNTER)
+
+        sync_counter_batch.add(sync_counter_stmt, (5, "sync_counter"))
+        async_counter_batch.add(async_counter_stmt, (10, "async_counter"))
+
+        sync_session.execute(sync_counter_batch)
+        await async_session.execute(async_counter_batch)
+
+        # Verify
+        sync_batch_result = list(sync_session.execute(f"SELECT * FROM {table_name}"))
+        async_batch_result = list(await async_session.execute(f"SELECT * FROM {table_name}"))
+
+        assert len(sync_batch_result) == 5  # sync batch
+        assert len(async_batch_result) == 5  # async batch
+
+        sync_counter_result = list(sync_session.execute(f"SELECT * FROM {counter_table}"))
+        async_counter_result = list(await async_session.execute(f"SELECT * FROM {counter_table}"))
+
+        assert len(sync_counter_result) == 1
+        assert len(async_counter_result) == 1
+        assert sync_counter_result[0].count == 5
+        assert async_counter_result[0].count == 10
+
+    @pytest.mark.asyncio
+    async def test_consistency_level_compatibility(self, sync_session, session_with_keyspace):
+        """Test consistency levels work the same."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_consistency_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+
+        # Test various consistency levels
+        consistency_levels = [ConsistencyLevel.ONE, ConsistencyLevel.QUORUM, ConsistencyLevel.ALL]
+
+        # Prepare statements - both use ? for prepared statements
+        sync_insert = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
+        async_insert = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
+        )
+
+        for i, cl in enumerate(consistency_levels):
+            # Sync write with consistency level on prepared statement
+            sync_insert.consistency_level = cl
+            sync_session.execute(sync_insert, (i, f"sync_cl_{cl}"))
+
+            # Async write with consistency level on prepared statement
+            async_insert.consistency_level = cl
+            await async_session.execute(async_insert, (i + 10, f"async_cl_{cl}"))
+
+        # Prepare read statements
+        sync_select = sync_session.prepare(f"SELECT * FROM {table_name}")
+        async_select = await async_session.prepare(f"SELECT * FROM {table_name}")
+
+        # Set consistency level
+        sync_select.consistency_level = ConsistencyLevel.ONE
+        async_select.consistency_level = ConsistencyLevel.ONE
+
+        # Read with different consistency
+        sync_read = sync_session.execute(sync_select)
+        async_read = await async_session.execute(async_select)
+
+        assert len(list(sync_read)) == 3
+        assert len(list(async_read)) == 3
+
+    @pytest.mark.asyncio
+    async def test_row_factory_compatibility(self, sync_session, session_with_keyspace):
+        """Test row factories work the same."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_factory_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                name text,
+                age int
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                name text,
+                age int
+            )
+        """
+        )
+
+        # Insert test data using prepared statements
+        sync_insert = sync_session.prepare(
+            f"INSERT INTO {table_name} (id, name, age) VALUES (?, ?, ?)"
+        )
+        async_insert = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, name, age) VALUES (?, ?, ?)"
+        )
+
+        sync_session.execute(sync_insert, (1, "Alice", 30))
+        await async_session.execute(async_insert, (1, "Alice", 30))
+
+        # Set row factory to dict
+        sync_session.row_factory = dict_factory
+        async_session._session.row_factory = dict_factory
+
+        # Query and compare
+        sync_result = sync_session.execute(f"SELECT * FROM {table_name}").one()
+        async_result = (await async_session.execute(f"SELECT * FROM {table_name}")).one()
+
+        assert isinstance(sync_result, dict)
+        assert isinstance(async_result, dict)
+        assert sync_result == async_result
+        assert sync_result["name"] == "Alice"
+        assert async_result["age"] == 30
+
+    @pytest.mark.asyncio
+    async def test_timeout_compatibility(self, sync_session, session_with_keyspace):
+        """Test timeout behavior is similar."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_timeout_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                data text
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                data text
+            )
+        """
+        )
+
+        # Both should respect timeout
+        short_timeout = 0.001  # 1ms - should timeout
+
+        # These might timeout or not depending on system load
+        # We're just checking they don't crash
+        try:
+            sync_session.execute(f"SELECT * FROM {table_name}", timeout=short_timeout)
+        except Exception:
+            pass  # Timeout is expected
+
+        try:
+            await async_session.execute(f"SELECT * FROM {table_name}", timeout=short_timeout)
+        except Exception:
+            pass  # Timeout is expected
+
+    @pytest.mark.asyncio
+    async def test_concurrent_execution_performance(self, sync_session, session_with_keyspace):
+        """Test that async wrapper performs better for concurrent operations."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_perf_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+
+        # Number of concurrent operations
+        num_ops = 50
+
+        # Prepare statements - both use ? for prepared statements
+        sync_insert = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
+        async_insert = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
+        )
+
+        # Sync approach with thread pool
+        start_sync = time.time()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for i in range(num_ops):
+                future = executor.submit(sync_session.execute, sync_insert, (i, f"sync_{i}"))
+                futures.append(future)
+
+            # Wait for all
+            for future in futures:
+                future.result()
+        sync_time = time.time() - start_sync
+
+        # Async approach
+        start_async = time.time()
+        tasks = []
+        for i in range(num_ops):
+            task = async_session.execute(async_insert, (i + 1000, f"async_{i}"))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
+        async_time = time.time() - start_async
+
+        # Async should generally be faster for concurrent ops
+        print(f"Sync time: {sync_time:.3f}s, Async time: {async_time:.3f}s")
+
+        # Verify all data was inserted
+        sync_result = sync_session.execute(f"SELECT COUNT(*) FROM {table_name}")
+        async_result = await async_session.execute(f"SELECT COUNT(*) FROM {table_name}")
+        assert sync_result.one()[0] == num_ops
+        assert async_result.one()[0] == num_ops
+
+    @pytest.mark.asyncio
+    async def test_trace_compatibility(self, sync_session, session_with_keyspace):
+        """Test query tracing works the same."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_trace_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text
+            )
+        """
+        )
+
+        # Prepare statements - both use ? for prepared statements
+        sync_insert = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
+        async_insert = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
+        )
+
+        # Execute with tracing
+        sync_result = sync_session.execute(sync_insert, (1, "sync_trace"), trace=True)
+
+        async_result = await async_session.execute(async_insert, (2, "async_trace"), trace=True)
+
+        # Both should have trace available
+        assert sync_result.get_query_trace() is not None
+        assert async_result.get_query_trace() is not None
+
+        # Verify data
+        sync_count = sync_session.execute(f"SELECT COUNT(*) FROM {table_name}")
+        async_count = await async_session.execute(f"SELECT COUNT(*) FROM {table_name}")
+        assert sync_count.one()[0] == 1
+        assert async_count.one()[0] == 1
+
+    @pytest.mark.asyncio
+    async def test_lwt_compatibility(self, sync_session, session_with_keyspace):
+        """Test lightweight transactions work the same."""
+        async_session, keyspace = session_with_keyspace
+
+        table_name = f"compat_lwt_{uuid.uuid4().hex[:8]}"
+
+        # Create table in both keyspaces
+        sync_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text,
+                version int
+            )
+        """
+        )
+        await async_session.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id int PRIMARY KEY,
+                value text,
+                version int
+            )
+        """
+        )
+
+        # Prepare LWT statements - both use ? for prepared statements
+        sync_insert_if_not_exists = sync_session.prepare(
+            f"INSERT INTO {table_name} (id, value, version) VALUES (?, ?, ?) IF NOT EXISTS"
+        )
+        async_insert_if_not_exists = await async_session.prepare(
+            f"INSERT INTO {table_name} (id, value, version) VALUES (?, ?, ?) IF NOT EXISTS"
+        )
+
+        # Test IF NOT EXISTS
+        sync_result = sync_session.execute(sync_insert_if_not_exists, (1, "sync", 1))
+        async_result = await async_session.execute(async_insert_if_not_exists, (2, "async", 1))
+
+        # Both should succeed
+        assert sync_result.one().applied
+        assert async_result.one().applied
+
+        # Prepare conditional update statements - both use ? for prepared statements
+        sync_update_if = sync_session.prepare(
+            f"UPDATE {table_name} SET value = ?, version = ? WHERE id = ? IF version = ?"
+        )
+        async_update_if = await async_session.prepare(
+            f"UPDATE {table_name} SET value = ?, version = ? WHERE id = ? IF version = ?"
+        )
+
+        # Test conditional update
+        sync_update = sync_session.execute(sync_update_if, ("sync_updated", 2, 1, 1))
+        async_update = await async_session.execute(async_update_if, ("async_updated", 2, 2, 1))
+
+        assert sync_update.one().applied
+        assert async_update.one().applied
+
+        # Prepare failed condition statements - both use ? for prepared statements
+        sync_update_fail = sync_session.prepare(
+            f"UPDATE {table_name} SET version = ? WHERE id = ? IF version = ?"
+        )
+        async_update_fail = await async_session.prepare(
+            f"UPDATE {table_name} SET version = ? WHERE id = ? IF version = ?"
+        )
+
+        # Failed condition
+        sync_fail = sync_session.execute(sync_update_fail, (3, 1, 1))
+        async_fail = await async_session.execute(async_update_fail, (3, 2, 1))
+
+        assert not sync_fail.one().applied
+        assert not async_fail.one().applied
