@@ -93,21 +93,26 @@ class TestAsyncResultHandlerThreadSafety:
 
             try:
                 mock_future = Mock()
-                mock_future.has_more_pages = False
+                mock_future.has_more_pages = True  # Start with more pages expected
                 mock_future.add_callbacks = Mock()
                 mock_future.timeout = None
+                mock_future.start_fetching_next_page = Mock()
 
                 handler = AsyncResultHandler(mock_future)
 
                 # Start get_result to create the future
                 result_task = asyncio.create_task(handler.get_result())
-                await asyncio.sleep(0.01)  # Let it initialize
+                await asyncio.sleep(0.1)  # Make sure it's fully initialized
 
                 # Simulate callback from driver thread
                 def driver_callback():
                     nonlocal result_thread
                     result_thread = threading.current_thread()
+                    # First callback with more pages
                     handler._handle_page([1, 2, 3])
+                    # Now final callback - set has_more_pages to False before calling
+                    mock_future.has_more_pages = False
+                    handler._handle_page([4, 5, 6])
 
                 driver_thread = threading.Thread(target=driver_callback)
                 driver_thread.start()
@@ -124,7 +129,7 @@ class TestAsyncResultHandlerThreadSafety:
                 # The result task should be completed
                 assert result_task.done()
                 result = await result_task
-                assert len(result.rows) == 3
+                assert len(result.rows) == 6  # We added [1,2,3] then [4,5,6]
 
             finally:
                 loop.call_soon_threadsafe = original_call_soon_threadsafe

@@ -233,7 +233,7 @@ async def create_user(user: UserCreate):
 
 
 @app.get("/users", response_model=List[User])
-async def list_users(limit: int = 10):
+async def list_users(limit: int = Query(10, ge=1, le=10000)):
     """List all users."""
     if session is None:
         raise HTTPException(
@@ -242,7 +242,9 @@ async def list_users(limit: int = 10):
         )
 
     try:
-        result = await session.execute(f"SELECT * FROM users LIMIT {limit}")
+        # Use prepared statement with validated limit
+        stmt = await session.prepare("SELECT * FROM users LIMIT ?")
+        result = await session.execute(stmt, [limit])
 
         users = []
         async for row in result:
@@ -299,8 +301,9 @@ async def stream_users(
         stream_config = StreamConfig(fetch_size=fetch_size)
 
         # Use context manager for proper resource cleanup
+        stmt = await session.prepare("SELECT * FROM users LIMIT ?")
         async with await session.execute_stream(
-            f"SELECT * FROM users LIMIT {limit}", stream_config=stream_config
+            stmt, [limit], stream_config=stream_config
         ) as result:
             users = []
             async for row in result:
@@ -381,8 +384,9 @@ async def stream_users_by_pages(
         stream_config = StreamConfig(fetch_size=fetch_size, max_pages=max_pages)
 
         # Use context manager for automatic cleanup
+        stmt = await session.prepare("SELECT * FROM users LIMIT ?")
         async with await session.execute_stream(
-            f"SELECT * FROM users LIMIT {limit}", stream_config=stream_config
+            stmt, [limit], stream_config=stream_config
         ) as result:
             pages_info = []
             total_processed = 0
@@ -817,7 +821,8 @@ async def test_streaming_error_session_safety():
 
     # Try a valid streaming query
     row_count = 0
-    async with await session.execute_stream(f"SELECT * FROM {keyspace}.users LIMIT 10") as stream:
+    stmt = await session.prepare(f"SELECT * FROM {keyspace}.users LIMIT ?")
+    async with await session.execute_stream(stmt, [10]) as stream:
         async for row in stream:
             row_count += 1
 
@@ -851,8 +856,11 @@ async def test_concurrent_streams():
 
     # Insert test data
     for user in users_to_create:
+        stmt = await session.prepare(
+            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         await session.execute(
-            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            stmt,
             [UUID(user["id"]), user["name"], user["email"], user["age"]],
         )
 
@@ -862,8 +870,11 @@ async def test_concurrent_streams():
         users = []
 
         config = StreamConfig(fetch_size=5)
+        stmt = await session.prepare(
+            f"SELECT * FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
+        )
         async with await session.execute_stream(
-            f"SELECT * FROM {keyspace}.users WHERE age = %s ALLOW FILTERING",
+            stmt,
             [age],
             stream_config=config,
         ) as stream:
@@ -878,7 +889,8 @@ async def test_concurrent_streams():
 
     # Clean up test data
     for user in users_to_create:
-        await session.execute(f"DELETE FROM {keyspace}.users WHERE id = %s", [UUID(user["id"])])
+        stmt = await session.prepare(f"DELETE FROM {keyspace}.users WHERE id = ?")
+        await session.execute(stmt, [UUID(user["id"])])
 
     return {
         "test": "concurrent_streams",
@@ -930,9 +942,10 @@ async def test_nested_context_managers():
 
                 # Insert test data
                 for i in range(5):
-                    await test_session.execute(
-                        "INSERT INTO test_table (id, value) VALUES (%s, %s)", [uuid.uuid4(), i]
+                    stmt = await test_session.prepare(
+                        "INSERT INTO test_table (id, value) VALUES (?, ?)"
                     )
+                    await test_session.execute(stmt, [uuid.uuid4(), i])
 
                 # Create streaming context
                 row_count = 0
@@ -1011,8 +1024,11 @@ async def test_streaming_cancellation():
     for i in range(100):
         test_id = uuid.uuid4()
         test_ids.append(test_id)
+        stmt = await session.prepare(
+            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         await session.execute(
-            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            stmt,
             [test_id, f"Cancel Test {i}", f"cancel{i}@test.com", 25],
         )
 
@@ -1024,9 +1040,10 @@ async def test_streaming_cancellation():
     async def stream_with_delay():
         nonlocal rows_before_cancel
         try:
-            async with await session.execute_stream(
-                f"SELECT * FROM {keyspace}.users WHERE age = 25 ALLOW FILTERING"
-            ) as stream:
+            stmt = await session.prepare(
+                f"SELECT * FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
+            )
+            async with await session.execute_stream(stmt, [25]) as stream:
                 async for row in stream:
                     rows_before_cancel += 1
                     # Add delay to make cancellation more likely
@@ -1057,17 +1074,19 @@ async def test_streaming_cancellation():
 
     try:
         # Count rows to verify session works
-        result = await session.execute(
-            f"SELECT COUNT(*) FROM {keyspace}.users WHERE age = 25 ALLOW FILTERING"
+        stmt = await session.prepare(
+            f"SELECT COUNT(*) FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
         )
+        result = await session.execute(stmt, [25])
         row_count_after = result.one()[0]
         session_works = True
 
         # Try streaming again
         new_stream_count = 0
-        async with await session.execute_stream(
-            f"SELECT * FROM {keyspace}.users WHERE age = 25 LIMIT 10 ALLOW FILTERING"
-        ) as stream:
+        stmt = await session.prepare(
+            f"SELECT * FROM {keyspace}.users WHERE age = ? LIMIT ? ALLOW FILTERING"
+        )
+        async with await session.execute_stream(stmt, [25, 10]) as stream:
             async for row in stream:
                 new_stream_count += 1
 
@@ -1076,7 +1095,8 @@ async def test_streaming_cancellation():
 
     # Clean up test data
     for test_id in test_ids:
-        await session.execute(f"DELETE FROM {keyspace}.users WHERE id = %s", [test_id])
+        stmt = await session.prepare(f"DELETE FROM {keyspace}.users WHERE id = ?")
+        await session.execute(stmt, [test_id])
 
     return {
         "test": "streaming_cancellation",

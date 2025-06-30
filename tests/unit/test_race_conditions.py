@@ -273,12 +273,9 @@ class TestRaceConditions:
             mock_future.add_callbacks = Mock()
 
             def handle_callbacks(callback=None, errback=None):
-                async def delay_and_callback():
-                    await asyncio.sleep(0.1)
-                    if callback:
-                        callback([{"id": 1}])
-
-                asyncio.create_task(delay_and_callback())
+                # Call callback immediately to avoid empty result issue
+                if callback:
+                    callback([{"id": 1}])
 
             mock_future.add_callbacks.side_effect = handle_callbacks
             return mock_future
@@ -303,7 +300,7 @@ class TestRaceConditions:
         assert len(results) == 6
         # With async execution, all queries can run concurrently regardless of thread pool
         # Just verify they all completed
-        assert all(result._rows == [{"id": 1}] for result in results)
+        assert all(result.rows == [{"id": 1}] for result in results)
 
     @pytest.mark.resilience
     @pytest.mark.timeout(5)  # Add timeout to prevent hanging

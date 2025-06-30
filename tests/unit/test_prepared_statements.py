@@ -41,9 +41,20 @@ class TestPreparedStatements:
 
         mock_prepared.bind.return_value = mock_bound
         mock_session.prepare.return_value = mock_prepared
-        mock_session.execute_async.return_value = create_mock_response_future(
-            [{"id": 1, "name": "test"}]
-        )
+
+        # Create a mock response future manually to have more control
+        response_future = Mock()
+        response_future.has_more_pages = False
+        response_future.timeout = None
+        response_future.add_callbacks = Mock()
+
+        def setup_callback(callback=None, errback=None):
+            # Call the callback immediately with test data
+            if callback:
+                callback([{"id": 1, "name": "test"}])
+
+        response_future.add_callbacks.side_effect = setup_callback
+        mock_session.execute_async.return_value = response_future
 
         async_session = AsyncSession(mock_session)
 
@@ -53,8 +64,8 @@ class TestPreparedStatements:
         # Execute with parameters
         result = await async_session.execute(prepared, [1])
 
-        assert len(result._rows) == 1
-        assert result._rows[0] == {"id": 1, "name": "test"}
+        assert len(result.rows) == 1
+        assert result.rows[0] == {"id": 1, "name": "test"}
         # The prepared statement and parameters are passed to execute_async
         mock_session.execute_async.assert_called_once()
         # Check that the prepared statement was passed

@@ -29,18 +29,22 @@ class TestContextManagerSafetyIntegration:
 
         # Try a bad query
         with pytest.raises(InvalidRequest):
-            await cassandra_session.execute("SELECT * FROM non_existent_table")
+            await cassandra_session.execute(
+                "SELECT * FROM table_that_definitely_does_not_exist_xyz123"
+            )
 
         # Session should still be usable
         user_id = uuid.uuid4()
-        await cassandra_session.execute(
-            f"INSERT INTO {users_table} (id, name) VALUES (%s, %s)", [user_id, "Test User"]
+        insert_prepared = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name) VALUES (?, ?)"
         )
+        await cassandra_session.execute(insert_prepared, [user_id, "Test User"])
 
         # Verify insert worked
-        result = await cassandra_session.execute(
-            f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
+        select_prepared = await cassandra_session.prepare(
+            f"SELECT * FROM {users_table} WHERE id = ?"
         )
+        result = await cassandra_session.execute(select_prepared, [user_id])
         row = result.one()
         assert row.name == "Test User"
 
@@ -60,10 +64,11 @@ class TestContextManagerSafetyIntegration:
         )
 
         # Insert some data
+        insert_prepared = await cassandra_session.prepare(
+            "INSERT INTO test_stream_data (id, value) VALUES (?, ?)"
+        )
         for i in range(10):
-            await cassandra_session.execute(
-                "INSERT INTO test_stream_data (id, value) VALUES (%s, %s)", [uuid.uuid4(), i]
-            )
+            await cassandra_session.execute(insert_prepared, [uuid.uuid4(), i])
 
         # Stream with an error (simulate by using bad query)
         try:
@@ -106,10 +111,13 @@ class TestContextManagerSafetyIntegration:
         )
 
         # Insert data in different partitions
+        insert_prepared = await cassandra_session.prepare(
+            "INSERT INTO test_concurrent_data (partition, id, value) VALUES (?, ?, ?)"
+        )
         for partition in range(3):
             for i in range(100):
                 await cassandra_session.execute(
-                    "INSERT INTO test_concurrent_data (partition, id, value) VALUES (%s, %s, %s)",
+                    insert_prepared,
                     [partition, uuid.uuid4(), f"value_{partition}_{i}"],
                 )
 
@@ -122,9 +130,11 @@ class TestContextManagerSafetyIntegration:
                 count = 0
                 config = StreamConfig(fetch_size=10)
 
-                query = "SELECT * FROM test_concurrent_data WHERE partition = %s"
+                query_prepared = await session.prepare(
+                    "SELECT * FROM test_concurrent_data WHERE partition = ?"
+                )
                 async with await session.execute_stream(
-                    query, [partition_id], stream_config=config
+                    query_prepared, [partition_id], stream_config=config
                 ) as stream:
                     async for row in stream:
                         assert row.value.startswith(f"value_{partition_id}_")
@@ -161,9 +171,12 @@ class TestContextManagerSafetyIntegration:
                 )
 
                 # Insert data
+                insert_prepared = await session.prepare(
+                    "INSERT INTO test_session_ctx_data (id, value) VALUES (?, ?)"
+                )
                 for i in range(50):
                     await session.execute(
-                        "INSERT INTO test_session_ctx_data (id, value) VALUES (%s, %s)",
+                        insert_prepared,
                         [uuid.uuid4(), f"value_{i}"],
                     )
 
@@ -257,18 +270,25 @@ class TestContextManagerSafetyIntegration:
 
         # Insert test data
         categories = []
+        category_prepared = await cassandra_session.prepare(
+            "INSERT INTO test_nested_categories (id, name) VALUES (?, ?)"
+        )
+        item_prepared = await cassandra_session.prepare(
+            "INSERT INTO test_nested_items (category_id, id, name) VALUES (?, ?, ?)"
+        )
+
         for i in range(3):
             cat_id = uuid.uuid4()
             categories.append(cat_id)
             await cassandra_session.execute(
-                "INSERT INTO test_nested_categories (id, name) VALUES (%s, %s)",
+                category_prepared,
                 [cat_id, f"Category {i}"],
             )
 
             # Insert items for this category
             for j in range(5):
                 await cassandra_session.execute(
-                    "INSERT INTO test_nested_items (category_id, id, name) VALUES (%s, %s, %s)",
+                    item_prepared,
                     [cat_id, uuid.uuid4(), f"Item {i}-{j}"],
                 )
 
@@ -284,9 +304,11 @@ class TestContextManagerSafetyIntegration:
                 category_count += 1
 
                 # For each category, stream its items
-                query = "SELECT * FROM test_nested_items WHERE category_id = %s"
+                query_prepared = await cassandra_session.prepare(
+                    "SELECT * FROM test_nested_items WHERE category_id = ?"
+                )
                 async with await cassandra_session.execute_stream(
-                    query, [category.id]
+                    query_prepared, [category.id]
                 ) as item_stream:
                     async for item in item_stream:
                         item_count += 1

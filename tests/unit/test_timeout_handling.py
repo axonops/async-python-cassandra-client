@@ -19,7 +19,7 @@ class TestTimeoutHandling:
         """Test that get_result respects explicit timeout parameter."""
         # Mock ResponseFuture that never completes
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Indicate more pages to prevent immediate completion
         response_future.add_callbacks = Mock()
 
         handler = AsyncResultHandler(response_future)
@@ -32,7 +32,7 @@ class TestTimeoutHandling:
         """Test that get_result uses query timeout from ResponseFuture."""
         # Mock ResponseFuture with timeout attribute
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Indicate more pages to prevent immediate completion
         response_future.add_callbacks = Mock()
         response_future.timeout = 0.1  # Query timeout
 
@@ -44,25 +44,26 @@ class TestTimeoutHandling:
 
     async def test_get_result_no_timeout(self):
         """Test that get_result works without timeout when query completes."""
-        # Mock ResponseFuture
+        # Mock ResponseFuture that will have pages
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Start with more pages
         response_future.add_callbacks = Mock()
+        response_future.start_fetching_next_page = Mock()
         # Ensure timeout is not set
         response_future.timeout = None
 
         handler = AsyncResultHandler(response_future)
 
-        # Simulate successful completion after a delay
-        async def complete_after_delay():
-            await asyncio.sleep(0.1)
-            # Call the success callback
-            args = response_future.add_callbacks.call_args
-            callback = args[1]["callback"]
-            callback(["row1", "row2"])
+        # Get the callback that was registered
+        call_args = response_future.add_callbacks.call_args
+        callback = call_args.kwargs.get("callback")
 
-        # Start completion task
-        asyncio.create_task(complete_after_delay())
+        # Simulate first page
+        callback(["row1"])
+
+        # Now indicate no more pages for second callback
+        response_future.has_more_pages = False
+        callback(["row2"])
 
         # Should complete successfully
         result = await handler.get_result()
@@ -74,7 +75,7 @@ class TestTimeoutHandling:
         # Mock cassandra session
         mock_session = Mock()
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Indicate more pages to prevent immediate completion
         response_future.add_callbacks = Mock()
         response_future.timeout = None  # No query-level timeout
         mock_session.execute_async = Mock(return_value=response_future)
@@ -96,10 +97,13 @@ class TestTimeoutHandling:
 
         handler = AsyncResultHandler(response_future)
 
-        # Complete immediately
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1"])
+        # Complete immediately after handler is created
+        call_args = response_future.add_callbacks.call_args
+        if call_args:
+            kwargs = call_args.kwargs
+            callback = kwargs.get("callback")
+            if callback:
+                callback(["row1"])
 
         # Should complete successfully without timeout
         result = await handler.get_result()
@@ -109,7 +113,7 @@ class TestTimeoutHandling:
         """Test that timeout cancellation is handled properly."""
         # Mock ResponseFuture
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Indicate more pages to prevent immediate completion
         response_future.add_callbacks = Mock()
 
         handler = AsyncResultHandler(response_future)

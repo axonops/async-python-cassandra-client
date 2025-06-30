@@ -1,0 +1,410 @@
+"""
+Unit tests for session edge cases and failure scenarios.
+
+Tests how the async wrapper handles various session-level failures and edge cases
+within its existing functionality.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+from cassandra import InvalidRequest, OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
+from cassandra.cluster import Session
+from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
+
+from async_cassandra import AsyncCassandraSession
+from async_cassandra.exceptions import QueryError
+
+
+class TestSessionEdgeCases:
+    """Test session edge cases and failure scenarios."""
+
+    def _create_mock_future(self, result=None, error=None):
+        """Create a properly configured mock future that simulates driver behavior."""
+        future = Mock()
+
+        # Store callbacks
+        callbacks = []
+        errbacks = []
+
+        def add_callbacks(callback=None, errback=None):
+            if callback:
+                callbacks.append(callback)
+            if errback:
+                errbacks.append(errback)
+
+            # Immediately call the appropriate callback
+            if error:
+                if errback:
+                    errback(error)
+            else:
+                if callback and result is not None:
+                    # For successful results, pass rows
+                    rows = getattr(result, "rows", [])
+                    callback(rows)
+
+        future.add_callbacks = add_callbacks
+        future.has_more_pages = False
+        future.timeout = None
+        future.clear_callbacks = Mock()
+
+        return future
+
+    @pytest.fixture
+    def mock_session(self):
+        """Create a mock session."""
+        session = Mock(spec=Session)
+        session.execute_async = Mock()
+        session.prepare_async = Mock()
+        session.close = Mock()
+        session.close_async = Mock()
+        session.cluster = Mock()
+        session.cluster.protocol_version = 5
+        return session
+
+    @pytest.fixture
+    async def async_session(self, mock_session):
+        """Create an async session wrapper."""
+        return AsyncCassandraSession(mock_session)
+
+    @pytest.mark.asyncio
+    async def test_execute_with_invalid_request(self, async_session, mock_session):
+        """Test handling of InvalidRequest errors."""
+        # Mock execute_async to fail with InvalidRequest
+        future = self._create_mock_future(error=InvalidRequest("Table does not exist"))
+        mock_session.execute_async.return_value = future
+
+        # Should propagate InvalidRequest
+        with pytest.raises(InvalidRequest) as exc_info:
+            await async_session.execute("SELECT * FROM nonexistent_table")
+
+        assert "Table does not exist" in str(exc_info.value)
+        assert mock_session.execute_async.called
+
+    @pytest.mark.asyncio
+    async def test_execute_with_timeout(self, async_session, mock_session):
+        """Test handling of operation timeout."""
+        # Mock execute_async to fail with timeout
+        future = self._create_mock_future(error=OperationTimedOut("Query timed out"))
+        mock_session.execute_async.return_value = future
+
+        # Should propagate timeout
+        with pytest.raises(OperationTimedOut) as exc_info:
+            await async_session.execute("SELECT * FROM large_table")
+
+        assert "Query timed out" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_execute_with_read_timeout(self, async_session, mock_session):
+        """Test handling of read timeout."""
+        # Mock read timeout
+        future = self._create_mock_future(
+            error=ReadTimeout(
+                "Read timeout",
+                consistency_level=1,
+                required_responses=1,
+                received_responses=0,
+                data_retrieved=False,
+            )
+        )
+        mock_session.execute_async.return_value = future
+
+        # Should propagate read timeout
+        with pytest.raises(ReadTimeout) as exc_info:
+            await async_session.execute("SELECT * FROM table")
+
+        # Just verify we got the right exception with the message
+        assert "Read timeout" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_execute_with_write_timeout(self, async_session, mock_session):
+        """Test handling of write timeout."""
+        # Mock write timeout (write_type needs to be numeric)
+        from cassandra import WriteType
+
+        future = self._create_mock_future(
+            error=WriteTimeout(
+                "Write timeout",
+                consistency_level=1,
+                required_responses=1,
+                received_responses=0,
+                write_type=WriteType.SIMPLE,
+            )
+        )
+        mock_session.execute_async.return_value = future
+
+        # Should propagate write timeout
+        with pytest.raises(WriteTimeout) as exc_info:
+            await async_session.execute("INSERT INTO table (id) VALUES (1)")
+
+        # Just verify we got the right exception with the message
+        assert "Write timeout" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_execute_with_unavailable(self, async_session, mock_session):
+        """Test handling of Unavailable exception."""
+        # Mock unavailable (consistency is first positional arg)
+        future = self._create_mock_future(
+            error=Unavailable(
+                "Not enough replicas", consistency=1, required_replicas=3, alive_replicas=1
+            )
+        )
+        mock_session.execute_async.return_value = future
+
+        # Should propagate unavailable
+        with pytest.raises(Unavailable) as exc_info:
+            await async_session.execute("SELECT * FROM table")
+
+        # Just verify we got the right exception with the message
+        assert "Not enough replicas" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_prepare_statement_error(self, async_session, mock_session):
+        """Test error handling during statement preparation."""
+        # Mock prepare to fail (it uses sync prepare in executor)
+        mock_session.prepare.side_effect = InvalidRequest("Syntax error in CQL")
+
+        # Should wrap error in QueryError
+        with pytest.raises(QueryError) as exc_info:
+            await async_session.prepare("INVALID CQL SYNTAX")
+
+        assert "Statement preparation failed" in str(exc_info.value)
+        assert "Syntax error" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_execute_prepared_statement(self, async_session, mock_session):
+        """Test executing prepared statements."""
+        # Create mock prepared statement
+        prepared = Mock(spec=PreparedStatement)
+        prepared.query = "SELECT * FROM users WHERE id = ?"
+
+        # Mock successful execution
+        result = Mock()
+        result.one = Mock(return_value={"id": 1, "name": "test"})
+        result.rows = [{"id": 1, "name": "test"}]
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute prepared statement
+        result = await async_session.execute(prepared, [1])
+        assert result.one()["id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_batch_statement(self, async_session, mock_session):
+        """Test executing batch statements."""
+        # Create batch statement
+        batch = BatchStatement()
+        batch.add(SimpleStatement("INSERT INTO users (id, name) VALUES (%s, %s)"), (1, "user1"))
+        batch.add(SimpleStatement("INSERT INTO users (id, name) VALUES (%s, %s)"), (2, "user2"))
+
+        # Mock successful execution
+        result = Mock()
+        result.rows = []
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute batch
+        await async_session.execute(batch)
+
+        # Verify batch was executed
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert isinstance(call_args[0], BatchStatement)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_queries(self, async_session, mock_session):
+        """Test concurrent query execution."""
+        # Track execution order to verify concurrency
+        execution_times = []
+
+        def execute_side_effect(*args, **kwargs):
+            import time
+
+            execution_times.append(time.time())
+
+            # Create result
+            result = Mock()
+            result.one = Mock(return_value={"count": len(execution_times)})
+            result.rows = [{"count": len(execution_times)}]
+
+            # Use our standard mock future
+            future = self._create_mock_future(result=result)
+            return future
+
+        mock_session.execute_async.side_effect = execute_side_effect
+
+        # Execute multiple queries concurrently
+        queries = [async_session.execute(f"SELECT {i} FROM table") for i in range(10)]
+
+        results = await asyncio.gather(*queries)
+
+        # All should complete
+        assert len(results) == 10
+        assert len(execution_times) == 10
+
+        # Verify we got results
+        for result in results:
+            assert len(result.rows) == 1
+            assert result.rows[0]["count"] > 0
+
+        # The execute_async calls should happen close together (within 100ms)
+        # This verifies they were submitted concurrently
+        time_span = max(execution_times) - min(execution_times)
+        assert time_span < 0.1, f"Queries took {time_span}s, suggesting serial execution"
+
+    @pytest.mark.asyncio
+    async def test_session_close_idempotent(self, async_session, mock_session):
+        """Test that session close is idempotent."""
+        # Setup shutdown
+        mock_session.shutdown = Mock()
+
+        # First close
+        await async_session.close()
+        assert mock_session.shutdown.call_count == 1
+
+        # Second close should be safe
+        await async_session.close()
+        # Should still only be called once
+        assert mock_session.shutdown.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_query_after_close(self, async_session, mock_session):
+        """Test querying after session is closed."""
+        # Close session
+        mock_session.shutdown = Mock()
+        await async_session.close()
+
+        # Try to execute query - should fail with ConnectionError
+        from async_cassandra.exceptions import ConnectionError
+
+        with pytest.raises(ConnectionError) as exc_info:
+            await async_session.execute("SELECT * FROM table")
+
+        assert "Session is closed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_metrics_recording_on_success(self, mock_session):
+        """Test metrics are recorded on successful queries."""
+        # Create metrics mock
+        mock_metrics = Mock()
+        mock_metrics.record_query_metrics = AsyncMock()
+
+        # Create session with metrics
+        async_session = AsyncCassandraSession(mock_session, metrics=mock_metrics)
+
+        # Mock successful execution
+        result = Mock()
+        result.one = Mock(return_value={"id": 1})
+        result.rows = [{"id": 1}]
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute query
+        await async_session.execute("SELECT * FROM users")
+
+        # Give time for async metrics recording
+        await asyncio.sleep(0.1)
+
+        # Verify metrics were recorded
+        mock_metrics.record_query_metrics.assert_called_once()
+        call_kwargs = mock_metrics.record_query_metrics.call_args[1]
+        assert call_kwargs["success"] is True
+        assert call_kwargs["error_type"] is None
+
+    @pytest.mark.asyncio
+    async def test_metrics_recording_on_failure(self, mock_session):
+        """Test metrics are recorded on failed queries."""
+        # Create metrics mock
+        mock_metrics = Mock()
+        mock_metrics.record_query_metrics = AsyncMock()
+
+        # Create session with metrics
+        async_session = AsyncCassandraSession(mock_session, metrics=mock_metrics)
+
+        # Mock failed execution
+        future = self._create_mock_future(error=InvalidRequest("Bad query"))
+        mock_session.execute_async.return_value = future
+
+        # Execute query (should fail)
+        with pytest.raises(InvalidRequest):
+            await async_session.execute("INVALID QUERY")
+
+        # Give time for async metrics recording
+        await asyncio.sleep(0.1)
+
+        # Verify metrics were recorded
+        mock_metrics.record_query_metrics.assert_called_once()
+        call_kwargs = mock_metrics.record_query_metrics.call_args[1]
+        assert call_kwargs["success"] is False
+        assert call_kwargs["error_type"] == "InvalidRequest"
+
+    @pytest.mark.asyncio
+    async def test_custom_payload_handling(self, async_session, mock_session):
+        """Test custom payload in queries."""
+        # Mock execution with custom payload
+        result = Mock()
+        result.custom_payload = {"server_time": "2024-01-01"}
+        result.rows = []
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute with custom payload
+        custom_payload = {"client_id": "12345"}
+        result = await async_session.execute("SELECT * FROM table", custom_payload=custom_payload)
+
+        # Verify custom payload was passed (4th positional arg)
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[3] == custom_payload  # custom_payload is 4th arg
+
+    @pytest.mark.asyncio
+    async def test_trace_execution(self, async_session, mock_session):
+        """Test query tracing."""
+        # Mock execution with trace
+        result = Mock()
+        result.get_query_trace = Mock(return_value=Mock(trace_id="abc123"))
+        result.rows = []
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute with tracing
+        result = await async_session.execute("SELECT * FROM table", trace=True)
+
+        # Verify trace was requested (3rd positional arg)
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[2] is True  # trace is 3rd arg
+
+        # AsyncResultSet doesn't expose trace methods - that's ok
+        # Just verify the request was made with trace=True
+
+    @pytest.mark.asyncio
+    async def test_execution_profile_handling(self, async_session, mock_session):
+        """Test using execution profiles."""
+        # Mock execution
+        result = Mock()
+        result.rows = []
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute with custom profile
+        await async_session.execute("SELECT * FROM table", execution_profile="high_throughput")
+
+        # Verify profile was passed (6th positional arg)
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[5] == "high_throughput"  # execution_profile is 6th arg
+
+    @pytest.mark.asyncio
+    async def test_timeout_parameter(self, async_session, mock_session):
+        """Test query timeout parameter."""
+        # Mock execution
+        result = Mock()
+        result.rows = []
+        future = self._create_mock_future(result=result)
+        mock_session.execute_async.return_value = future
+
+        # Execute with timeout
+        await async_session.execute("SELECT * FROM table", timeout=5.0)
+
+        # Verify timeout was passed (5th positional arg)
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[4] == 5.0  # timeout is 5th arg

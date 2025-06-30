@@ -47,16 +47,21 @@ class TestEventLoopHandling:
 
     async def test_future_created_on_first_get_result(self):
         """Test that future is created on first call to get_result."""
-        # Create handler
+        # Create handler with has_more_pages=True to prevent immediate completion
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Start with more pages
         response_future.add_callbacks = Mock()
+        response_future.start_fetching_next_page = Mock()
         response_future.timeout = None
 
         handler = AsyncResultHandler(response_future)
 
         # Future should not be created yet
         assert handler._future is None
+
+        # Get the callback that was registered
+        call_args = response_future.add_callbacks.call_args
+        callback = call_args.kwargs.get("callback") if call_args else None
 
         # Start get_result task
         result_task = asyncio.create_task(handler.get_result())
@@ -66,10 +71,14 @@ class TestEventLoopHandling:
         assert handler._future is not None
         assert hasattr(handler, "_loop")
 
-        # Trigger callback to complete the future
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1", "row2"])
+        # Trigger callbacks to complete the future
+        if callback:
+            # First page
+            callback(["row1"])
+            # Now indicate no more pages
+            response_future.has_more_pages = False
+            # Second page (final)
+            callback(["row2"])
 
         # Get result
         result = await result_task

@@ -209,11 +209,8 @@ class TestErrorRecovery:
                         callback([])  # Call with empty rows
                     query_complete.set()
 
-                # Use threading.Timer since callbacks come from driver threads
-                import threading
-
-                timer = threading.Timer(0.1, delayed_callback)
-                timer.start()
+                # Use asyncio to schedule the callback
+                asyncio.get_event_loop().call_later(0.1, delayed_callback)
 
             mock_future.add_callbacks.side_effect = handle_callbacks
             return mock_future

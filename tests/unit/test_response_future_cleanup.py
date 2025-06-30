@@ -21,7 +21,7 @@ class TestResponseFutureCleanup:
         """Test that callbacks are cleaned up when handler encounters error."""
         # Create mock response future
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Prevent immediate completion
         response_future.add_callbacks = Mock()
         response_future.timeout = None
 
@@ -42,9 +42,11 @@ class TestResponseFutureCleanup:
         await asyncio.sleep(0.01)  # Let it set up
 
         # Trigger error callback
-        args = response_future.add_callbacks.call_args
-        errback = args[1]["errback"]
-        errback(Exception("Test error"))
+        call_args = response_future.add_callbacks.call_args
+        if call_args:
+            errback = call_args.kwargs.get("errback")
+            if errback:
+                errback(Exception("Test error"))
 
         # Should get the error
         with pytest.raises(Exception, match="Test error"):
@@ -74,9 +76,9 @@ class TestResponseFutureCleanup:
         result_set = AsyncStreamingResultSet(response_future)
 
         # Get the registered callbacks
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        errback = args[1]["errback"]
+        call_args = response_future.add_callbacks.call_args
+        callback = call_args.kwargs.get("callback") if call_args else None
+        errback = call_args.kwargs.get("errback") if call_args else None
 
         # First trigger initial page callback to set up state
         callback([])  # Empty initial page
@@ -102,7 +104,7 @@ class TestResponseFutureCleanup:
         """Test cleanup when operation times out."""
         # Create mock response future that never completes
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Prevent immediate completion
         response_future.add_callbacks = Mock()
         response_future.timeout = 0.1  # Short timeout
 
@@ -129,7 +131,7 @@ class TestResponseFutureCleanup:
         """Test that error handling cleans up properly to prevent memory leaks."""
         # Create response future
         response_future = Mock()
-        response_future.has_more_pages = False
+        response_future.has_more_pages = True  # Prevent immediate completion
         response_future.add_callbacks = Mock()
         response_future.timeout = None
         response_future.clear_callbacks = Mock()
@@ -142,9 +144,11 @@ class TestResponseFutureCleanup:
         await asyncio.sleep(0.01)
 
         # Trigger error
-        args = response_future.add_callbacks.call_args
-        errback = args[1]["errback"]
-        errback(Exception("Memory test"))
+        call_args = response_future.add_callbacks.call_args
+        if call_args:
+            errback = call_args.kwargs.get("errback")
+            if errback:
+                errback(Exception("Memory test"))
 
         # Get error
         with pytest.raises(Exception):

@@ -24,6 +24,14 @@ class TestFireAndForgetMetrics:
         response_future.has_more_pages = False
         response_future.add_callbacks = Mock()
         response_future.timeout = None
+
+        # Set up callback to be called immediately with data
+        def setup_callbacks(callback=None, errback=None):
+            if callback:
+                # Call callback immediately
+                callback(["row1"])
+
+        response_future.add_callbacks.side_effect = setup_callbacks
         mock_session.execute_async = Mock(return_value=response_future)
 
         # Mock slow metrics
@@ -39,18 +47,7 @@ class TestFireAndForgetMetrics:
 
         # Start the query execution task
         start_time = asyncio.get_event_loop().time()
-        query_task = asyncio.create_task(async_session.execute("SELECT * FROM test"))
-
-        # Give a moment for the execute_async to be called
-        await asyncio.sleep(0.01)
-
-        # Trigger success callback
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1"])
-
-        result = await query_task
-
+        result = await async_session.execute("SELECT * FROM test")
         end_time = asyncio.get_event_loop().time()
         duration = end_time - start_time
 
@@ -66,6 +63,13 @@ class TestFireAndForgetMetrics:
         response_future.has_more_pages = False
         response_future.add_callbacks = Mock()
         response_future.timeout = None
+
+        # Set up callback to be called immediately with data
+        def setup_callbacks(callback=None, errback=None):
+            if callback:
+                callback(["row1", "row2"])
+
+        response_future.add_callbacks.side_effect = setup_callbacks
         mock_session.execute_async = Mock(return_value=response_future)
 
         # Mock metrics that raises error
@@ -75,17 +79,8 @@ class TestFireAndForgetMetrics:
         # Create async session with faulty metrics
         async_session = AsyncCassandraSession(mock_session, metrics=mock_metrics)
 
-        # Start query execution
-        query_task = asyncio.create_task(async_session.execute("SELECT * FROM test"))
-        await asyncio.sleep(0.01)
-
-        # Trigger success callback
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1", "row2"])
-
         # Query should succeed despite metrics error
-        result = await query_task
+        result = await async_session.execute("SELECT * FROM test")
         assert len(result.rows) == 2
 
         # Give time for the background task to run
@@ -157,6 +152,13 @@ class TestFireAndForgetMetrics:
         response_future.has_more_pages = False
         response_future.add_callbacks = Mock()
         response_future.timeout = None
+
+        # Set up callback to be called immediately with data
+        def setup_callbacks(callback=None, errback=None):
+            if callback:
+                callback(["row1", "row2", "row3"])
+
+        response_future.add_callbacks.side_effect = setup_callbacks
         mock_session.execute_async = Mock(return_value=response_future)
 
         # Mock metrics
@@ -166,19 +168,8 @@ class TestFireAndForgetMetrics:
         # Create async session
         async_session = AsyncCassandraSession(mock_session, metrics=mock_metrics)
 
-        # Start query execution
-        query_task = asyncio.create_task(
-            async_session.execute("SELECT * FROM test WHERE id = ?", ["123"])
-        )
-        await asyncio.sleep(0.01)
-
-        # Trigger success callback
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1", "row2", "row3"])
-
-        # Get result
-        await query_task
+        # Execute query
+        await async_session.execute("SELECT * FROM test WHERE id = ?", ["123"])
 
         # Give time for background task
         await asyncio.sleep(0.1)
@@ -218,9 +209,10 @@ class TestFireAndForgetMetrics:
         await asyncio.sleep(0.01)
 
         # Trigger success callback
-        args = response_future.add_callbacks.call_args
-        callback = args[1]["callback"]
-        callback(["row1"])
+        call_args = response_future.add_callbacks.call_args
+        callback = call_args.kwargs.get("callback") if call_args else None
+        if callback:
+            callback(["row1"])
 
         # Execute query
         await query_task

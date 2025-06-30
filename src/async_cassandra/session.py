@@ -193,7 +193,7 @@ class AsyncCassandraSession(AsyncContextManageable):
         except Exception as e:
             # Only wrap non-Cassandra exceptions
             error_type = type(e).__name__
-            raise QueryError(f"Query execution failed: {str(e)}") from e
+            raise QueryError(f"Query execution failed: {str(e)}", cause=e) from e
         finally:
             # Record metrics in a fire-and-forget manner
             duration = time.perf_counter() - start_time
