@@ -22,7 +22,7 @@ class TestFastAPIReconnectionIsolation:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_session_health_check_pattern(self):
+    async def test_session_health_check_pattern(self, cassandra_container):
         """Test the FastAPI health check pattern that might prevent reconnection."""
         print("\n=== Testing FastAPI Health Check Pattern ===")
 
@@ -71,7 +71,7 @@ class TestFastAPIReconnectionIsolation:
 
             # Disable Cassandra
             print("\nDisabling Cassandra...")
-            control = self._get_cassandra_control()
+            control = self._get_cassandra_control(cassandra_container)
 
             if os.environ.get("CI") == "true":
                 # Still test that health check works with available service
@@ -132,7 +132,7 @@ class TestFastAPIReconnectionIsolation:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_global_session_reconnection(self):
+    async def test_global_session_reconnection(self, cassandra_container):
         """Test reconnection with global session variable like FastAPI."""
         print("\n=== Testing Global Session Reconnection ===")
 
@@ -170,7 +170,7 @@ class TestFastAPIReconnectionIsolation:
             print("✓ Initial query works")
 
             # Get control interface
-            control = self._get_cassandra_control()
+            control = self._get_cassandra_control(cassandra_container)
 
             if os.environ.get("CI") == "true":
                 print("\nSkipping outage simulation in CI")

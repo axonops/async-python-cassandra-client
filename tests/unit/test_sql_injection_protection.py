@@ -104,8 +104,12 @@ class TestSQLInjectionProtection:
         await mock_session.prepare("SELECT * FROM users LIMIT ?")
         await mock_session.execute(mock_stmt, [int(limit.split(";")[0])])  # Parse safely
 
-        # Verify no direct string interpolation
-        assert all("DROP TABLE" not in str(call) for call in mock_session.execute.call_args_list)
+        # Verify prepared statements were used (not string interpolation)
+        # The execute calls should have the mock statement and parameters, not raw SQL
+        for exec_call in mock_session.execute.call_args_list:
+            # Each call should be execute(mock_stmt, [params])
+            assert exec_call[0][0] == mock_stmt  # First arg is the prepared statement
+            assert isinstance(exec_call[0][1], list)  # Second arg is parameters list
 
     @pytest.mark.asyncio
     async def test_hardcoded_keyspace_names(self):
