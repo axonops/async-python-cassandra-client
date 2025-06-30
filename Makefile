@@ -227,13 +227,15 @@ build:
 # Cassandra management
 cassandra-start:
 	@echo "Starting Cassandra container..."
+	@echo "Stopping any existing Cassandra container..."
+	@$(CONTAINER_RUNTIME) stop $(CASSANDRA_CONTAINER_NAME) 2>/dev/null || true
 	@$(CONTAINER_RUNTIME) rm -f $(CASSANDRA_CONTAINER_NAME) 2>/dev/null || true
 	@$(CONTAINER_RUNTIME) run -d \
 		--name $(CASSANDRA_CONTAINER_NAME) \
 		-p $(CASSANDRA_PORT):9042 \
 		-e CASSANDRA_CLUSTER_NAME=TestCluster \
 		-e CASSANDRA_DC=datacenter1 \
-		-e CASSANDRA_ENDPOINT_SNITCH=SimpleSnitch \
+		-e CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch \
 		-e HEAP_NEWSIZE=512M \
 		-e MAX_HEAP_SIZE=3G \
 		-e JVM_OPTS="-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300" \

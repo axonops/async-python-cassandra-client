@@ -28,96 +28,71 @@ class CassandraContainer:
 
     def __init__(self, runtime: str = None):
         self.runtime = runtime or get_container_runtime()
-        self.container_name = f"test-cassandra-{os.getpid()}"
+        self.container_name = "async-cassandra-test"
         self.container_id: Optional[str] = None
 
     def start(self):
         """Start the Cassandra container."""
-        # First check if port 9042 is already in use
-        port_check = subprocess.run(
-            [self.runtime, "ps", "--format", "{{.Names}} {{.Ports}}"],
+        # Stop and remove any existing container with our name
+        print(f"Cleaning up any existing container named {self.container_name}...")
+        subprocess.run(
+            [self.runtime, "stop", self.container_name],
             capture_output=True,
-            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            [self.runtime, "rm", "-f", self.container_name],
+            capture_output=True,
+            stderr=subprocess.DEVNULL,
         )
 
-        if port_check.stdout.strip():
-            # Check each running container for port 9042
-            for line in port_check.stdout.strip().split("\n"):
-                if "9042" in line:
-                    # Extract container name
-                    existing_container = line.split()[0]
-                    if existing_container != self.container_name:
-                        print(f"Using existing Cassandra container: {existing_container}")
-                        self.container_id = existing_container
-                        self.container_name = existing_container
-                        # Verify it's ready
-                        self._wait_for_cassandra()
-                        return
-
-        # Check if our container already exists
+        # Create new container with proper resources
+        print(f"Starting fresh Cassandra container: {self.container_name}")
         result = subprocess.run(
             [
                 self.runtime,
-                "ps",
-                "-a",
-                "--filter",
-                f"name={self.container_name}",
-                "--format",
-                "{{.ID}}",
+                "run",
+                "-d",
+                "--name",
+                self.container_name,
+                "-p",
+                "9042:9042",
+                "-e",
+                "CASSANDRA_CLUSTER_NAME=TestCluster",
+                "-e",
+                "CASSANDRA_DC=datacenter1",
+                "-e",
+                "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch",
+                "-e",
+                "HEAP_NEWSIZE=512M",
+                "-e",
+                "MAX_HEAP_SIZE=3G",
+                "-e",
+                "JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300",
+                "--memory=4g",
+                "--memory-swap=4g",
+                "cassandra:5",
             ],
             capture_output=True,
             text=True,
+            check=True,
         )
-
-        if result.stdout.strip():
-            # Container exists, start it
-            self.container_id = result.stdout.strip()
-            subprocess.run([self.runtime, "start", self.container_id], check=True)
-        else:
-            # Create new container with proper resources
-            result = subprocess.run(
-                [
-                    self.runtime,
-                    "run",
-                    "-d",
-                    "--name",
-                    self.container_name,
-                    "-p",
-                    "9042:9042",
-                    "-e",
-                    "CASSANDRA_CLUSTER_NAME=TestCluster",
-                    "-e",
-                    "CASSANDRA_DC=datacenter1",
-                    "-e",
-                    "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch",
-                    "-e",
-                    "HEAP_NEWSIZE=3G",
-                    "-e",
-                    "MAX_HEAP_SIZE=12G",
-                    "-e",
-                    "JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300",
-                    "--memory=16g",
-                    "--memory-reservation=16g",
-                    "cassandra:5.0",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            self.container_id = result.stdout.strip()
+        self.container_id = result.stdout.strip()
 
         # Wait for Cassandra to be ready
         self._wait_for_cassandra()
 
     def stop(self):
         """Stop the Cassandra container."""
-        if self.container_id:
-            subprocess.run([self.runtime, "stop", self.container_id], capture_output=True)
+        if self.container_id or self.container_name:
+            container_ref = self.container_id or self.container_name
+            subprocess.run([self.runtime, "stop", container_ref], capture_output=True)
 
     def remove(self):
         """Remove the Cassandra container."""
-        if self.container_id:
-            subprocess.run([self.runtime, "rm", "-f", self.container_id], capture_output=True)
+        if self.container_id or self.container_name:
+            container_ref = self.container_id or self.container_name
+            subprocess.run([self.runtime, "rm", "-f", container_ref], capture_output=True)
 
     def _wait_for_cassandra(self, timeout: int = 90):
         """Wait for Cassandra to be ready to accept connections."""

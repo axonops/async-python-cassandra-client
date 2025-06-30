@@ -217,7 +217,7 @@ jobs:
         env:
           CASSANDRA_CLUSTER_NAME: TestCluster
           CASSANDRA_DC: datacenter1
-          CASSANDRA_ENDPOINT_SNITCH: SimpleSnitch
+          CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
           HEAP_NEWSIZE: 512M
           MAX_HEAP_SIZE: 3G
           JVM_OPTS: "-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300"
@@ -280,7 +280,7 @@ jobs:
         env:
           CASSANDRA_CLUSTER_NAME: TestCluster
           CASSANDRA_DC: datacenter1
-          CASSANDRA_ENDPOINT_SNITCH: SimpleSnitch
+          CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
           HEAP_NEWSIZE: 512M
           MAX_HEAP_SIZE: 3G
           JVM_OPTS: "-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300"
