@@ -97,16 +97,16 @@ class TestLongLivedConnections:
 
         # Successful operation
         test_id = uuid.uuid4()
-        await session.execute(
-            "INSERT INTO test_errors (id, data) VALUES (%s, %s)", [test_id, "test data"]
-        )
+        insert_stmt = await session.prepare("INSERT INTO test_errors (id, data) VALUES (?, ?)")
+        await session.execute(insert_stmt, [test_id, "test data"])
 
         # Cause an error (invalid query)
         with pytest.raises(Exception):  # Will be InvalidRequest or similar
             await session.execute("INVALID QUERY SYNTAX")
 
         # Session should still be usable after error
-        result = await session.execute("SELECT * FROM test_errors WHERE id = %s", [test_id])
+        select_stmt = await session.prepare("SELECT * FROM test_errors WHERE id = ?")
+        result = await session.execute(select_stmt, [test_id])
         assert result.one() is not None
         assert result.one().data == "test data"
 

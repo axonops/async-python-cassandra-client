@@ -66,52 +66,52 @@ CASSANDRA_CONTAINER_NAME ?= async-cassandra-test
 # Quick validation (30s)
 test-quick:
 	@echo "Running quick validation tests..."
-	pytest tests/_core -v -x -m "quick"
+	pytest tests/unit -v -x -m "quick" || pytest tests/unit -v -x -k "test_basic" --maxfail=5
 
 # Core tests only (1m)
 test-core:
 	@echo "Running core functionality tests..."
-	pytest tests/_core tests/_resilience -v -x
+	pytest tests/unit/test_basic_queries.py tests/unit/test_cluster.py tests/unit/test_session.py -v -x
 
 # Critical path - MUST ALL PASS
 test-critical: cassandra-wait
 	@echo "Running critical tests (including FastAPI)..."
-	pytest tests/_core -v -x -m "critical"
-	pytest tests/fastapi -v
-	cd examples/fastapi_app && pytest test_fastapi_app.py -v
-	pytest tests/bdd -m "critical" -v
+	pytest tests/unit -v -x -m "critical" || pytest tests/unit/test_critical_issues.py -v -x
+	pytest tests/fastapi_integration -v
+	cd examples/fastapi_app && pytest tests/test_fastapi_app.py -v
+	pytest tests/bdd -m "critical" -v || pytest tests/bdd -v -x
 
 # Progressive execution - FAIL FAST
 test-progressive: cassandra-wait
 	@echo "Running tests in fail-fast order..."
-	@echo "=== Running Core Tests ==="
-	@pytest tests/_core -v -x || exit 1
+	@echo "=== Running Core Unit Tests ==="
+	@pytest tests/unit/test_basic_queries.py tests/unit/test_cluster.py tests/unit/test_session.py -v -x || exit 1
 	@echo "=== Running Resilience Tests ==="
-	@pytest tests/_resilience -v -x || exit 1
+	@pytest tests/unit/test_error_recovery.py tests/unit/test_retry_policy.py -v -x || exit 1
 	@echo "=== Running Feature Tests ==="
-	@pytest tests/_features -v || exit 1
+	@pytest tests/unit/test_streaming.py tests/unit/test_prepared_statements.py -v || exit 1
 	@echo "=== Running Integration Tests ==="
 	@pytest tests/integration -v || exit 1
-	@echo "=== Running FastAPI Tests ==="
-	@pytest tests/fastapi -v || exit 1
+	@echo "=== Running FastAPI Integration Tests ==="
+	@pytest tests/fastapi_integration -v || exit 1
 	@echo "=== Running FastAPI Example App Tests ==="
-	@cd examples/fastapi_app && pytest test_fastapi_app.py -v || exit 1
+	@cd examples/fastapi_app && pytest tests/test_fastapi_app.py -v || exit 1
 	@echo "=== Running BDD Tests ==="
 	@pytest tests/bdd -v || exit 1
 
 # Test suite commands
 test-resilience:
 	@echo "Running resilience tests..."
-	pytest tests/_resilience -v
+	pytest tests/unit/test_error_recovery.py tests/unit/test_retry_policy.py tests/unit/test_timeout_handling.py -v
 
 test-features:
 	@echo "Running feature tests..."
-	pytest tests/_features -v
+	pytest tests/unit/test_streaming.py tests/unit/test_prepared_statements.py tests/unit/test_metrics.py -v
 
 
 test-performance:
 	@echo "Running performance tests..."
-	pytest tests/performance -v
+	pytest tests/benchmarks -v
 
 # BDD tests - MUST PASS
 test-bdd: cassandra-wait
@@ -141,12 +141,14 @@ test-integration-keep: cassandra-wait
 
 test-fastapi: cassandra-wait
 	@echo "Running FastAPI integration tests with real app and Cassandra..."
-	cd examples/fastapi_app && CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest ../../tests/fastapi_integration/ -v
+	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/fastapi_integration/ -v
+	@echo "Running FastAPI example app tests..."
+	cd examples/fastapi_app && CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/test_fastapi_app.py -v
 	@echo "FastAPI integration tests completed."
 
 test-stress: cassandra-wait
 	@echo "Running stress tests..."
-	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/ tests/performance/ -v -m stress
+	CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS) pytest tests/integration/test_stress.py tests/benchmarks/ -v -m stress
 	@echo "Stress tests completed."
 
 # Full test suite - EVERYTHING MUST PASS

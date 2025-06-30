@@ -98,9 +98,12 @@ class TestNetworkFailures:
                 return i, 0, str(e)
 
         # Insert some data first
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         for i in range(100):
             await cassandra_session.execute(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [uuid.uuid4(), f"User {i}", f"user{i}@test.com", 25],
             )
 
@@ -136,12 +139,17 @@ class TestNetworkFailures:
         )
 
         # Insert data across multiple partitions
+        # Prepare statement first
+        insert_stmt = await cassandra_session.prepare(
+            "INSERT INTO read_timeout_test (partition_key, clustering_key, data) "
+            "VALUES (?, ?, ?)"
+        )
+
         insert_tasks = []
         for p in range(10):
             for c in range(100):
                 task = cassandra_session.execute(
-                    "INSERT INTO read_timeout_test (partition_key, clustering_key, data) "
-                    "VALUES (%s, %s, %s)",
+                    insert_stmt,
                     [p, c, f"data_{p}_{c}"],
                 )
                 insert_tasks.append(task)
@@ -186,11 +194,17 @@ class TestNetworkFailures:
         test_ids = [uuid.uuid4() for _ in range(100)]
 
         # Insert test data
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         for test_id in test_ids:
             await cassandra_session.execute(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [test_id, "Test User", "test@test.com", 30],
             )
+
+        # Prepare select statement for reuse
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
         # Function that sometimes fails
         async def unreliable_query(user_id, fail_rate=0.2):
@@ -200,9 +214,7 @@ class TestNetworkFailures:
             if random.random() < fail_rate:
                 raise Exception("Simulated failure")
 
-            result = await cassandra_session.execute(
-                f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
-            )
+            result = await cassandra_session.execute(select_stmt, [user_id])
             rows = []
             async for row in result:
                 rows.append(row)
@@ -237,21 +249,18 @@ class TestNetworkFailures:
     async def test_connection_timeout_handling(self):
         """Test connection timeout with unreachable hosts."""
         # Try to connect to non-existent host
-        cluster = AsyncCluster(
+        async with AsyncCluster(
             contact_points=["192.168.255.255"],  # Non-routable IP
             control_connection_timeout=1.0,
-        )
+        ) as cluster:
+            start_time = time.time()
 
-        start_time = time.time()
+            with pytest.raises((ConnectionError, NoHostAvailable, asyncio.TimeoutError)):
+                # Should timeout quickly
+                await cluster.connect(timeout=2.0)
 
-        with pytest.raises((ConnectionError, NoHostAvailable, asyncio.TimeoutError)):
-            # Should timeout quickly
-            await cluster.connect(timeout=2.0)
-
-        duration = time.time() - start_time
-        assert duration < 5.0  # Should fail within timeout period
-
-        await cluster.shutdown()
+            duration = time.time() - start_time
+            assert duration < 5.0  # Should fail within timeout period
 
     @pytest.mark.asyncio
     async def test_batch_operations_with_failures(self, cassandra_session: AsyncCassandraSession):
@@ -264,10 +273,15 @@ class TestNetworkFailures:
         # Create a batch
         batch = BatchStatement(batch_type=BatchType.UNLOGGED)
 
+        # Prepare statement for batch
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
+
         # Add multiple statements to the batch
         for i in range(20):
             batch.add(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [uuid.uuid4(), f"Batch User {i}", f"batch{i}@test.com", 25],
             )
 
@@ -275,8 +289,9 @@ class TestNetworkFailures:
         await cassandra_session.execute_batch(batch)
 
         # Verify data was inserted
-        result = await cassandra_session.execute(
-            f"SELECT COUNT(*) FROM {users_table} WHERE age = 25 ALLOW FILTERING"
+        count_stmt = await cassandra_session.prepare(
+            f"SELECT COUNT(*) FROM {users_table} WHERE age = ? ALLOW FILTERING"
         )
+        result = await cassandra_session.execute(count_stmt, [25])
         count = result.one()[0]
         assert count >= 20  # At least our batch inserts

@@ -24,8 +24,11 @@ class TestSelectOperations:
 
         # Insert test data
         user_id = uuid.uuid4()
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         await cassandra_session.execute(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            insert_stmt,
             [user_id, "Test User", "test@example.com", 25],
         )
 
@@ -56,10 +59,15 @@ class TestSelectOperations:
         users_table = cassandra_session._test_users_table
 
         # Insert many rows
+        # Prepare statement once
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
+
         insert_tasks = []
         for i in range(1000):
             task = cassandra_session.execute(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [uuid.uuid4(), f"User {i}", f"user{i}@example.com", 20 + (i % 50)],
             )
             insert_tasks.append(task)
@@ -92,12 +100,17 @@ class TestSelectOperations:
         # Prepare the statement
         select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
 
+        # Prepare insert statement too
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
+
         # Insert and query multiple times
         for i in range(10):
             user_id = uuid.uuid4()
             # Insert
             await cassandra_session.execute(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [user_id, f"User {i}", f"user{i}@test.com", 25 + i],
             )
 
@@ -117,20 +130,26 @@ class TestSelectOperations:
         users_table = cassandra_session._test_users_table
 
         # Insert test data
+        # Prepare insert statement
+        insert_stmt = await cassandra_session.prepare(
+            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
+
         user_ids = []
         for i in range(100):
             user_id = uuid.uuid4()
             user_ids.append(user_id)
             await cassandra_session.execute(
-                f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
+                insert_stmt,
                 [user_id, f"Concurrent User {i}", f"concurrent{i}@test.com", 30],
             )
 
+        # Prepare select statement for concurrent use
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
+
         # Execute many concurrent selects
         async def select_user(user_id):
-            result = await cassandra_session.execute(
-                f"SELECT * FROM {users_table} WHERE id = %s", [user_id]
-            )
+            result = await cassandra_session.execute(select_stmt, [user_id])
             rows = []
             async for row in result:
                 rows.append(row)
@@ -156,9 +175,8 @@ class TestSelectOperations:
         users_table = cassandra_session._test_users_table
 
         # Query for non-existent user
-        result = await cassandra_session.execute(
-            f"SELECT * FROM {users_table} WHERE id = %s", [uuid.uuid4()]
-        )
+        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
+        result = await cassandra_session.execute(select_stmt, [uuid.uuid4()])
 
         rows = []
         async for row in result:
@@ -187,17 +205,22 @@ class TestSelectOperations:
         partition_key = uuid.uuid4()
         base_time = 1700000000000  # milliseconds
 
+        # Prepare insert statement
+        insert_stmt = await cassandra_session.prepare(
+            "INSERT INTO time_series (partition_key, timestamp, value) VALUES (?, ?, ?)"
+        )
+
         for i in range(100):
             await cassandra_session.execute(
-                "INSERT INTO time_series (partition_key, timestamp, value) VALUES (%s, %s, %s)",
+                insert_stmt,
                 [partition_key, base_time + i * 1000, float(i)],
             )
 
         # Query with limit
-        result = await cassandra_session.execute(
-            "SELECT * FROM time_series WHERE partition_key = %s LIMIT 10",
-            [partition_key],
+        select_stmt = await cassandra_session.prepare(
+            "SELECT * FROM time_series WHERE partition_key = ? LIMIT 10"
         )
+        result = await cassandra_session.execute(select_stmt, [partition_key])
 
         rows = []
         async for row in result:
