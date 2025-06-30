@@ -253,9 +253,11 @@ async def list_users(
 ):
     """List users with configurable timeout."""
     try:
-        # Execute with custom timeout
+        # Execute with custom timeout using prepared statement
+        stmt = await session.session.prepare("SELECT * FROM users LIMIT ?")
         result = await session.execute(
-            f"SELECT * FROM users LIMIT {limit}",
+            stmt,
+            [limit],
             timeout=timeout,
         )
 
@@ -306,9 +308,11 @@ async def stream_users_advanced(
 
         stream_config.page_callback = page_callback
 
-        # Execute streaming query
+        # Execute streaming query with prepared statement
+        stmt = await session.session.prepare("SELECT * FROM users LIMIT ?")
         result = await session.session.execute_stream(
-            f"SELECT * FROM users LIMIT {limit}",
+            stmt,
+            [limit],
             stream_config=stream_config,
         )
 
@@ -558,8 +562,9 @@ async def cleanup_test_users():
         deleted_count = 0
         async for row in result:
             if row.name and row.name.startswith("LoadTest"):
-                # Use %s placeholder for non-prepared statements
-                await session.execute("DELETE FROM users WHERE id = %s", [row.id])
+                # Use prepared statement for delete
+                delete_stmt = await session.session.prepare("DELETE FROM users WHERE id = ?")
+                await session.execute(delete_stmt, [row.id])
                 deleted_count += 1
 
         return {"deleted": deleted_count}

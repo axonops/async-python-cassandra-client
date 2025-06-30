@@ -142,12 +142,12 @@ async def lifespan(app: FastAPI):
 
     # Create keyspace and table
     await session.execute(
-        f"""
-        CREATE KEYSPACE IF NOT EXISTS {keyspace}
-        WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
+        """
+        CREATE KEYSPACE IF NOT EXISTS example
+        WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
     """
     )
-    await session.set_keyspace(keyspace)
+    await session.set_keyspace("example")
     # Drop and recreate table for clean test environment
     await session.execute("DROP TABLE IF EXISTS users")
     await session.execute(
@@ -575,8 +575,41 @@ async def update_user(user_id: str, user_update: UserUpdate):
         params.append(datetime.now())
         params.append(user_uuid)  # WHERE clause
 
-        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
-        update_stmt = await session.prepare(query)
+        # Build a static query based on which fields are provided
+        # This approach avoids dynamic SQL construction
+        if len(update_fields) == 1:  # Only updated_at
+            update_stmt = await session.prepare("UPDATE users SET updated_at = ? WHERE id = ?")
+        elif len(update_fields) == 2:  # One field + updated_at
+            if "name = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET name = ?, updated_at = ? WHERE id = ?"
+                )
+            elif "email = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET email = ?, updated_at = ? WHERE id = ?"
+                )
+            elif "age = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET age = ?, updated_at = ? WHERE id = ?"
+                )
+        elif len(update_fields) == 3:  # Two fields + updated_at
+            if "name = ?" in update_fields and "email = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET name = ?, email = ?, updated_at = ? WHERE id = ?"
+                )
+            elif "name = ?" in update_fields and "age = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET name = ?, age = ?, updated_at = ? WHERE id = ?"
+                )
+            elif "email = ?" in update_fields and "age = ?" in update_fields:
+                update_stmt = await session.prepare(
+                    "UPDATE users SET email = ?, age = ?, updated_at = ? WHERE id = ?"
+                )
+        else:  # All fields
+            update_stmt = await session.prepare(
+                "UPDATE users SET name = ?, email = ?, age = ?, updated_at = ? WHERE id = ?"
+            )
+
         await session.execute(update_stmt, params)
 
         # Return updated user
@@ -832,7 +865,8 @@ async def test_streaming_error_session_safety():
 
     # Try a valid streaming query
     row_count = 0
-    stmt = await session.prepare(f"SELECT * FROM {keyspace}.users LIMIT ?")
+    # Use hardcoded query since keyspace is constant
+    stmt = await session.prepare("SELECT * FROM example.users LIMIT ?")
     async with await session.execute_stream(stmt, [10]) as stream:
         async for row in stream:
             row_count += 1
@@ -868,7 +902,7 @@ async def test_concurrent_streams():
     # Insert test data
     for user in users_to_create:
         stmt = await session.prepare(
-            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            "INSERT INTO example.users (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
         await session.execute(
             stmt,
@@ -881,9 +915,7 @@ async def test_concurrent_streams():
         users = []
 
         config = StreamConfig(fetch_size=5)
-        stmt = await session.prepare(
-            f"SELECT * FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
-        )
+        stmt = await session.prepare("SELECT * FROM example.users WHERE age = ? ALLOW FILTERING")
         async with await session.execute_stream(
             stmt,
             [age],
@@ -900,7 +932,7 @@ async def test_concurrent_streams():
 
     # Clean up test data
     for user in users_to_create:
-        stmt = await session.prepare(f"DELETE FROM {keyspace}.users WHERE id = ?")
+        stmt = await session.prepare("DELETE FROM example.users WHERE id = ?")
         await session.execute(stmt, [UUID(user["id"])])
 
     return {
@@ -929,7 +961,13 @@ async def test_nested_context_managers():
             async with await test_cluster.connect() as test_session:
                 events.append("session_opened")
 
-                # Create keyspace
+                # Create keyspace with safe identifier
+                # Validate keyspace name contains only safe characters
+                if not temp_keyspace.replace("_", "").isalnum():
+                    raise ValueError("Invalid keyspace name")
+
+                # Use parameterized query for keyspace creation is not supported
+                # So we validate the input first
                 await test_session.execute(
                     f"""
                     CREATE KEYSPACE {temp_keyspace}
@@ -982,7 +1020,9 @@ async def test_nested_context_managers():
                 events.append(f"cluster_works_after_session:{bool(result.one())}")
 
                 # Clean up keyspace
-                await verify_session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
+                # Validate keyspace name before using in DROP
+                if temp_keyspace.replace("_", "").isalnum():
+                    await verify_session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
 
             # Cluster will close here
             events.append("cluster_closing")
@@ -993,7 +1033,9 @@ async def test_nested_context_managers():
         events.append(f"error:{str(e)}")
         # Try to clean up
         try:
-            await session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
+            # Validate keyspace name before cleanup
+            if temp_keyspace.replace("_", "").isalnum():
+                await session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
         except Exception:
             pass
 
@@ -1036,7 +1078,7 @@ async def test_streaming_cancellation():
         test_id = uuid.uuid4()
         test_ids.append(test_id)
         stmt = await session.prepare(
-            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (?, ?, ?, ?)"
+            "INSERT INTO example.users (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
         await session.execute(
             stmt,
@@ -1052,7 +1094,7 @@ async def test_streaming_cancellation():
         nonlocal rows_before_cancel
         try:
             stmt = await session.prepare(
-                f"SELECT * FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
+                "SELECT * FROM example.users WHERE age = ? ALLOW FILTERING"
             )
             async with await session.execute_stream(stmt, [25]) as stream:
                 async for row in stream:
@@ -1086,7 +1128,7 @@ async def test_streaming_cancellation():
     try:
         # Count rows to verify session works
         stmt = await session.prepare(
-            f"SELECT COUNT(*) FROM {keyspace}.users WHERE age = ? ALLOW FILTERING"
+            "SELECT COUNT(*) FROM example.users WHERE age = ? ALLOW FILTERING"
         )
         result = await session.execute(stmt, [25])
         row_count_after = result.one()[0]
@@ -1095,7 +1137,7 @@ async def test_streaming_cancellation():
         # Try streaming again
         new_stream_count = 0
         stmt = await session.prepare(
-            f"SELECT * FROM {keyspace}.users WHERE age = ? LIMIT ? ALLOW FILTERING"
+            "SELECT * FROM example.users WHERE age = ? LIMIT ? ALLOW FILTERING"
         )
         async with await session.execute_stream(stmt, [25, 10]) as stream:
             async for row in stream:
@@ -1106,7 +1148,7 @@ async def test_streaming_cancellation():
 
     # Clean up test data
     for test_id in test_ids:
-        stmt = await session.prepare(f"DELETE FROM {keyspace}.users WHERE id = ?")
+        stmt = await session.prepare("DELETE FROM example.users WHERE id = ?")
         await session.execute(stmt, [test_id])
 
     return {

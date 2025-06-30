@@ -32,20 +32,30 @@ except ImportError:
     logger.warning("aiofiles not installed - using synchronous file I/O")
 
 
-async def count_table_rows(session, table_name: str) -> int:
+async def count_table_rows(session, keyspace: str, table_name: str) -> int:
     """Count total rows in a table (approximate for large tables)."""
     # Note: COUNT(*) can be slow on large tables
     # Consider using token ranges for very large tables
-    result = await session.execute(f"SELECT COUNT(*) FROM {table_name}")
+    # Using system schema to validate table exists and avoid SQL injection
+    validation_query = await session.execute(
+        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
+        [keyspace, table_name],
+    )
+    if not validation_query.one():
+        raise ValueError(f"Table {keyspace}.{table_name} does not exist")
+
+    # Safe to use table name after validation - but still use qualified name
+    # In production, consider using prepared statements even for COUNT queries
+    result = await session.execute(f"SELECT COUNT(*) FROM {keyspace}.{table_name}")
     return result.one()[0]
 
 
-async def export_table_async(session, table_name: str, output_file: str):
+async def export_table_async(session, keyspace: str, table_name: str, output_file: str):
     """Export table using async file I/O (requires aiofiles)."""
-    logger.info(f"Starting async export of {table_name} to {output_file}")
+    logger.info(f"Starting async export of {keyspace}.{table_name} to {output_file}")
 
     # Get approximate row count for progress tracking
-    total_rows = await count_table_rows(session, table_name)
+    total_rows = await count_table_rows(session, keyspace, table_name)
     logger.info(f"Table has approximately {total_rows:,} rows")
 
     # Configure streaming with progress callback
@@ -67,8 +77,16 @@ async def export_table_async(session, table_name: str, output_file: str):
     start_time = datetime.now()
 
     # CRITICAL: Use context manager for streaming to prevent memory leaks
+    # Validate table exists before streaming
+    validation_query = await session.execute(
+        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
+        [keyspace, table_name],
+    )
+    if not validation_query.one():
+        raise ValueError(f"Table {keyspace}.{table_name} does not exist")
+
     async with await session.execute_stream(
-        f"SELECT * FROM {table_name}", stream_config=config
+        f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
     ) as result:
         # Export to CSV
         async with aiofiles.open(output_file, "w", newline="") as f:
@@ -111,13 +129,13 @@ async def export_table_async(session, table_name: str, output_file: str):
     logger.info(f"- File size: {os.path.getsize(output_file):,} bytes")
 
 
-def export_table_sync(session, table_name: str, output_file: str):
+def export_table_sync(session, keyspace: str, table_name: str, output_file: str):
     """Export table using synchronous file I/O."""
-    logger.info(f"Starting sync export of {table_name} to {output_file}")
+    logger.info(f"Starting sync export of {keyspace}.{table_name} to {output_file}")
 
     async def _export():
         # Get approximate row count
-        total_rows = await count_table_rows(session, table_name)
+        total_rows = await count_table_rows(session, keyspace, table_name)
         logger.info(f"Table has approximately {total_rows:,} rows")
 
         # Configure streaming
@@ -133,8 +151,16 @@ def export_table_sync(session, table_name: str, output_file: str):
         start_time = datetime.now()
 
         # Use context manager for proper streaming cleanup
+        # Validate table exists before streaming
+        validation_query = await session.execute(
+            "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
+            [keyspace, table_name],
+        )
+        if not validation_query.one():
+            raise ValueError(f"Table {keyspace}.{table_name} does not exist")
+
         async with await session.execute_stream(
-            f"SELECT * FROM {table_name}", stream_config=config
+            f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
         ) as result:
             # Export to CSV synchronously
             with open(output_file, "w", newline="") as f:
@@ -272,9 +298,13 @@ async def main():
 
         # Export using async I/O if available
         if ASYNC_FILE_IO:
-            await export_table_async(session, "products", str(output_dir / "products_async.csv"))
+            await export_table_async(
+                session, "export_example", "products", str(output_dir / "products_async.csv")
+            )
         else:
-            await export_table_sync(session, "products", str(output_dir / "products_sync.csv"))
+            await export_table_sync(
+                session, "export_example", "products", str(output_dir / "products_sync.csv")
+            )
 
         # Cleanup (optional)
         logger.info("\nCleaning up...")
