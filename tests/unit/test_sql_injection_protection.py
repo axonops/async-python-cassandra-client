@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from async_cassandra import AsyncSession
+from async_cassandra import AsyncCassandraSession
 
 
 class TestSQLInjectionProtection:
@@ -14,7 +14,7 @@ class TestSQLInjectionProtection:
     async def test_prepared_statements_used_for_user_input(self):
         """Test that all user inputs use prepared statements."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
         mock_session.prepare.return_value = mock_stmt
 
@@ -31,7 +31,7 @@ class TestSQLInjectionProtection:
     async def test_update_query_no_dynamic_sql(self):
         """Test that UPDATE queries don't use dynamic SQL construction."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
         mock_session.prepare.return_value = mock_stmt
 
@@ -57,7 +57,7 @@ class TestSQLInjectionProtection:
     async def test_table_name_validation_before_use(self):
         """Test that table names are validated before use in queries."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
 
         # Mock validation query response
         mock_result = MagicMock()
@@ -88,7 +88,7 @@ class TestSQLInjectionProtection:
     async def test_no_string_interpolation_in_queries(self):
         """Test that queries don't use string interpolation with user input."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
         mock_session.prepare.return_value = mock_stmt
 
@@ -111,7 +111,7 @@ class TestSQLInjectionProtection:
     async def test_hardcoded_keyspace_names(self):
         """Test that keyspace names are hardcoded, not from user input."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
 
         # Good: Hardcoded keyspace names
         await mock_session.execute(
@@ -138,7 +138,7 @@ class TestSQLInjectionProtection:
     async def test_streaming_queries_use_prepared_statements(self):
         """Test that streaming queries use prepared statements."""
         # Create mock session
-        mock_session = AsyncMock(spec=AsyncSession)
+        mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
         mock_session.prepare.return_value = mock_stmt
         mock_session.execute_stream.return_value = AsyncMock()
