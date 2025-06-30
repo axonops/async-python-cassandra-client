@@ -58,7 +58,7 @@ install-dev:
 
 # Environment setup
 CONTAINER_RUNTIME ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
-CASSANDRA_CONTACT_POINTS ?= localhost
+CASSANDRA_CONTACT_POINTS ?= 127.0.0.1
 CASSANDRA_PORT ?= 9042
 CASSANDRA_IMAGE ?= cassandra:5
 CASSANDRA_CONTAINER_NAME ?= async-cassandra-test
@@ -188,6 +188,11 @@ cassandra-start:
 		-e CASSANDRA_CLUSTER_NAME=TestCluster \
 		-e CASSANDRA_DC=datacenter1 \
 		-e CASSANDRA_ENDPOINT_SNITCH=SimpleSnitch \
+		-e HEAP_NEWSIZE=512M \
+		-e MAX_HEAP_SIZE=3G \
+		-e JVM_OPTS="-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300" \
+		--memory=4g \
+		--memory-swap=4g \
 		$(CASSANDRA_IMAGE)
 	@echo "Cassandra container started"
 

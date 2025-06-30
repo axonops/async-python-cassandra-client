@@ -31,8 +31,11 @@ def pytest_configure(config):
     config.shared_test_keyspace = "integration_test"
 
     # Get contact points from environment
-    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
-    config.cassandra_contact_points = [cp.strip() for cp in contact_points]
+    # Force IPv4 by replacing localhost with 127.0.0.1
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "127.0.0.1").split(",")
+    config.cassandra_contact_points = [
+        "127.0.0.1" if cp.strip() == "localhost" else cp.strip() for cp in contact_points
+    ]
 
     # Check if Cassandra is available
     cassandra_port = int(os.environ.get("CASSANDRA_PORT", "9042"))
@@ -60,15 +63,21 @@ def pytest_configure(config):
 
 
 @pytest_asyncio.fixture(scope="session")
-async def shared_keyspace_setup(pytestconfig):
-    """Create shared keyspace for all integration tests."""
-    # Create a cluster and session for setting up the shared keyspace
+async def shared_cluster(pytestconfig):
+    """Create a shared cluster for all integration tests."""
     cluster = AsyncCluster(
         contact_points=pytestconfig.cassandra_contact_points,
         protocol_version=5,
         connect_timeout=10.0,
     )
-    session = await cluster.connect()
+    yield cluster
+    await cluster.shutdown()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def shared_keyspace_setup(shared_cluster, pytestconfig):
+    """Create shared keyspace for all integration tests."""
+    session = await shared_cluster.connect()
 
     try:
         # Create the shared keyspace
@@ -92,21 +101,13 @@ async def shared_keyspace_setup(pytestconfig):
             print(f"Warning: Failed to drop shared keyspace: {e}")
 
         await session.close()
-        await cluster.shutdown()
 
 
 @pytest_asyncio.fixture(scope="function")
-async def cassandra_cluster(pytestconfig):
-    """Create an async Cassandra cluster for testing."""
-    # Set protocol_version to 5 to avoid negotiation issues
-    # Use reasonable timeout for tests
-    cluster = AsyncCluster(
-        contact_points=pytestconfig.cassandra_contact_points,
-        protocol_version=5,
-        connect_timeout=10.0,
-    )
-    yield cluster
-    await cluster.shutdown()
+async def cassandra_cluster(shared_cluster):
+    """Use the shared cluster for testing."""
+    # Just pass through the shared cluster - don't create a new one
+    yield shared_cluster
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -148,11 +149,11 @@ async def cassandra_session(cassandra_cluster, shared_keyspace_setup, pytestconf
     except Exception:
         pass
 
-    # Close session
-    try:
-        await session.close()
-    except Exception:
-        pass
+    # Don't close the session - it's from the shared cluster
+    # try:
+    #     await session.close()
+    # except Exception:
+    #     pass
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -167,7 +168,8 @@ async def test_table_manager(cassandra_cluster, shared_keyspace_setup, pytestcon
     async with TestTableManager(session, keyspace=keyspace, use_shared_keyspace=True) as manager:
         yield manager
 
-    await session.close()
+    # Don't close the session - it's from the shared cluster
+    # await session.close()
 
 
 @pytest.fixture
@@ -196,7 +198,8 @@ async def session_with_keyspace(cassandra_cluster, shared_keyspace_setup, pytest
     except Exception:
         pass
 
-    try:
-        await session.close()
-    except Exception:
-        pass
+    # Don't close the session - it's from the shared cluster
+    # try:
+    #     await session.close()
+    # except Exception:
+    #     pass

@@ -114,12 +114,23 @@ async def lifespan(app: FastAPI):
     global session, cluster
 
     try:
-        # Startup - connect to Cassandra with aggressive reconnection policy
+        # Startup - connect to Cassandra with constant reconnection policy
+        # IMPORTANT: Using ConstantReconnectionPolicy with 2-second delay for testing
+        # This ensures quick reconnection during integration tests where we simulate
+        # Cassandra outages. In production, you might want ExponentialReconnectionPolicy
+        # to avoid overwhelming a recovering cluster.
+        # IMPORTANT: Use 127.0.0.1 instead of localhost to force IPv4
+        contact_points = os.getenv("CASSANDRA_HOSTS", "127.0.0.1").split(",")
+        # Replace any "localhost" with "127.0.0.1" to ensure IPv4
+        contact_points = ["127.0.0.1" if cp == "localhost" else cp for cp in contact_points]
+
         cluster = AsyncCluster(
-            contact_points=os.getenv("CASSANDRA_HOSTS", "localhost").split(","),
+            contact_points=contact_points,
             port=int(os.getenv("CASSANDRA_PORT", "9042")),
-            reconnection_policy=ConstantReconnectionPolicy(delay=2.0),  # Reconnect every 2 seconds
-            connect_timeout=10.0,  # Quick connection timeout
+            reconnection_policy=ConstantReconnectionPolicy(
+                delay=2.0
+            ),  # Reconnect every 2 seconds for testing
+            connect_timeout=10.0,  # Quick connection timeout for faster test feedback
         )
         session = await cluster.connect()
     except Exception as e:
