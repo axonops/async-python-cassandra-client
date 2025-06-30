@@ -105,12 +105,11 @@ See our [comparison guide](docs/alternatives-comparison.md) for technical differ
 
 ```python
 # Recommended: Let driver negotiate to highest available
-cluster = AsyncCluster(['localhost'])  # Negotiates to highest (v6 if available)
+cluster = AsyncCluster(['localhost'])  # Negotiates to highest (currently v5)
 await cluster.connect()  # Fails if negotiated < v5
 
 # Explicit versions (v5+):
 cluster = AsyncCluster(['localhost'], protocol_version=5)  # Forces v5 exactly
-cluster = AsyncCluster(['localhost'], protocol_version=6)  # Forces v6 if available
 
 # This raises ConfigurationError immediately:
 cluster = AsyncCluster(['localhost'], protocol_version=4)  # ❌ Not supported
@@ -141,7 +140,7 @@ cluster = AsyncCluster(['localhost'], protocol_version=4)  # ❌ Not supported
 **What This Means for You:**
 
 When connecting:
-- **Cassandra 4.0+**: Automatically uses v5 or v6 (best available)
+- **Cassandra 4.0+**: Automatically uses v5 (highest currently supported)
 - **Cassandra 3.x or older**: Connection fails with:
 ```
 ConnectionError: Connected with protocol v4 but v5+ is required.

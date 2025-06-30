@@ -105,7 +105,7 @@ All examples require:
    - For FastAPI example: Use the included docker-compose.yml
    - For others: Install and run Cassandra locally or use Docker:
      ```bash
-     docker run -d -p 9042:9042 cassandra:latest
+     docker run -d -p 9042:9042 cassandra:5
      ```
 3. **Install async-cassandra**:
    ```bash

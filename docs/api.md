@@ -90,7 +90,7 @@ Connect to the cluster and create a session.
 **Example:**
 ```python
 # Recommended: Let driver negotiate to highest available
-cluster = AsyncCluster(['localhost'])  # Negotiates to v6 if available
+cluster = AsyncCluster(['localhost'])  # Negotiates to v5 (highest currently supported)
 session = await cluster.connect('my_keyspace')  # Fails if < v5
 
 # Explicit protocol version (must be 5+)
@@ -525,17 +525,9 @@ except QueryError as e:
         print(f"Caused by: {e.cause}")
 ```
 
-### TimeoutError
+### Other Exceptions
 
-Raised when an operation times out.
-
-### AuthenticationError
-
-Raised when authentication fails.
-
-### ConfigurationError
-
-Raised when configuration is invalid.
+The library also defines TimeoutError, AuthenticationError, and ConfigurationError internally, but these are typically wrapped in the main exception types above. You should generally catch ConnectionError and QueryError in your code.
 
 ## Complete Example
 

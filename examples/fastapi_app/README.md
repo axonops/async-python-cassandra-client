@@ -146,9 +146,13 @@ These endpoints validate critical safety properties of context managers:
 
 ### Prerequisites
 
-1. **Cassandra** running on localhost:9042 (or use Docker):
+1. **Cassandra** running on localhost:9042 (or use Docker/Podman):
    ```bash
-   docker run -d --name cassandra-test -p 9042:9042 cassandra:4.1
+   # Using Docker
+   docker run -d --name cassandra-test -p 9042:9042 cassandra:5
+
+   # OR using Podman
+   podman run -d --name cassandra-test -p 9042:9042 cassandra:5
    ```
 
 2. **Python 3.12+** with dependencies:
@@ -190,10 +194,10 @@ The test suite validates all functionality and serves as integration tests in CI
 
 ```bash
 # Run all tests
-python test_fastapi_app.py
+pytest tests/test_fastapi_app.py -v
 
-# Or with pytest
-pytest test_fastapi_app.py -v
+# Or run all tests in the tests directory
+pytest tests/ -v
 ```
 
 Tests cover:

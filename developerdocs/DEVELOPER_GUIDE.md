@@ -69,7 +69,7 @@ make test-integration
 pytest tests/unit/test_session.py -v
 
 # Run with coverage
-make test-coverage
+pytest tests/unit/ -v --cov=async_cassandra --cov-report=html
 ```
 
 ### FastAPI Example Tests
@@ -80,10 +80,10 @@ The FastAPI example app serves as our primary integration test for real-world us
 cd examples/fastapi_app
 
 # Start Cassandra (if not running)
-docker-compose up -d cassandra
+docker-compose up -d cassandra  # Uses Cassandra 5.0
 
 # Run FastAPI tests
-pytest test_fastapi_app.py -v
+pytest tests/test_fastapi_app.py -v
 ```
 
 ## Code Quality
@@ -137,6 +137,24 @@ pre-commit install
 2. **publish.yml** - Runs on release tags
    - Builds packages
    - Publishes to PyPI
+
+### CI Environment Behavior
+
+Some integration tests require controlling Cassandra (disabling/enabling binary protocol for reconnection tests). These tests automatically skip in CI environments where Cassandra runs as a service that cannot be controlled.
+
+To test CI behavior locally:
+```bash
+# Run tests in CI mode (tests that need container control will skip)
+CI=true pytest tests/integration/test_reconnection_behavior.py -v
+
+# Run tests normally (all tests execute)
+pytest tests/integration/test_reconnection_behavior.py -v
+```
+
+Tests that skip in CI:
+- Reconnection behavior tests
+- FastAPI reconnection BDD tests
+- Tests that require disabling/enabling Cassandra
 
 ### PR Requirements
 

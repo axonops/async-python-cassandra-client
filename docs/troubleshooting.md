@@ -172,7 +172,7 @@ await session.set_keyspace('my_keyspace')
    batch = BatchStatement()
    for item in items:
        batch.add(insert_stmt, [item.id, item.data])
-   await session.execute(batch)  # Note: execute, not execute_batch
+   await session.execute(batch)  # Note: use execute(), not execute_batch()
    ```
 
 3. **Use connection warmup:**
