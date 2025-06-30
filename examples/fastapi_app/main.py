@@ -16,6 +16,7 @@ from uuid import UUID
 from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
 
 # Import Cassandra driver exceptions for proper error detection
+from cassandra.cluster import Cluster as SyncCluster
 from cassandra.cluster import NoHostAvailable
 from cassandra.policies import ConstantReconnectionPolicy
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -49,6 +50,8 @@ class UserUpdate(BaseModel):
 # Global session, cluster, and keyspace
 session = None
 cluster = None
+sync_session = None  # For synchronous performance comparison
+sync_cluster = None  # For synchronous performance comparison
 keyspace = "example"
 
 
@@ -111,7 +114,7 @@ def handle_cassandra_error(error: Exception, operation: str = "operation") -> HT
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage database lifecycle."""
-    global session, cluster
+    global session, cluster, sync_session, sync_cluster
 
     try:
         # Startup - connect to Cassandra with constant reconnection policy
@@ -148,6 +151,22 @@ async def lifespan(app: FastAPI):
     """
     )
     await session.set_keyspace("example")
+
+    # Also create sync cluster for performance comparison
+    try:
+        sync_cluster = SyncCluster(
+            contact_points=contact_points,
+            port=int(os.getenv("CASSANDRA_PORT", "9042")),
+            reconnection_policy=ConstantReconnectionPolicy(delay=2.0),
+            connect_timeout=10.0,
+            protocol_version=5,
+        )
+        sync_session = sync_cluster.connect()
+        sync_session.set_keyspace("example")
+    except Exception as e:
+        print(f"Failed to create sync cluster: {e}")
+        sync_session = None
+
     # Drop and recreate table for clean test environment
     await session.execute("DROP TABLE IF EXISTS users")
     await session.execute(
@@ -166,8 +185,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    await session.close()
-    await cluster.shutdown()
+    if session:
+        await session.close()
+    if cluster:
+        await cluster.shutdown()
+    if sync_session:
+        sync_session.shutdown()
+    if sync_cluster:
+        sync_cluster.shutdown()
 
 
 # Create FastAPI app
@@ -678,40 +703,51 @@ async def test_async_performance(requests: int = Query(100, ge=1, le=1000)):
 
 @app.get("/performance/sync")
 async def test_sync_performance(requests: int = Query(100, ge=1, le=1000)):
-    """Test sync-style performance (sequential execution)."""
-    if session is None:
+    """Test TRUE sync performance using synchronous cassandra-driver."""
+    if sync_session is None:
         raise HTTPException(
             status_code=503,
-            detail="Service temporarily unavailable: Cassandra connection not established",
+            detail="Service temporarily unavailable: Sync Cassandra connection not established",
         )
 
     import time
 
     try:
-        start_time = time.time()
+        # Run synchronous operations in a thread pool to not block the event loop
+        import concurrent.futures
 
-        # Prepare statement once
-        stmt = await session.prepare("SELECT * FROM users LIMIT 1")
+        def run_sync_test():
+            start_time = time.time()
 
-        # Execute queries sequentially
-        results = []
-        for _ in range(requests):
-            result = await session.execute(stmt)
-            results.append(result)
+            # Prepare statement once
+            stmt = sync_session.prepare("SELECT * FROM users LIMIT 1")
 
-        end_time = time.time()
-        duration = end_time - start_time
+            # Execute queries sequentially with the SYNC driver
+            results = []
+            for _ in range(requests):
+                result = sync_session.execute(stmt)
+                results.append(result)
 
-        return {
-            "requests": requests,
-            "total_time": duration,
-            "requests_per_second": requests / duration if duration > 0 else 0,
-            "avg_time_per_request": duration / requests if requests > 0 else 0,
-            "successful_requests": len(results),
-            "mode": "sync",
-        }
+            end_time = time.time()
+            duration = end_time - start_time
+
+            return {
+                "requests": requests,
+                "total_time": duration,
+                "requests_per_second": requests / duration if duration > 0 else 0,
+                "avg_time_per_request": duration / requests if requests > 0 else 0,
+                "successful_requests": len(results),
+                "mode": "sync (true blocking)",
+            }
+
+        # Run in thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = await loop.run_in_executor(pool, run_sync_test)
+
+        return result
     except Exception as e:
-        raise handle_cassandra_error(e, "performance test")
+        raise handle_cassandra_error(e, "sync performance test")
 
 
 # Batch operations endpoint
