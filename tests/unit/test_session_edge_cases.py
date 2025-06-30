@@ -34,15 +34,24 @@ class TestSessionEdgeCases:
             if errback:
                 errbacks.append(errback)
 
-            # Immediately call the appropriate callback
-            if error:
-                if errback:
-                    errback(error)
-            else:
-                if callback and result is not None:
-                    # For successful results, pass rows
-                    rows = getattr(result, "rows", [])
-                    callback(rows)
+            # Delay the callback execution to allow AsyncResultHandler to set up properly
+            def execute_callback():
+                if error:
+                    if errback:
+                        errback(error)
+                else:
+                    if callback and result is not None:
+                        # For successful results, pass rows
+                        rows = getattr(result, "rows", [])
+                        callback(rows)
+
+            # Schedule callback for next event loop iteration
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon(execute_callback)
+            except RuntimeError:
+                # No event loop, execute immediately
+                execute_callback()
 
         future.add_callbacks = add_callbacks
         future.has_more_pages = False

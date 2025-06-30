@@ -51,6 +51,46 @@ class TestSchemaChanges:
         future.clear_callbacks = Mock()
         return future
 
+    def _create_mock_future(self, result=None, error=None):
+        """Create a properly configured mock future that simulates driver behavior."""
+        future = Mock()
+
+        # Store callbacks
+        callbacks = []
+        errbacks = []
+
+        def add_callbacks(callback=None, errback=None):
+            if callback:
+                callbacks.append(callback)
+            if errback:
+                errbacks.append(errback)
+
+            # Delay the callback execution to allow AsyncResultHandler to set up properly
+            def execute_callback():
+                if error:
+                    if errback:
+                        errback(error)
+                else:
+                    if callback and result is not None:
+                        # For successful results, pass rows
+                        rows = getattr(result, "rows", [])
+                        callback(rows)
+
+            # Schedule callback for next event loop iteration
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon(execute_callback)
+            except RuntimeError:
+                # No event loop, execute immediately
+                execute_callback()
+
+        future.add_callbacks = add_callbacks
+        future.has_more_pages = False
+        future.timeout = None
+        future.clear_callbacks = Mock()
+
+        return future
+
     @pytest.mark.asyncio
     async def test_create_table_already_exists(self, mock_session):
         """Test handling of AlreadyExists errors during schema changes."""
@@ -115,14 +155,10 @@ class TestSchemaChanges:
             query = args[0] if args else kwargs.get("query", "")
             ddl_operations.append(query)
 
-            # Create a successful future
-            future = Mock()
-            future.result = Mock(return_value=Mock(one=Mock(return_value=None)))
-            future.add_callbacks = Mock()
-            future.has_more_pages = False
-            future.timeout = None
-            future.clear_callbacks = Mock()
-            return future
+            # Use the same pattern as test_session_edge_cases
+            result = Mock()
+            result.rows = []  # DDL operations return no rows
+            return self._create_mock_future(result=result)
 
         mock_session.execute_async.side_effect = execute_async_side_effect
 
