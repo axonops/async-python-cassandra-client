@@ -61,6 +61,8 @@ jobs:
     name: Validate TestPyPI Package
     needs: publish-testpypi
     runs-on: ubuntu-latest
+    # Only validate for pre-release versions that were published to TestPyPI
+    if: contains(github.ref, 'rc') || contains(github.ref, 'a') || contains(github.ref, 'b')
 
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +148,7 @@ jobs:
           echo "Package successfully installed and imported from TestPyPI" >> $GITHUB_STEP_SUMMARY
 
   release-info:
-    needs: [full-ci, publish-testpypi, validate-testpypi]
+    needs: [full-ci]
     runs-on: ubuntu-latest
     if: always()
     steps:
