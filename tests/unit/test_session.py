@@ -1,5 +1,22 @@
 """
 Unit tests for async session management.
+
+This module thoroughly tests AsyncCassandraSession, covering:
+- Session creation from cluster
+- Query execution (simple and parameterized)
+- Prepared statement handling
+- Batch operations
+- Error handling and propagation
+- Resource cleanup and context managers
+- Streaming operations
+- Edge cases and error conditions
+
+Key Testing Patterns:
+====================
+- Mocks ResponseFuture to simulate async operations
+- Tests callback-based async conversion
+- Verifies proper error wrapping
+- Ensures resource cleanup in all paths
 """
 
 from unittest.mock import AsyncMock, Mock, patch
@@ -14,11 +31,22 @@ from async_cassandra.session import AsyncCassandraSession
 
 
 class TestAsyncCassandraSession:
-    """Test cases for AsyncCassandraSession."""
+    """
+    Test cases for AsyncCassandraSession.
+
+    AsyncCassandraSession is the core interface for executing queries.
+    It converts the driver's callback-based async operations into
+    Python async/await compatible operations.
+    """
 
     @pytest.fixture
     def mock_session(self):
-        """Create a mock Cassandra session."""
+        """
+        Create a mock Cassandra session.
+
+        Provides a minimal session interface for testing
+        without actual database connections.
+        """
         session = Mock(spec=Session)
         session.keyspace = "test_keyspace"
         session.shutdown = Mock()
@@ -26,12 +54,33 @@ class TestAsyncCassandraSession:
 
     @pytest.fixture
     def async_session(self, mock_session):
-        """Create an AsyncCassandraSession instance."""
+        """
+        Create an AsyncCassandraSession instance.
+
+        Uses the mock_session fixture to avoid real connections.
+        """
         return AsyncCassandraSession(mock_session)
 
     @pytest.mark.asyncio
     async def test_create_session(self):
-        """Test creating a session from cluster."""
+        """
+        Test creating a session from cluster.
+
+        What this tests:
+        ---------------
+        1. create() class method works
+        2. Keyspace is passed to cluster.connect()
+        3. Returns AsyncCassandraSession instance
+
+        Why this matters:
+        ----------------
+        The create() method is a factory that:
+        - Handles sync cluster.connect() call
+        - Wraps result in async session
+        - Sets initial keyspace if provided
+
+        This is the primary way to get a session.
+        """
         mock_cluster = Mock()
         mock_session = Mock(spec=Session)
         mock_cluster.connect.return_value = mock_session
@@ -39,11 +88,26 @@ class TestAsyncCassandraSession:
         async_session = await AsyncCassandraSession.create(mock_cluster, "test_keyspace")
 
         assert isinstance(async_session, AsyncCassandraSession)
+        # Verify keyspace was used
         mock_cluster.connect.assert_called_once_with("test_keyspace")
 
     @pytest.mark.asyncio
     async def test_create_session_without_keyspace(self):
-        """Test creating a session without keyspace."""
+        """
+        Test creating a session without keyspace.
+
+        What this tests:
+        ---------------
+        1. Keyspace parameter is optional
+        2. connect() called without arguments
+
+        Why this matters:
+        ----------------
+        Common patterns:
+        - Connect first, set keyspace later
+        - Working across multiple keyspaces
+        - Administrative operations
+        """
         mock_cluster = Mock()
         mock_session = Mock(spec=Session)
         mock_cluster.connect.return_value = mock_session
@@ -51,11 +115,31 @@ class TestAsyncCassandraSession:
         async_session = await AsyncCassandraSession.create(mock_cluster)
 
         assert isinstance(async_session, AsyncCassandraSession)
+        # Verify no keyspace argument
         mock_cluster.connect.assert_called_once_with()
 
     @pytest.mark.asyncio
     async def test_execute_simple_query(self, async_session, mock_session):
-        """Test executing a simple query."""
+        """
+        Test executing a simple query.
+
+        What this tests:
+        ---------------
+        1. Basic SELECT query execution
+        2. Async conversion of ResponseFuture
+        3. Results wrapped in AsyncResultSet
+        4. Callback mechanism works correctly
+
+        Why this matters:
+        ----------------
+        This is the core functionality - converting driver's
+        callback-based async into Python async/await:
+
+        Driver: execute_async() -> ResponseFuture -> callbacks
+        Wrapper: await execute() -> AsyncResultSet
+
+        The AsyncResultHandler manages this conversion.
+        """
         # Setup mock response future
         mock_future = Mock(spec=ResponseFuture)
         mock_future.has_more_pages = False
@@ -79,7 +163,24 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_execute_with_parameters(self, async_session, mock_session):
-        """Test executing query with parameters."""
+        """
+        Test executing query with parameters.
+
+        What this tests:
+        ---------------
+        1. Parameterized queries work
+        2. Parameters passed to execute_async
+        3. ? placeholder syntax supported
+
+        Why this matters:
+        ----------------
+        Parameters are critical for:
+        - SQL injection prevention
+        - Query plan caching
+        - Type safety
+
+        Must ensure parameters flow through correctly.
+        """
         mock_future = Mock(spec=ResponseFuture)
         mock_session.execute_async.return_value = mock_future
 
@@ -94,25 +195,67 @@ class TestAsyncCassandraSession:
 
             await async_session.execute(query, parameters=params)
 
-        # Verify parameters were passed
+        # Verify both query and parameters were passed
         call_args = mock_session.execute_async.call_args
         assert call_args[0][0] == query
         assert call_args[0][1] == params
 
     @pytest.mark.asyncio
     async def test_execute_query_error(self, async_session, mock_session):
-        """Test handling query execution error."""
+        """
+        Test handling query execution error.
+
+        What this tests:
+        ---------------
+        1. Exceptions from driver are caught
+        2. Wrapped in QueryError
+        3. Original exception preserved as __cause__
+        4. Helpful error message provided
+
+        Why this matters:
+        ----------------
+        Error handling is critical:
+        - Users need clear error messages
+        - Stack traces must be preserved
+        - Debugging requires full context
+
+        Common errors:
+        - Network failures
+        - Invalid queries
+        - Timeout issues
+        """
         mock_session.execute_async.side_effect = Exception("Connection failed")
 
         with pytest.raises(QueryError) as exc_info:
             await async_session.execute("SELECT * FROM users")
 
         assert "Query execution failed" in str(exc_info.value)
+        # Original exception preserved for debugging
         assert exc_info.value.__cause__ is not None
 
     @pytest.mark.asyncio
     async def test_execute_on_closed_session(self, async_session):
-        """Test executing query on closed session."""
+        """
+        Test executing query on closed session.
+
+        What this tests:
+        ---------------
+        1. Closed session check works
+        2. Fails fast with ConnectionError
+        3. Clear error message
+
+        Why this matters:
+        ----------------
+        Prevents confusing errors:
+        - No hanging on closed connections
+        - No cryptic driver errors
+        - Immediate feedback
+
+        Common scenario:
+        - Session closed in error handler
+        - Retry logic tries to use it
+        - Should fail clearly
+        """
         await async_session.close()
 
         with pytest.raises(ConnectionError) as exc_info:
