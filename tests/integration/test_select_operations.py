@@ -1,7 +1,9 @@
 """
 Integration tests for SELECT query operations.
-Tests various SELECT scenarios with real Cassandra including consistency levels,
-large result sets, prepared statements, and concurrent operations.
+
+This file focuses on advanced SELECT scenarios: consistency levels, large result sets,
+concurrent operations, and special query features. Basic SELECT operations have been
+moved to test_crud_operations.py.
 """
 
 import asyncio
@@ -14,7 +16,7 @@ from cassandra.query import SimpleStatement
 
 @pytest.mark.integration
 class TestSelectOperations:
-    """Test SELECT query operations in various scenarios with real Cassandra."""
+    """Test advanced SELECT query operations with real Cassandra."""
 
     @pytest.mark.asyncio
     async def test_select_with_consistency_levels(self, cassandra_session):
@@ -167,23 +169,6 @@ class TestSelectOperations:
         # Check for any exceptions (there shouldn't be any)
         exceptions = [r for r in results if isinstance(r, Exception)]
         assert len(exceptions) == 0
-
-    @pytest.mark.asyncio
-    async def test_select_non_existent_data(self, cassandra_session):
-        """Test SELECT behavior when querying non-existent data."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        # Query for non-existent user
-        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
-        result = await cassandra_session.execute(select_stmt, [uuid.uuid4()])
-
-        rows = []
-        async for row in result:
-            rows.append(row)
-
-        # Should return empty result set without errors
-        assert len(rows) == 0
 
     @pytest.mark.asyncio
     async def test_select_with_limit_and_ordering(self, cassandra_session):
