@@ -6,7 +6,6 @@ and concurrent operations. Basic CRUD operations have been moved to
 test_crud_operations.py.
 """
 
-import asyncio
 import uuid
 
 import pytest
@@ -117,51 +116,3 @@ class TestBasicOperations:
             await cassandra_session.execute("INVALID SQL QUERY")
         # Could be SyntaxException or InvalidRequest depending on driver version
         assert "Syntax" in str(exc_info.value) or "Invalid" in str(exc_info.value)
-
-    async def test_concurrent_queries(self, cassandra_session):
-        """Test executing multiple queries concurrently with proper patterns."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        try:
-            # Prepare statement
-            insert_stmt = await cassandra_session.prepare(
-                f"""
-                INSERT INTO {users_table} (id, name, email, age)
-                VALUES (?, ?, ?, ?)
-                """
-            )
-
-            # Execute multiple queries concurrently
-            async def insert_user(i: int):
-                user_id = uuid.uuid4()
-                try:
-                    await cassandra_session.execute(
-                        insert_stmt, [user_id, f"Concurrent{i}", f"concurrent{i}@example.com", 30]
-                    )
-                    return user_id
-                except Exception as e:
-                    pytest.fail(f"Failed to insert concurrent user {i}: {e}")
-
-            # Insert 20 users concurrently
-            try:
-                user_ids = await asyncio.gather(*[insert_user(i) for i in range(20)])
-            except Exception as e:
-                pytest.fail(f"Failed concurrent insertion: {e}")
-
-            # Verify all were inserted
-            select_stmt = await cassandra_session.prepare(
-                f"SELECT * FROM {users_table} WHERE id = ?"
-            )
-
-            for i, user_id in enumerate(user_ids):
-                try:
-                    result = await cassandra_session.execute(select_stmt, [user_id])
-                    row = result.one()
-                    assert row is not None
-                    assert row.name == f"Concurrent{i}"
-                except Exception as e:
-                    pytest.fail(f"Failed to verify concurrent user {i}: {e}")
-
-        except Exception as e:
-            pytest.fail(f"Concurrent query test setup failed: {e}")

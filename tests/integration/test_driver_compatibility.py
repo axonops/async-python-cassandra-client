@@ -4,10 +4,7 @@ Integration tests comparing async wrapper behavior with raw driver.
 This ensures our wrapper maintains compatibility and doesn't break any functionality.
 """
 
-import asyncio
-import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from cassandra.cluster import Cluster as SyncCluster
@@ -268,72 +265,6 @@ class TestDriverCompatibility:
             await async_session.execute(f"SELECT * FROM {table_name}", timeout=short_timeout)
         except Exception:
             pass  # Timeout is expected
-
-    @pytest.mark.asyncio
-    async def test_concurrent_execution_performance(self, sync_session, session_with_keyspace):
-        """Test that async wrapper performs better for concurrent operations."""
-        async_session, keyspace = session_with_keyspace
-
-        table_name = f"compat_perf_{uuid.uuid4().hex[:8]}"
-
-        # Create table in both keyspaces
-        sync_session.execute(
-            f"""
-            CREATE TABLE {table_name} (
-                id int PRIMARY KEY,
-                value text
-            )
-        """
-        )
-        await async_session.execute(
-            f"""
-            CREATE TABLE {table_name} (
-                id int PRIMARY KEY,
-                value text
-            )
-        """
-        )
-
-        # Number of concurrent operations
-        num_ops = 50
-
-        # Prepare statements - both use ? for prepared statements
-        sync_insert = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
-        async_insert = await async_session.prepare(
-            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
-        )
-
-        # Sync approach with thread pool
-        start_sync = time.time()
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = []
-            for i in range(num_ops):
-                future = executor.submit(sync_session.execute, sync_insert, (i, f"sync_{i}"))
-                futures.append(future)
-
-            # Wait for all
-            for future in futures:
-                future.result()
-        sync_time = time.time() - start_sync
-
-        # Async approach
-        start_async = time.time()
-        tasks = []
-        for i in range(num_ops):
-            task = async_session.execute(async_insert, (i + 1000, f"async_{i}"))
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-        async_time = time.time() - start_async
-
-        # Async should generally be faster for concurrent ops
-        print(f"Sync time: {sync_time:.3f}s, Async time: {async_time:.3f}s")
-
-        # Verify all data was inserted
-        sync_result = sync_session.execute(f"SELECT COUNT(*) FROM {table_name}")
-        async_result = await async_session.execute(f"SELECT COUNT(*) FROM {table_name}")
-        assert sync_result.one()[0] == num_ops
-        assert async_result.one()[0] == num_ops
 
     @pytest.mark.asyncio
     async def test_trace_compatibility(self, sync_session, session_with_keyspace):

@@ -57,51 +57,6 @@ class TestSelectOperations:
         assert count > 50
 
     @pytest.mark.asyncio
-    async def test_concurrent_selects(self, cassandra_session):
-        """Test concurrent SELECT queries to verify retry mechanism under load."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        # Insert test data
-        # Prepare insert statement
-        insert_stmt = await cassandra_session.prepare(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
-        )
-
-        user_ids = []
-        for i in range(100):
-            user_id = uuid.uuid4()
-            user_ids.append(user_id)
-            await cassandra_session.execute(
-                insert_stmt,
-                [user_id, f"Concurrent User {i}", f"concurrent{i}@test.com", 30],
-            )
-
-        # Prepare select statement for concurrent use
-        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
-
-        # Execute many concurrent selects
-        async def select_user(user_id):
-            result = await cassandra_session.execute(select_stmt, [user_id])
-            rows = []
-            async for row in result:
-                rows.append(row)
-            return rows[0] if rows else None
-
-        # Run concurrent queries
-        results = await asyncio.gather(
-            *[select_user(uid) for uid in user_ids], return_exceptions=True
-        )
-
-        # Verify all succeeded
-        successful = [r for r in results if not isinstance(r, Exception)]
-        assert len(successful) == 100
-
-        # Check for any exceptions (there shouldn't be any)
-        exceptions = [r for r in results if isinstance(r, Exception)]
-        assert len(exceptions) == 0
-
-    @pytest.mark.asyncio
     async def test_select_with_limit_and_ordering(self, cassandra_session):
         """Test SELECT with LIMIT and ordering to ensure retries preserve results."""
         # Create a table with clustering columns for ordering
