@@ -117,7 +117,7 @@ This wrapper makes the cassandra-driver compatible with async Python application
 - ❌ Remove thread pool limitations (concurrency still bounded by driver's [thread pool size](docs/thread-pool-configuration.md))
 - ❌ Eliminate thread overhead
 
-The cassandra-driver uses blocking sockets and thread pools internally. This wrapper provides a compatibility layer but cannot change the fundamental architecture. For a detailed technical analysis, see our [Why Async Wrapper](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt) documentation.
+The cassandra-driver uses blocking sockets and thread pools internally. This wrapper provides a compatibility layer but cannot change the fundamental architecture. For a detailed technical analysis, see our [Why Async Wrapper](docs/why-async-wrapper.md) documentation.
 
 ## 🚀 Key Features
 
