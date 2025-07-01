@@ -142,9 +142,9 @@ class TestProtocolEdgeCases:
         What this tests:
         ---------------
         1. Protocol errors during execution
-        2. ProtocolError wrapped in QueryError
-        3. Original exception preserved
-        4. Error details maintained
+        2. ProtocolError passed through without wrapping
+        3. Direct exception access
+        4. Error details preserved as-is
 
         Why this matters:
         ----------------
@@ -153,8 +153,8 @@ class TestProtocolEdgeCases:
         - Protocol violations
         - Driver/server bugs
 
-        These are serious errors requiring
-        investigation, not just retry.
+        Users need direct access for
+        proper error handling and debugging.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -163,12 +163,11 @@ class TestProtocolEdgeCases:
             ProtocolError("Invalid or unsupported protocol version")
         )
 
-        # ProtocolError is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ProtocolError is now passed through without wrapping
+        with pytest.raises(ProtocolError) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
         assert "Invalid or unsupported protocol version" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, ProtocolError)
 
     @pytest.mark.asyncio
     async def test_custom_payload_handling(self, mock_session):
@@ -262,10 +261,10 @@ class TestProtocolEdgeCases:
 
         What this tests:
         ---------------
-        1. UnsupportedOperation errors handled
-        2. Wrapped in QueryError
-        3. Feature limitations clear
-        4. Version-specific features
+        1. UnsupportedOperation errors passed through
+        2. No wrapping - direct exception access
+        3. Feature limitations clearly visible
+        4. Version-specific features preserved
 
         Why this matters:
         ----------------
@@ -274,8 +273,8 @@ class TestProtocolEdgeCases:
         - Duration type (v5+)
         - Per-query keyspace (v5+)
 
-        Clear errors help users understand
-        feature availability.
+        Users need direct access to handle
+        version-specific feature errors.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -284,12 +283,11 @@ class TestProtocolEdgeCases:
             UnsupportedOperation("Continuous paging is not supported by this protocol version")
         )
 
-        # UnsupportedOperation is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # UnsupportedOperation is now passed through without wrapping
+        with pytest.raises(UnsupportedOperation) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
         assert "Continuous paging is not supported" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, UnsupportedOperation)
 
     @pytest.mark.asyncio
     async def test_protocol_error_recovery(self, mock_session):
@@ -414,10 +412,9 @@ class TestProtocolEdgeCases:
             ProtocolError("Protocol violation")
         )
 
-        # ProtocolError is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ProtocolError is now passed through without wrapping
+        with pytest.raises(ProtocolError):
             await async_session.execute("SELECT * FROM test")
-        assert isinstance(exc_info.value.__cause__, ProtocolError)
 
     @pytest.mark.asyncio
     async def test_prepare_with_protocol_error(self, mock_session):
@@ -427,9 +424,9 @@ class TestProtocolEdgeCases:
         What this tests:
         ---------------
         1. Prepare can fail with protocol error
-        2. Wrapped in QueryError
-        3. Statement preparation issues
-        4. Error details preserved
+        2. Passed through without wrapping
+        3. Statement preparation issues visible
+        4. Direct exception access
 
         Why this matters:
         ----------------
@@ -438,20 +435,19 @@ class TestProtocolEdgeCases:
         - Protocol limitations
         - Query complexity problems
 
-        Clear errors help debug
-        statement preparation issues.
+        Users need direct access to
+        handle preparation failures.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare fails with protocol error
         mock_session.prepare.side_effect = ProtocolError("Cannot prepare statement")
 
-        # Should be wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ProtocolError is now passed through without wrapping
+        with pytest.raises(ProtocolError) as exc_info:
             await async_session.prepare("SELECT * FROM test WHERE id = ?")
 
         assert "Cannot prepare statement" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, ProtocolError)
 
     @pytest.mark.asyncio
     async def test_execution_profile_with_protocol_settings(self, mock_session):
@@ -499,9 +495,9 @@ class TestProtocolEdgeCases:
         What this tests:
         ---------------
         1. Batch operations can hit protocol limits
-        2. Protocol errors wrapped appropriately
-        3. Batch size limits enforced
-        4. Clear error messaging
+        2. Protocol errors passed through directly
+        3. Batch size limits visible to users
+        4. Native exception handling
 
         Why this matters:
         ----------------
@@ -510,8 +506,8 @@ class TestProtocolEdgeCases:
         - Statement count limits
         - Protocol buffer constraints
 
-        Large batches must be split
-        to avoid protocol errors.
+        Users need direct access to
+        handle batch size errors.
         """
         from cassandra.query import BatchStatement, BatchType
 
@@ -527,12 +523,11 @@ class TestProtocolEdgeCases:
             ProtocolError("Batch too large for protocol")
         )
 
-        # Should be wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ProtocolError is now passed through without wrapping
+        with pytest.raises(ProtocolError) as exc_info:
             await async_session.execute_batch(batch)
 
         assert "Batch too large" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, ProtocolError)
 
     @pytest.mark.asyncio
     async def test_no_host_available_with_protocol_errors(self, mock_session):

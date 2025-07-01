@@ -10,26 +10,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from cassandra import (
-    AlreadyExists,
-    AuthenticationFailed,
-    CDCWriteFailure,
-    CoordinationFailure,
-    FunctionFailure,
-    InvalidRequest,
-    OperationTimedOut,
-    ReadFailure,
-    ReadTimeout,
-    Unauthorized,
-    Unavailable,
-    UnsupportedOperation,
-    WriteFailure,
-    WriteTimeout,
-)
-from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, NoHostAvailable, Session
-from cassandra.connection import ConnectionBusy, ConnectionShutdown, ProtocolError
-from cassandra.pool import NoConnectionsAvailable
-from cassandra.protocol import ErrorMessage
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
 from .base import AsyncContextManageable
@@ -193,46 +174,19 @@ class AsyncCassandraSession(AsyncContextManageable):
             result_size = len(result.rows) if hasattr(result, "rows") else 0
             return result
 
-        except (
-            # These exceptions should NOT be wrapped - pass through as-is
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-            Unavailable,
-            InvalidRequest,
-            AlreadyExists,
-            Unauthorized,
-            AuthenticationFailed,
-            ErrorMessage,  # Base class for protocol-level errors like SyntaxException
-            NoHostAvailable,  # Not a DriverException but should pass through
-        ) as e:
-            # Re-raise these specific Cassandra exceptions without wrapping
-            error_type = type(e).__name__
-            raise
-        except (
-            # These exceptions SHOULD be wrapped in QueryError
-            UnsupportedOperation,
-            ReadFailure,
-            WriteFailure,
-            FunctionFailure,
-            CDCWriteFailure,
-            CoordinationFailure,
-            ProtocolError,
-            ConnectionBusy,
-            ConnectionShutdown,
-            NoConnectionsAvailable,
-        ) as e:
-            # Wrap these exceptions in QueryError
-            error_type = type(e).__name__
-            raise QueryError(f"Query execution failed: {str(e)}", cause=e) from e
-        except asyncio.TimeoutError:
-            # Re-raise timeout errors without wrapping
-            error_type = "TimeoutError"
-            raise
         except Exception as e:
-            # Only wrap non-Cassandra exceptions
             error_type = type(e).__name__
-            raise QueryError(f"Query execution failed: {str(e)}", cause=e) from e
+            # Check if this is a Cassandra driver exception by looking at its module
+            if (
+                hasattr(e, "__module__")
+                and (e.__module__ == "cassandra" or e.__module__.startswith("cassandra."))
+                or isinstance(e, asyncio.TimeoutError)
+            ):
+                # Pass through all Cassandra driver exceptions and asyncio.TimeoutError
+                raise
+            else:
+                # Only wrap unexpected exceptions
+                raise QueryError(f"Query execution failed: {str(e)}", cause=e) from e
         finally:
             # Record metrics in a fire-and-forget manner
             duration = time.perf_counter() - start_time
@@ -330,46 +284,19 @@ class AsyncCassandraSession(AsyncContextManageable):
             success = True
             return result
 
-        except (
-            # These exceptions should NOT be wrapped - pass through as-is
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-            Unavailable,
-            InvalidRequest,
-            AlreadyExists,
-            Unauthorized,
-            AuthenticationFailed,
-            ErrorMessage,  # Base class for protocol-level errors like SyntaxException
-            NoHostAvailable,  # Not a DriverException but should pass through
-        ) as e:
-            # Re-raise these specific Cassandra exceptions without wrapping
-            error_type = type(e).__name__
-            raise
-        except (
-            # These exceptions SHOULD be wrapped in QueryError
-            UnsupportedOperation,
-            ReadFailure,
-            WriteFailure,
-            FunctionFailure,
-            CDCWriteFailure,
-            CoordinationFailure,
-            ProtocolError,
-            ConnectionBusy,
-            ConnectionShutdown,
-            NoConnectionsAvailable,
-        ) as e:
-            # Wrap these exceptions in QueryError
-            error_type = type(e).__name__
-            raise QueryError(f"Streaming query execution failed: {str(e)}", cause=e) from e
-        except asyncio.TimeoutError:
-            # Re-raise timeout errors without wrapping
-            error_type = "TimeoutError"
-            raise
         except Exception as e:
-            # Only wrap non-Cassandra exceptions
             error_type = type(e).__name__
-            raise QueryError(f"Streaming query execution failed: {str(e)}") from e
+            # Check if this is a Cassandra driver exception by looking at its module
+            if (
+                hasattr(e, "__module__")
+                and (e.__module__ == "cassandra" or e.__module__.startswith("cassandra."))
+                or isinstance(e, asyncio.TimeoutError)
+            ):
+                # Pass through all Cassandra driver exceptions and asyncio.TimeoutError
+                raise
+            else:
+                # Only wrap unexpected exceptions
+                raise QueryError(f"Streaming query execution failed: {str(e)}", cause=e) from e
         finally:
             # Record metrics in a fire-and-forget manner
             duration = time.perf_counter() - start_time
@@ -462,38 +389,18 @@ class AsyncCassandraSession(AsyncContextManageable):
             )
 
             return prepared
-        except asyncio.TimeoutError:
-            raise
-        except (
-            # These exceptions should NOT be wrapped - pass through as-is
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-            Unavailable,
-            InvalidRequest,
-            AlreadyExists,
-            ErrorMessage,  # Base class for protocol-level errors like SyntaxException
-            NoHostAvailable,  # Not a DriverException but should pass through
-        ):
-            # Re-raise these specific Cassandra exceptions without wrapping
-            raise
-        except (
-            # These exceptions SHOULD be wrapped in QueryError
-            UnsupportedOperation,
-            ReadFailure,
-            WriteFailure,
-            FunctionFailure,
-            CDCWriteFailure,
-            CoordinationFailure,
-            ProtocolError,
-            ConnectionBusy,
-            ConnectionShutdown,
-            NoConnectionsAvailable,
-        ) as e:
-            # Wrap these exceptions in QueryError
-            raise QueryError(f"Statement preparation failed: {str(e)}", cause=e) from e
         except Exception as e:
-            raise QueryError(f"Statement preparation failed: {str(e)}") from e
+            # Check if this is a Cassandra driver exception by looking at its module
+            if (
+                hasattr(e, "__module__")
+                and (e.__module__ == "cassandra" or e.__module__.startswith("cassandra."))
+                or isinstance(e, asyncio.TimeoutError)
+            ):
+                # Pass through all Cassandra driver exceptions and asyncio.TimeoutError
+                raise
+            else:
+                # Only wrap unexpected exceptions
+                raise QueryError(f"Statement preparation failed: {str(e)}", cause=e) from e
 
     async def close(self) -> None:
         """

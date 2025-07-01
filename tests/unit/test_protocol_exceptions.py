@@ -41,7 +41,6 @@ from cassandra.connection import (
 from cassandra.pool import NoConnectionsAvailable
 
 from async_cassandra import AsyncCassandraSession
-from async_cassandra.exceptions import QueryError
 
 
 class TestProtocolExceptions:
@@ -236,10 +235,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. ReadFailure wrapped in QueryError
+        1. ReadFailure passed through without wrapping
         2. Failure count preserved
         3. Data retrieval flag available
-        4. Original exception accessible
+        4. Direct exception access
 
         Why this matters:
         ----------------
@@ -248,8 +247,8 @@ class TestProtocolExceptions:
         - Data corruption possible
         - More serious than timeout
 
-        Unlike timeouts, failures suggest
-        retry unlikely to succeed.
+        Users need direct access to
+        handle these serious errors.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -261,14 +260,13 @@ class TestProtocolExceptions:
         original_error.numfailures = 1
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # ReadFailure is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ReadFailure is now passed through without wrapping
+        with pytest.raises(ReadFailure) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Read failed on replicas" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, ReadFailure)
-        assert exc_info.value.cause.numfailures == 1
-        assert exc_info.value.cause.data_retrieved is False
+        assert "Read failed on replicas" in str(exc_info.value)
+        assert exc_info.value.numfailures == 1
+        assert exc_info.value.data_retrieved is False
 
     @pytest.mark.asyncio
     async def test_write_failure(self, mock_session):
@@ -277,7 +275,7 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. WriteFailure wrapped in QueryError
+        1. WriteFailure passed through without wrapping
         2. Write type preserved
         3. Failure count available
         4. Response details included
@@ -289,8 +287,8 @@ class TestProtocolExceptions:
         - Possible constraint violation
         - Data inconsistency risk
 
-        Critical for understanding if
-        write partially succeeded.
+        Users need direct access to
+        understand write outcomes.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -304,13 +302,12 @@ class TestProtocolExceptions:
         original_error.numfailures = 1
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # WriteFailure is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # WriteFailure is now passed through without wrapping
+        with pytest.raises(WriteFailure) as exc_info:
             await async_session.execute("INSERT INTO test VALUES (1)")
 
-        assert "Query execution failed: Write failed on replicas" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, WriteFailure)
-        assert exc_info.value.cause.numfailures == 1
+        assert "Write failed on replicas" in str(exc_info.value)
+        assert exc_info.value.numfailures == 1
 
     @pytest.mark.asyncio
     async def test_function_failure(self, mock_session):
@@ -319,7 +316,7 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. FunctionFailure wrapped in QueryError
+        1. FunctionFailure passed through without wrapping
         2. Function details preserved
         3. Keyspace and name available
         4. Argument types included
@@ -331,8 +328,8 @@ class TestProtocolExceptions:
         - Invalid input data
         - Resource constraints
 
-        Details help debug which function
-        failed and why.
+        Users need direct access to
+        debug function failures.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -345,17 +342,14 @@ class TestProtocolExceptions:
         )
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # FunctionFailure is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # FunctionFailure is now passed through without wrapping
+        with pytest.raises(FunctionFailure) as exc_info:
             await async_session.execute("SELECT my_func(name, age) FROM users")
 
-        # Verify the wrapped exception contains the original error info
-        assert "Query execution failed: User defined function failed" in str(exc_info.value)
-        # The original exception should be accessible via the cause
-        assert exc_info.value.cause == original_error
-        assert isinstance(exc_info.value.cause, FunctionFailure)
-        assert exc_info.value.cause.keyspace == "test_ks"
-        assert exc_info.value.cause.function == "my_func"
+        # Verify the exception contains the original error info
+        assert "User defined function failed" in str(exc_info.value)
+        assert exc_info.value.keyspace == "test_ks"
+        assert exc_info.value.function == "my_func"
 
     @pytest.mark.asyncio
     async def test_cdc_write_failure(self, mock_session):
@@ -364,10 +358,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. CDCWriteFailure wrapped in QueryError
-        2. CDC-specific error identified
-        3. Original cause preserved
-        4. Clear error message
+        1. CDCWriteFailure passed through without wrapping
+        2. CDC-specific error preserved
+        3. Direct exception access
+        4. Native error handling
 
         Why this matters:
         ----------------
@@ -376,20 +370,19 @@ class TestProtocolExceptions:
         - CDC disabled on table
         - System overload
 
-        Applications using CDC need to
-        handle these specific errors.
+        Applications need direct access
+        for CDC-specific handling.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = CDCWriteFailure("CDC write failed")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # CDCWriteFailure is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # CDCWriteFailure is now passed through without wrapping
+        with pytest.raises(CDCWriteFailure) as exc_info:
             await async_session.execute("INSERT INTO cdc_table VALUES (1)")
 
-        assert "Query execution failed: CDC write failed" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, CDCWriteFailure)
+        assert "CDC write failed" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_coordinator_failure(self, mock_session):
@@ -398,10 +391,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. CoordinationFailure wrapped in QueryError
-        2. Coordinator node failure handled
-        3. Error message preserved
-        4. Cause accessible
+        1. CoordinationFailure passed through without wrapping
+        2. Coordinator node failure preserved
+        3. Error message unchanged
+        4. Direct exception handling
 
         Why this matters:
         ----------------
@@ -410,20 +403,19 @@ class TestProtocolExceptions:
         - Cannot orchestrate query
         - Different from replica failures
 
-        May succeed on retry with
-        different coordinator.
+        Users need direct access to
+        implement retry strategies.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = CoordinationFailure("Coordinator failed to execute query")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # CoordinationFailure is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # CoordinationFailure is now passed through without wrapping
+        with pytest.raises(CoordinationFailure) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Coordinator failed to execute query" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, CoordinationFailure)
+        assert "Coordinator failed to execute query" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_is_bootstrapping_error(self, mock_session):
@@ -534,10 +526,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. ProtocolError wrapped in QueryError
-        2. Protocol violations caught
-        3. Error message preserved
-        4. Original cause accessible
+        1. ProtocolError passed through without wrapping
+        2. Protocol violations preserved as-is
+        3. Error message unchanged
+        4. Direct exception access for handling
 
         Why this matters:
         ----------------
@@ -546,8 +538,8 @@ class TestProtocolExceptions:
         - Message corruption
         - Driver/server bugs
 
-        Usually requires investigation,
-        not simple retry.
+        Users need direct access to these
+        exceptions for proper handling.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -555,12 +547,11 @@ class TestProtocolExceptions:
         original_error = ProtocolError("Protocol version mismatch")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # ProtocolError is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ProtocolError is now passed through without wrapping
+        with pytest.raises(ProtocolError) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Protocol version mismatch" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, ProtocolError)
+        assert "Protocol version mismatch" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_connection_busy(self, mock_session):
@@ -569,10 +560,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. ConnectionBusy wrapped in QueryError
-        2. In-flight request limit hit
-        3. Connection saturation handled
-        4. Clear error message
+        1. ConnectionBusy passed through without wrapping
+        2. In-flight request limit error preserved
+        3. Connection saturation visible to users
+        4. Direct exception handling possible
 
         Why this matters:
         ----------------
@@ -581,22 +572,19 @@ class TestProtocolExceptions:
         - Per-connection limit reached
         - Need more connections or less load
 
-        Different from pool exhaustion -
-        this is per-connection limit.
+        Users need to handle this directly
+        for proper connection management.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = ConnectionBusy("Connection has too many in-flight requests")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # ConnectionBusy is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ConnectionBusy is now passed through without wrapping
+        with pytest.raises(ConnectionBusy) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Connection has too many in-flight requests" in str(
-            exc_info.value
-        )
-        assert isinstance(exc_info.value.cause, ConnectionBusy)
+        assert "Connection has too many in-flight requests" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_connection_shutdown(self, mock_session):
@@ -605,10 +593,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. ConnectionShutdown wrapped in QueryError
-        2. Graceful shutdown detected
-        3. Connection closing handled
-        4. Error message clear
+        1. ConnectionShutdown passed through without wrapping
+        2. Graceful shutdown exception preserved
+        3. Connection closing visible to users
+        4. Direct error handling enabled
 
         Why this matters:
         ----------------
@@ -617,20 +605,19 @@ class TestProtocolExceptions:
         - Connection being recycled
         - Maintenance operations
 
-        Applications should retry on
-        different connection.
+        Applications need direct access
+        to handle retry logic properly.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = ConnectionShutdown("Connection is shutting down")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # ConnectionShutdown is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ConnectionShutdown is now passed through without wrapping
+        with pytest.raises(ConnectionShutdown) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Connection is shutting down" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, ConnectionShutdown)
+        assert "Connection is shutting down" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_no_connections_available(self, mock_session):
@@ -639,10 +626,10 @@ class TestProtocolExceptions:
 
         What this tests:
         ---------------
-        1. NoConnectionsAvailable wrapped in QueryError
-        2. Pool exhaustion detected
-        3. Clear error message
-        4. Original cause preserved
+        1. NoConnectionsAvailable passed through without wrapping
+        2. Pool exhaustion exception preserved
+        3. Direct access to pool state
+        4. Native exception handling
 
         Why this matters:
         ----------------
@@ -651,20 +638,19 @@ class TestProtocolExceptions:
         - All connections busy
         - Need to wait or expand pool
 
-        Common under high load -
-        applications must handle gracefully.
+        Applications need direct access
+        for proper backpressure handling.
         """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = NoConnectionsAvailable("Connection pool exhausted")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # NoConnectionsAvailable is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # NoConnectionsAvailable is now passed through without wrapping
+        with pytest.raises(NoConnectionsAvailable) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed: Connection pool exhausted" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, NoConnectionsAvailable)
+        assert "Connection pool exhausted" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_already_exists(self, mock_session):
