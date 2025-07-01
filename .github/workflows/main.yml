@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
+  workflow_dispatch:
 
 jobs:
   ci:
