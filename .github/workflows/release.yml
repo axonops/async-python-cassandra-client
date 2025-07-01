@@ -18,7 +18,7 @@ jobs:
     needs: full-ci
     runs-on: ubuntu-latest
     # Only publish for proper pre-release versions (PEP 440)
-    if: contains(github.ref, 'rc') || contains(github.ref, 'a') || contains(github.ref, 'b')
+    if: contains(github.ref_name, 'rc') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b')
 
     permissions:
       id-token: write  # Required for trusted publishing
@@ -62,7 +62,7 @@ jobs:
     needs: publish-testpypi
     runs-on: ubuntu-latest
     # Only validate for pre-release versions that were published to TestPyPI
-    if: contains(github.ref, 'rc') || contains(github.ref, 'a') || contains(github.ref, 'b')
+    if: contains(github.ref_name, 'rc') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b')
 
     steps:
       - uses: actions/checkout@v4
@@ -249,16 +249,26 @@ jobs:
           body_path: release-notes.md
           draft: false
 
+  debug-condition:
+    name: Debug Release Condition
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug info
+        run: |
+          echo "github.ref = ${{ github.ref }}"
+          echo "github.ref_name = ${{ github.ref_name }}"
+          echo "ref contains 'a': ${{ contains(github.ref, 'a') }}"
+          echo "ref_name contains 'a': ${{ contains(github.ref_name, 'a') }}"
+          echo "ref_name contains '-': ${{ contains(github.ref_name, '-') }}"
+          echo "Should publish to PyPI (new logic): ${{ !contains(github.ref_name, '-') }}"
+
   publish-pypi:
     name: Publish to PyPI
     needs: full-ci
     runs-on: ubuntu-latest
     # Only publish stable versions (no pre-release suffix)
-    # Pre-releases go to TestPyPI for now
-    if: |
-      !contains(github.ref, 'rc') &&
-      !contains(github.ref, 'a') &&
-      !contains(github.ref, 'b')
+    # Match only versions like v0.0.1, v1.2.3, etc (no suffix)
+    if: "!contains(github.ref_name, '-')"
 
     permissions:
       id-token: write  # Required for trusted publishing
