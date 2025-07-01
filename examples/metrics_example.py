@@ -28,13 +28,10 @@ async def main():
     )
 
     # 2. Create cluster and session with metrics
-    cluster = AsyncCluster(contact_points=["localhost"])
-    session = await cluster.connect()
-
-    # Inject metrics middleware into session
-    session._metrics = metrics
-
-    try:
+    async with AsyncCluster(contact_points=["localhost"]) as cluster:
+        async with cluster.connect() as session:
+            # Inject metrics middleware into session
+            session._metrics = metrics
         # 3. Set up test environment
         await session.execute(
             """
@@ -135,10 +132,6 @@ async def main():
                     print(f"  Total Queries: {health['total_queries']}")
                     print(f"  Errors: {health['error_count']}")
 
-    finally:
-        await session.close()
-        await cluster.shutdown()
-
 
 async def prometheus_example():
     """Example showing Prometheus integration."""
@@ -153,20 +146,20 @@ async def prometheus_example():
         print("📊 Prometheus metrics server started on http://localhost:8000")
 
         # Run some queries with metrics
-        cluster = AsyncCluster(contact_points=["localhost"])
-        session = await cluster.connect()
-        session._metrics = metrics
+        async with AsyncCluster(contact_points=["localhost"]) as cluster:
+            async with cluster.connect() as session:
+                session._metrics = metrics
 
-        # Execute some queries
-        for i in range(5):
-            await session.execute("SELECT release_version FROM system.local")
+                # Prepare statement
+                stmt = await session.prepare("SELECT release_version FROM system.local")
 
-        print("📈 Metrics available at http://localhost:8000/metrics")
-        print("Sample metrics output:")
-        print(generate_latest().decode("utf-8")[:500] + "...")
+                # Execute some queries
+                for i in range(5):
+                    await session.execute(stmt, [])
 
-        await session.close()
-        await cluster.shutdown()
+                print("📈 Metrics available at http://localhost:8000/metrics")
+                print("Sample metrics output:")
+                print(generate_latest().decode("utf-8")[:500] + "...")
 
     except ImportError:
         print("❌ prometheus_client not installed. Install with: pip install prometheus_client")

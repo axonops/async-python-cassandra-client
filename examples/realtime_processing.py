@@ -333,39 +333,33 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
 
 async def main():
     """Run real-time processing example."""
-    # Connect to Cassandra
-    cluster = AsyncCluster(["localhost"])
+    # Connect to Cassandra using context manager
+    async with AsyncCluster(["localhost"]) as cluster:
+        async with cluster.connect() as session:
+            # Setup test data
+            await setup_sensor_data(session)
 
-    try:
-        session = await cluster.connect()
+            # Create processor with 5-minute sliding window
+            processor = RealTimeProcessor(window_minutes=5)
 
-        # Setup test data
-        await setup_sensor_data(session)
+            # Process historical data
+            await process_historical_data(session, processor)
 
-        # Create processor with 5-minute sliding window
-        processor = RealTimeProcessor(window_minutes=5)
+            # Show final summary
+            summary = processor.get_summary()
+            logger.info("\nFinal Summary:")
+            logger.info(f"- Active sensors: {summary['active_sensors']}")
+            logger.info(f"- Total readings: {summary['total_readings']}")
+            logger.info(f"- Alerts triggered: {summary['alerts_triggered']}")
+            logger.info(f"- Avg temperature: {summary['avg_temperature']}°C")
+            logger.info(f"- Avg humidity: {summary['avg_humidity']}%")
 
-        # Process historical data
-        await process_historical_data(session, processor)
+            # Simulate real-time processing
+            await simulate_realtime_processing(session, processor)
 
-        # Show final summary
-        summary = processor.get_summary()
-        logger.info("\nFinal Summary:")
-        logger.info(f"- Active sensors: {summary['active_sensors']}")
-        logger.info(f"- Total readings: {summary['total_readings']}")
-        logger.info(f"- Alerts triggered: {summary['alerts_triggered']}")
-        logger.info(f"- Avg temperature: {summary['avg_temperature']}°C")
-        logger.info(f"- Avg humidity: {summary['avg_humidity']}%")
-
-        # Simulate real-time processing
-        await simulate_realtime_processing(session, processor)
-
-        # Cleanup
-        logger.info("\nCleaning up...")
-        await session.execute("DROP KEYSPACE iot_data")
-
-    finally:
-        await cluster.shutdown()
+            # Cleanup
+            logger.info("\nCleaning up...")
+            await session.execute("DROP KEYSPACE iot_data")
 
 
 if __name__ == "__main__":

@@ -191,25 +191,19 @@ async def page_based_streaming_example(session):
 
 async def main():
     """Run all streaming examples."""
-    # Connect to Cassandra
-    cluster = AsyncCluster(["localhost"])
+    # Connect to Cassandra using context manager
+    async with AsyncCluster(["localhost"]) as cluster:
+        async with cluster.connect() as session:
+            # Setup test data
+            await setup_test_data(session)
 
-    try:
-        session = await cluster.connect()
+            # Run examples
+            await basic_streaming_example(session)
+            await filtered_streaming_example(session)
+            await page_based_streaming_example(session)
 
-        # Setup test data
-        await setup_test_data(session)
-
-        # Run examples
-        await basic_streaming_example(session)
-        await filtered_streaming_example(session)
-        await page_based_streaming_example(session)
-
-        # Cleanup
-        await session.execute("DROP KEYSPACE streaming_example")
-
-    finally:
-        await cluster.shutdown()
+            # Cleanup
+            await session.execute("DROP KEYSPACE streaming_example")
 
 
 if __name__ == "__main__":

@@ -50,23 +50,33 @@ async def get_user(user_id: str):
 
 ```python
 # ✅ Async code with our wrapper - NON-BLOCKING
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from async_cassandra import AsyncCluster
 
-app = FastAPI()
-cluster = AsyncCluster(['localhost'])
 session = None
+user_stmt = None
 
-@app.on_event("startup")
-async def startup():
-    global session
-    session = await cluster.connect()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global session, user_stmt
+    # Use context managers for proper resource management
+    async with AsyncCluster(['localhost']) as cluster:
+        async with cluster.connect() as session:
+            # Prepare statement for better performance
+            user_stmt = await session.prepare(
+                "SELECT * FROM users WHERE id = ?"
+            )
+            yield  # App runs here
+            # Cleanup happens automatically
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/users/{user_id}")
 async def get_user(user_id: str):
     # This doesn't block! The event loop remains free to handle
     # other requests while waiting for the database response
-    result = await session.execute("SELECT * FROM users WHERE id = %s", [user_id])
+    result = await session.execute(user_stmt, [user_id])
     return {"user": result.one()}
 ```
 

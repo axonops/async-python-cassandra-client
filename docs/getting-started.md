@@ -27,21 +27,17 @@ import asyncio
 from async_cassandra import AsyncCluster
 
 async def main():
-    # 1. Create a cluster object (doesn't connect yet)
-    cluster = AsyncCluster(['localhost'])
+    # Use context managers for automatic cleanup (REQUIRED)
+    async with AsyncCluster(['localhost']) as cluster:
+        async with cluster.connect('my_keyspace') as session:
+            # Execute a query (waits for results without blocking)
+            result = await session.execute("SELECT * FROM users LIMIT 10")
 
-    # 2. Connect and get a session (this is where connection happens)
-    session = await cluster.connect('my_keyspace')
+            # Process results (rows are like dictionaries)
+            for row in result:
+                print(f"User: {row.name}, Email: {row.email}")
 
-    # 3. Execute a query (waits for results without blocking)
-    result = await session.execute("SELECT * FROM users LIMIT 10")
-
-    # 4. Process results (rows are like dictionaries)
-    for row in result:
-        print(f"User: {row.name}, Email: {row.email}")
-
-    # 5. Clean up (IMPORTANT: always close connections)
-    await cluster.shutdown()
+            # No manual cleanup needed - context managers handle it!
 
 # Run the async function
 asyncio.run(main())
@@ -353,42 +349,39 @@ FastAPI is an async web framework. If you use the regular Cassandra driver, it w
 
 ### FastAPI Example
 
-#### The Setup
+#### The Setup (Using Lifespan Context Manager)
 
 ```python
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from async_cassandra import AsyncCluster
 import uuid
 
-app = FastAPI()
-
-# Global variables for cluster and session
-cluster = None
+# Global variables for session and prepared statements
 session = None
 prepared_statements = {}
 
-@app.on_event("startup")
-async def startup():
-    """Initialize Cassandra connection when server starts."""
-    global cluster, session, prepared_statements
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage Cassandra connection lifecycle."""
+    global session, prepared_statements
 
-    # Create cluster connection
-    cluster = AsyncCluster(['localhost'])
-    session = await cluster.connect('my_keyspace')
+    # Startup: Create connection with context manager
+    async with AsyncCluster(['localhost']) as cluster:
+        async with cluster.connect('my_keyspace') as session:
+            # Prepare statements once at startup (more efficient)
+            prepared_statements['get_user'] = await session.prepare(
+                "SELECT * FROM users WHERE id = ?"
+            )
+            prepared_statements['create_user'] = await session.prepare(
+                "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
+            )
 
-    # Prepare statements once at startup (more efficient)
-    prepared_statements['get_user'] = await session.prepare(
-        "SELECT * FROM users WHERE id = ?"
-    )
-    prepared_statements['create_user'] = await session.prepare(
-        "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
-    )
+            yield  # Server runs here
 
-@app.on_event("shutdown")
-async def shutdown():
-    """Clean up when server stops."""
-    if cluster:
-        await cluster.shutdown()
+            # Cleanup happens automatically when context exits
+
+app = FastAPI(lifespan=lifespan)
 ```
 
 #### API Endpoints

@@ -82,9 +82,46 @@ python metrics_simple.py
 
 ### 6. [Advanced Metrics](metrics_example.py)
 
-More comprehensive metrics example (requires updates to work with current API).
+Comprehensive metrics and observability example:
+- Multiple metrics collectors setup
+- Query performance monitoring
+- Connection health tracking
+- Prometheus integration example
+- FastAPI integration patterns
 
-### 7. [Monitoring Configuration](monitoring/)
+**Run:**
+```bash
+python metrics_example.py
+```
+
+### 7. [Context Manager Safety](context_manager_safety_demo.py)
+
+Demonstrates proper context manager usage:
+- Context manager isolation
+- Error safety in queries and streaming
+- Concurrent operations with shared resources
+- Resource cleanup guarantees
+
+**Run:**
+```bash
+python context_manager_safety_demo.py
+```
+
+### 8. [Thread Pool Configuration](thread_pool_configuration.py)
+
+Shows how to configure thread pools for different workloads:
+- Web application configuration
+- Batch processing setup
+- Thread pool size comparison
+- Thread starvation demonstration
+- Thread pool monitoring
+
+**Run:**
+```bash
+python thread_pool_configuration.py
+```
+
+### 9. [Monitoring Configuration](monitoring/)
 
 Production-ready monitoring configurations:
 - **alerts.yml** - Prometheus alerting rules for:
@@ -114,25 +151,48 @@ All examples require:
    # pip install async-cassandra
    ```
 
-## Common Patterns Demonstrated
+## Best Practices Demonstrated
 
-### Connection Management
-- Using context managers for automatic cleanup
+### MANDATORY: Always Use Context Managers
+All examples follow the required pattern:
+```python
+# ALWAYS use context managers for resource management
+async with AsyncCluster(["localhost"]) as cluster:
+    async with cluster.connect() as session:
+        # Your code here
+        pass
+```
+
+### MANDATORY: Always Use PreparedStatements
+For any query with parameters:
+```python
+# Prepare statement once
+stmt = await session.prepare(
+    "INSERT INTO users (id, name) VALUES (?, ?)"
+)
+# Execute many times
+await session.execute(stmt, [user_id, name])
+```
+
+### Common Patterns Demonstrated
+
+#### Connection Management
+- Using context managers for automatic cleanup (REQUIRED)
 - Proper cluster and session lifecycle
 - Connection health monitoring
 
-### Error Handling
+#### Error Handling
 - Catching and handling Cassandra exceptions
 - Retry strategies with idempotency
 - Graceful degradation
 
-### Performance Optimization
-- Prepared statements for repeated queries
+#### Performance Optimization
+- Prepared statements for repeated queries (REQUIRED)
 - Concurrent query execution
-- Streaming for large datasets
+- Streaming for large datasets with context managers
 - Appropriate fetch sizes
 
-### Monitoring & Observability
+#### Monitoring & Observability
 - Metrics collection
 - Performance tracking
 - Health checks
@@ -159,11 +219,14 @@ Examples use local Cassandra by default. Network latency may vary with remote cl
 ## Contributing
 
 We welcome new examples! When contributing:
+- **MUST use context managers** for all cluster/session/streaming operations
+- **MUST use PreparedStatements** for all parameterized queries
 - Include clear documentation in the code
 - Handle errors appropriately
 - Clean up resources (drop keyspaces/tables)
 - Test with Python 3.12
 - Update this README
+- Follow the patterns shown in existing examples
 
 ## Support
 

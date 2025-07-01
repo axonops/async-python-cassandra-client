@@ -65,11 +65,10 @@ async def demonstrate_streaming_error_safety(cluster):
         """
     )
 
-    # Insert some data
+    # Insert some data using prepared statement
+    insert_stmt = await session.prepare("INSERT INTO test_data (id, value) VALUES (?, ?)")
     for i in range(10):
-        await session.execute(
-            "INSERT INTO test_data (id, value) VALUES (%s, %s)", [uuid.uuid4(), f"value_{i}"]
-        )
+        await session.execute(insert_stmt, [uuid.uuid4(), f"value_{i}"])
 
     # Try streaming from non-existent table (will fail)
     try:

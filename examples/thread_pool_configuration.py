@@ -37,10 +37,13 @@ async def simulate_workload(
     print(f"\n{name}: Running {query_count} queries...")
     start_time = time.time()
 
+    # Prepare statement once
+    stmt = await session.prepare("SELECT release_version FROM system.local")
+
     # Create concurrent queries
     queries = []
     for i in range(query_count):
-        query = session.execute("SELECT release_version FROM system.local")
+        query = session.execute(stmt, [])
         queries.append(query)
 
         # Optional delay between query submissions
@@ -135,39 +138,35 @@ async def example_monitoring():
     print("EXAMPLE 5: Thread Pool Monitoring")
     print("=" * 60)
 
-    cluster = AsyncCluster(contact_points=["localhost"], executor_threads=4)
+    async with AsyncCluster(contact_points=["localhost"], executor_threads=4) as cluster:
+        async with cluster.connect():
+            executor = cluster._cluster.executor
 
-    session = await cluster.connect()
-    executor = cluster._cluster.executor
+            print(f"\nMonitoring: Thread pool has {executor._max_workers} threads")
 
-    print(f"\nMonitoring: Thread pool has {executor._max_workers} threads")
+            # Submit tasks to see thread usage
+            print("\nMonitoring: Submitting 10 slow queries...")
 
-    # Submit tasks to see thread usage
-    print("\nMonitoring: Submitting 10 slow queries...")
+            def slow_query():
+                """Simulate a slow operation."""
+                time.sleep(0.5)
+                return "done"
 
-    def slow_query():
-        """Simulate a slow operation."""
-        time.sleep(0.5)
-        return "done"
+            # Submit tasks directly to executor to monitor
+            futures = []
+            for i in range(10):
+                future = executor.submit(slow_query)
+                futures.append(future)
 
-    # Submit tasks directly to executor to monitor
-    futures = []
-    for i in range(10):
-        future = executor.submit(slow_query)
-        futures.append(future)
+                # Check queue size (implementation detail)
+                if hasattr(executor, "_work_queue"):
+                    queue_size = executor._work_queue.qsize()
+                    print(f"Monitoring: Submitted task {i+1}, queue size: {queue_size}")
 
-        # Check queue size (implementation detail)
-        if hasattr(executor, "_work_queue"):
-            queue_size = executor._work_queue.qsize()
-            print(f"Monitoring: Submitted task {i+1}, queue size: {queue_size}")
-
-    print("\nMonitoring: Waiting for all tasks to complete...")
-    for i, future in enumerate(futures):
-        future.result()
-        print(f"Monitoring: Task {i+1} completed")
-
-    await session.close()
-    await cluster.shutdown()
+            print("\nMonitoring: Waiting for all tasks to complete...")
+            for i, future in enumerate(futures):
+                future.result()
+                print(f"Monitoring: Task {i+1} completed")
 
 
 async def main():
@@ -177,10 +176,9 @@ async def main():
 
     # Check if Cassandra is available
     try:
-        test_cluster = AsyncCluster(["localhost"])
-        test_session = await test_cluster.connect()
-        await test_session.close()
-        await test_cluster.shutdown()
+        async with AsyncCluster(["localhost"]) as test_cluster:
+            async with test_cluster.connect():
+                pass  # Just testing connection
     except Exception as e:
         print("\nError: Cannot connect to Cassandra on localhost:9042")
         print(f"Details: {e}")

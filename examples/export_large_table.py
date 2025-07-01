@@ -283,35 +283,29 @@ async def setup_sample_data(session):
 
 async def main():
     """Run the export example."""
-    # Connect to Cassandra
-    cluster = AsyncCluster(["localhost"])
+    # Connect to Cassandra using context manager
+    async with AsyncCluster(["localhost"]) as cluster:
+        async with cluster.connect() as session:
+            # Setup sample data
+            await setup_sample_data(session)
 
-    try:
-        session = await cluster.connect()
+            # Create output directory
+            output_dir = Path("exports")
+            output_dir.mkdir(exist_ok=True)
 
-        # Setup sample data
-        await setup_sample_data(session)
+            # Export using async I/O if available
+            if ASYNC_FILE_IO:
+                await export_table_async(
+                    session, "export_example", "products", str(output_dir / "products_async.csv")
+                )
+            else:
+                await export_table_sync(
+                    session, "export_example", "products", str(output_dir / "products_sync.csv")
+                )
 
-        # Create output directory
-        output_dir = Path("exports")
-        output_dir.mkdir(exist_ok=True)
-
-        # Export using async I/O if available
-        if ASYNC_FILE_IO:
-            await export_table_async(
-                session, "export_example", "products", str(output_dir / "products_async.csv")
-            )
-        else:
-            await export_table_sync(
-                session, "export_example", "products", str(output_dir / "products_sync.csv")
-            )
-
-        # Cleanup (optional)
-        logger.info("\nCleaning up...")
-        await session.execute("DROP KEYSPACE export_example")
-
-    finally:
-        await cluster.shutdown()
+            # Cleanup (optional)
+            logger.info("\nCleaning up...")
+            await session.execute("DROP KEYSPACE export_example")
 
 
 if __name__ == "__main__":
