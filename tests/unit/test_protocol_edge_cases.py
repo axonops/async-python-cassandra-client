@@ -7,6 +7,21 @@ Tests how the async wrapper handles:
 - Custom payloads
 - Large queries
 - Various Cassandra exceptions
+
+Test Organization:
+==================
+1. Protocol Negotiation - Version negotiation failures
+2. Protocol Errors - Errors during query execution
+3. Custom Payloads - Application-specific protocol data
+4. Query Size Limits - Large query handling
+5. Error Recovery - Recovery from protocol issues
+
+Key Testing Principles:
+======================
+- Test protocol boundary conditions
+- Verify error propagation
+- Ensure graceful degradation
+- Test recovery mechanisms
 """
 
 from unittest.mock import Mock, patch
@@ -76,7 +91,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_protocol_version_negotiation_failure(self):
-        """Test handling of protocol version negotiation failures."""
+        """
+        Test handling of protocol version negotiation failures.
+
+        What this tests:
+        ---------------
+        1. Protocol negotiation can fail
+        2. NoHostAvailable with ProtocolError
+        3. Wrapped in ConnectionError
+        4. Clear error message
+
+        Why this matters:
+        ----------------
+        Protocol negotiation failures occur when:
+        - Client/server version mismatch
+        - Unsupported protocol features
+        - Configuration conflicts
+
+        Users need clear guidance on
+        version compatibility issues.
+        """
         from async_cassandra import AsyncCluster
 
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
@@ -102,7 +136,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_protocol_error_during_query(self, mock_session):
-        """Test handling of protocol errors during query execution."""
+        """
+        Test handling of protocol errors during query execution.
+
+        What this tests:
+        ---------------
+        1. Protocol errors during execution
+        2. ProtocolError wrapped in QueryError
+        3. Original exception preserved
+        4. Error details maintained
+
+        Why this matters:
+        ----------------
+        Protocol errors indicate:
+        - Corrupted messages
+        - Protocol violations
+        - Driver/server bugs
+
+        These are serious errors requiring
+        investigation, not just retry.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate protocol error
@@ -119,7 +172,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_custom_payload_handling(self, mock_session):
-        """Test handling of custom payloads in protocol."""
+        """
+        Test handling of custom payloads in protocol.
+
+        What this tests:
+        ---------------
+        1. Custom payloads passed through
+        2. Payload data preserved
+        3. No interference with query
+        4. Application metadata works
+
+        Why this matters:
+        ----------------
+        Custom payloads enable:
+        - Request tracing
+        - Application context
+        - Cross-system correlation
+
+        Used for debugging and monitoring
+        in production systems.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track custom payloads
@@ -146,7 +218,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_large_query_handling(self, mock_session):
-        """Test handling of very large queries."""
+        """
+        Test handling of very large queries.
+
+        What this tests:
+        ---------------
+        1. Query size limits enforced
+        2. InvalidRequest for oversized queries
+        3. Clear size limit in error
+        4. Not wrapped (Cassandra error)
+
+        Why this matters:
+        ----------------
+        Query size limits prevent:
+        - Memory exhaustion
+        - Network overload
+        - Protocol buffer overflow
+
+        Applications must chunk large
+        operations or use prepared statements.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create very large query
@@ -166,7 +257,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_unsupported_operation(self, mock_session):
-        """Test handling of unsupported operations."""
+        """
+        Test handling of unsupported operations.
+
+        What this tests:
+        ---------------
+        1. UnsupportedOperation errors handled
+        2. Wrapped in QueryError
+        3. Feature limitations clear
+        4. Version-specific features
+
+        Why this matters:
+        ----------------
+        Features vary by protocol version:
+        - Continuous paging (v5+)
+        - Duration type (v5+)
+        - Per-query keyspace (v5+)
+
+        Clear errors help users understand
+        feature availability.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate unsupported operation
@@ -183,7 +293,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_protocol_error_recovery(self, mock_session):
-        """Test recovery from protocol-level errors."""
+        """
+        Test recovery from protocol-level errors.
+
+        What this tests:
+        ---------------
+        1. Protocol errors can be transient
+        2. Recovery possible after errors
+        3. Multiple attempts tracked
+        4. Eventually succeeds
+
+        Why this matters:
+        ----------------
+        Some protocol errors are recoverable:
+        - Stream ID conflicts
+        - Temporary corruption
+        - Race conditions
+
+        Retry with new connection often
+        resolves transient issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track protocol errors
@@ -215,7 +344,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_protocol_version_in_session(self, mock_session):
-        """Test accessing protocol version from session."""
+        """
+        Test accessing protocol version from session.
+
+        What this tests:
+        ---------------
+        1. Protocol version accessible
+        2. Available via cluster object
+        3. Version doesn't affect queries
+        4. Useful for debugging
+
+        Why this matters:
+        ----------------
+        Applications may need version info:
+        - Feature detection
+        - Compatibility checks
+        - Debugging protocol issues
+
+        Version should be easily accessible
+        for runtime decisions.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Protocol version should be accessible via cluster
@@ -231,7 +379,25 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_timeout_vs_protocol_error(self, mock_session):
-        """Test differentiating between timeouts and protocol errors."""
+        """
+        Test differentiating between timeouts and protocol errors.
+
+        What this tests:
+        ---------------
+        1. Timeouts not wrapped
+        2. Protocol errors wrapped
+        3. Different error handling
+        4. Clear distinction
+
+        Why this matters:
+        ----------------
+        Different errors need different handling:
+        - Timeouts: often transient, retry
+        - Protocol errors: serious, investigate
+
+        Applications must distinguish to
+        implement proper error handling.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Test timeout
@@ -255,7 +421,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_prepare_with_protocol_error(self, mock_session):
-        """Test prepared statement with protocol errors."""
+        """
+        Test prepared statement with protocol errors.
+
+        What this tests:
+        ---------------
+        1. Prepare can fail with protocol error
+        2. Wrapped in QueryError
+        3. Statement preparation issues
+        4. Error details preserved
+
+        Why this matters:
+        ----------------
+        Prepare failures indicate:
+        - Schema issues
+        - Protocol limitations
+        - Query complexity problems
+
+        Clear errors help debug
+        statement preparation issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare fails with protocol error
@@ -270,7 +455,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execution_profile_with_protocol_settings(self, mock_session):
-        """Test execution profiles don't interfere with protocol handling."""
+        """
+        Test execution profiles don't interfere with protocol handling.
+
+        What this tests:
+        ---------------
+        1. Execution profiles work correctly
+        2. Profile parameter passed through
+        3. No protocol interference
+        4. Custom settings preserved
+
+        Why this matters:
+        ----------------
+        Execution profiles customize:
+        - Consistency levels
+        - Retry policies
+        - Load balancing
+
+        Must work seamlessly with
+        protocol-level features.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Execute with custom execution profile
@@ -289,7 +493,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_batch_with_protocol_error(self, mock_session):
-        """Test batch execution with protocol errors."""
+        """
+        Test batch execution with protocol errors.
+
+        What this tests:
+        ---------------
+        1. Batch operations can hit protocol limits
+        2. Protocol errors wrapped appropriately
+        3. Batch size limits enforced
+        4. Clear error messaging
+
+        Why this matters:
+        ----------------
+        Batches have protocol limits:
+        - Maximum batch size
+        - Statement count limits
+        - Protocol buffer constraints
+
+        Large batches must be split
+        to avoid protocol errors.
+        """
         from cassandra.query import BatchStatement, BatchType
 
         async_session = AsyncCassandraSession(mock_session)
@@ -313,7 +536,26 @@ class TestProtocolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_no_host_available_with_protocol_errors(self, mock_session):
-        """Test NoHostAvailable containing protocol errors."""
+        """
+        Test NoHostAvailable containing protocol errors.
+
+        What this tests:
+        ---------------
+        1. NoHostAvailable can contain various errors
+        2. Protocol errors preserved per host
+        3. Mixed error types handled
+        4. Detailed error information
+
+        Why this matters:
+        ----------------
+        Connection failures vary by host:
+        - Some have protocol issues
+        - Others timeout
+        - Mixed failure modes
+
+        Detailed per-host errors help
+        diagnose cluster-wide issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create NoHostAvailable with protocol errors

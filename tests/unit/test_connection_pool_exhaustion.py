@@ -6,6 +6,22 @@ Tests how the async wrapper handles:
 - Connection borrowing timeouts
 - Pool recovery after exhaustion
 - Connection health checks
+
+Test Organization:
+==================
+1. Pool Exhaustion - Running out of connections
+2. Borrowing Timeouts - Waiting for available connections
+3. Recovery - Pool recovering after exhaustion
+4. Health Checks - Connection health monitoring
+5. Metrics - Tracking pool usage and exhaustion
+6. Graceful Degradation - Prioritizing critical queries
+
+Key Testing Principles:
+======================
+- Simulate realistic pool limits
+- Test concurrent access patterns
+- Verify recovery mechanisms
+- Track exhaustion metrics
 """
 
 import asyncio
@@ -88,7 +104,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_pool_exhaustion_under_load(self, mock_session):
-        """Test behavior when connection pool is exhausted."""
+        """
+        Test behavior when connection pool is exhausted.
+
+        What this tests:
+        ---------------
+        1. Pool has finite connection limit
+        2. Excess queries fail with NoConnectionsAvailable
+        3. Failures are wrapped in QueryError
+        4. Success/failure count matches pool size
+
+        Why this matters:
+        ----------------
+        Connection pools prevent resource exhaustion:
+        - Each connection uses memory/CPU
+        - Database has connection limits
+        - Pool size must be tuned
+
+        Applications must handle pool exhaustion
+        gracefully with retries or backoff.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Configure mock to simulate pool exhaustion after N requests
@@ -131,7 +166,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_connection_borrowing_timeout(self, mock_session):
-        """Test timeout when waiting for available connection."""
+        """
+        Test timeout when waiting for available connection.
+
+        What this tests:
+        ---------------
+        1. Waiting for connections can timeout
+        2. OperationTimedOut raised
+        3. Clear error message
+        4. Not wrapped (driver exception)
+
+        Why this matters:
+        ----------------
+        When pool is exhausted, queries wait.
+        If wait is too long:
+        - Client timeout exceeded
+        - Better to fail fast
+        - Allow retry with backoff
+
+        Timeouts prevent indefinite blocking.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate all connections busy
@@ -147,7 +201,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_pool_recovery_after_exhaustion(self, mock_session):
-        """Test that pool recovers after temporary exhaustion."""
+        """
+        Test that pool recovers after temporary exhaustion.
+
+        What this tests:
+        ---------------
+        1. Pool exhaustion is temporary
+        2. Connections return to pool
+        3. New queries succeed after recovery
+        4. No permanent failure
+
+        Why this matters:
+        ----------------
+        Pool exhaustion often transient:
+        - Burst of traffic
+        - Slow queries holding connections
+        - Temporary spike
+
+        Applications should retry after
+        brief delay for pool recovery.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track pool state
@@ -183,7 +256,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_connection_health_checks(self, mock_session, mock_connection_pool):
-        """Test connection health checking during pool management."""
+        """
+        Test connection health checking during pool management.
+
+        What this tests:
+        ---------------
+        1. Unhealthy connections detected
+        2. Bad connections removed from pool
+        3. Health checks periodic
+        4. Pool maintains health
+
+        Why this matters:
+        ----------------
+        Connections can become unhealthy:
+        - Network issues
+        - Server restarts
+        - Idle timeouts
+
+        Health checks ensure pool only
+        contains usable connections.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock pool with health check capability
@@ -219,7 +311,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_concurrent_pool_exhaustion(self, mock_session):
-        """Test multiple threads hitting pool exhaustion simultaneously."""
+        """
+        Test multiple threads hitting pool exhaustion simultaneously.
+
+        What this tests:
+        ---------------
+        1. Concurrent queries compete for connections
+        2. Pool limits enforced under concurrency
+        3. Some queries fail, some succeed
+        4. No race conditions or corruption
+
+        Why this matters:
+        ----------------
+        Real applications have concurrent load:
+        - Multiple API requests
+        - Background jobs
+        - Batch processing
+
+        Pool must handle concurrent access
+        safely without deadlocks.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate limited pool
@@ -284,7 +395,27 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_pool_metrics_tracking(self, mock_session, mock_connection_pool):
-        """Test tracking of pool metrics during exhaustion."""
+        """
+        Test tracking of pool metrics during exhaustion.
+
+        What this tests:
+        ---------------
+        1. Borrow attempts counted
+        2. Timeouts tracked
+        3. Exhaustion events recorded
+        4. Metrics help diagnose issues
+
+        Why this matters:
+        ----------------
+        Pool metrics are critical for:
+        - Capacity planning
+        - Performance tuning
+        - Alerting on exhaustion
+        - Debugging production issues
+
+        Without metrics, pool problems
+        are invisible until failure.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track pool metrics
@@ -337,7 +468,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_pool_size_limits(self, mock_session):
-        """Test respecting min/max connection limits."""
+        """
+        Test respecting min/max connection limits.
+
+        What this tests:
+        ---------------
+        1. Pool respects maximum size
+        2. Minimum connections maintained
+        3. Cannot exceed limits
+        4. Queries work within limits
+
+        Why this matters:
+        ----------------
+        Pool limits prevent:
+        - Resource exhaustion (max)
+        - Cold start delays (min)
+        - Database overload
+
+        Proper limits balance resource
+        usage with performance.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Configure pool limits
@@ -380,7 +530,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_connection_leak_detection(self, mock_session):
-        """Test detection of connection leaks during pool exhaustion."""
+        """
+        Test detection of connection leaks during pool exhaustion.
+
+        What this tests:
+        ---------------
+        1. Connections not returned detected
+        2. Leak threshold triggers detection
+        3. Borrowed connections tracked
+        4. Leaks identified for debugging
+
+        Why this matters:
+        ----------------
+        Connection leaks cause:
+        - Pool exhaustion
+        - Performance degradation
+        - Resource waste
+
+        Early leak detection prevents
+        production outages.
+        """
         async_session = AsyncCassandraSession(mock_session)  # noqa: F841
 
         # Track borrowed connections
@@ -412,7 +581,26 @@ class TestConnectionPoolExhaustion:
 
     @pytest.mark.asyncio
     async def test_graceful_degradation(self, mock_session):
-        """Test graceful degradation when pool is under pressure."""
+        """
+        Test graceful degradation when pool is under pressure.
+
+        What this tests:
+        ---------------
+        1. Critical queries prioritized
+        2. Non-critical queries rejected
+        3. System remains stable
+        4. Important work continues
+
+        Why this matters:
+        ----------------
+        Under extreme load:
+        - Not all queries equal priority
+        - Critical paths must work
+        - Better partial service than none
+
+        Graceful degradation maintains
+        core functionality during stress.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track query attempts and degradation

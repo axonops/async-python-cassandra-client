@@ -6,6 +6,21 @@ Tests how the async wrapper handles:
 - Authorization failures during operations
 - Credential rotation scenarios
 - Session invalidation due to auth changes
+
+Test Organization:
+==================
+1. Initial Authentication - Connection-time auth failures
+2. Operation Authorization - Query-time permission failures
+3. Credential Rotation - Handling credential changes
+4. Session Invalidation - Auth state changes during session
+5. Custom Auth Providers - Advanced authentication scenarios
+
+Key Testing Principles:
+======================
+- Auth failures wrapped appropriately
+- Original error details preserved
+- Concurrent auth failures handled
+- Custom auth providers supported
 """
 
 import asyncio
@@ -24,7 +39,12 @@ class TestAuthenticationFailures:
     """Test authentication failure scenarios."""
 
     def create_error_future(self, exception):
-        """Create a mock future that raises the given exception."""
+        """
+        Create a mock future that raises the given exception.
+
+        Helper method to simulate driver futures that fail with
+        specific exceptions during callback execution.
+        """
         future = Mock()
         callbacks = []
         errbacks = []
@@ -45,7 +65,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_initial_auth_failure(self):
-        """Test handling of authentication failure during initial connection."""
+        """
+        Test handling of authentication failure during initial connection.
+
+        What this tests:
+        ---------------
+        1. Auth failure during cluster.connect()
+        2. NoHostAvailable with AuthenticationFailed
+        3. Wrapped in ConnectionError
+        4. Error message preservation
+
+        Why this matters:
+        ----------------
+        Initial connection auth failures indicate:
+        - Invalid credentials
+        - User doesn't exist
+        - Password expired
+
+        Applications need clear error messages to:
+        - Distinguish auth from network issues
+        - Prompt for new credentials
+        - Alert on configuration problems
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster instance
             mock_cluster = Mock()
@@ -73,7 +114,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_auth_failure_during_operation(self):
-        """Test handling of authentication failure during query execution."""
+        """
+        Test handling of authentication failure during query execution.
+
+        What this tests:
+        ---------------
+        1. Unauthorized error during query
+        2. Permission failures on tables
+        3. Wrapped in QueryError
+        4. Original Unauthorized accessible
+
+        Why this matters:
+        ----------------
+        Authorization failures during operations indicate:
+        - Missing table/keyspace permissions
+        - Role changes after connection
+        - Fine-grained access control
+
+        Applications need to:
+        - Handle permission errors gracefully
+        - Potentially retry with different user
+        - Log security violations
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster and session
             mock_cluster = Mock()
@@ -104,7 +166,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_credential_rotation_reconnect(self):
-        """Test handling credential rotation requiring reconnection."""
+        """
+        Test handling credential rotation requiring reconnection.
+
+        What this tests:
+        ---------------
+        1. Auth provider can be updated
+        2. Old credentials cause auth failures
+        3. AuthenticationFailed during queries
+        4. Wrapped appropriately
+
+        Why this matters:
+        ----------------
+        Production systems rotate credentials:
+        - Security best practice
+        - Compliance requirements
+        - Automated rotation systems
+
+        Applications must handle:
+        - Credential updates
+        - Re-authentication needs
+        - Graceful credential transitions
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster and session
             mock_cluster = Mock()
@@ -143,7 +226,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_authorization_failure_different_operations(self):
-        """Test different authorization failures for various operations."""
+        """
+        Test different authorization failures for various operations.
+
+        What this tests:
+        ---------------
+        1. Different permission types (SELECT, MODIFY, CREATE, etc.)
+        2. Each permission failure handled correctly
+        3. Error messages indicate specific permission
+        4. Consistent wrapping in QueryError
+
+        Why this matters:
+        ----------------
+        Cassandra has fine-grained permissions:
+        - SELECT: read data
+        - MODIFY: insert/update/delete
+        - CREATE/DROP/ALTER: schema changes
+
+        Applications need to:
+        - Understand which permission failed
+        - Request appropriate access
+        - Implement least-privilege principle
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Setup mock cluster and session
             mock_cluster = Mock()
@@ -182,7 +286,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_session_invalidation_on_auth_change(self):
-        """Test session invalidation when authentication changes."""
+        """
+        Test session invalidation when authentication changes.
+
+        What this tests:
+        ---------------
+        1. Session can become auth-invalid
+        2. Subsequent operations fail
+        3. Session expired errors handled
+        4. Clear error messaging
+
+        Why this matters:
+        ----------------
+        Sessions can be invalidated by:
+        - Token expiration
+        - Admin revoking access
+        - Password changes
+
+        Applications must:
+        - Detect invalid sessions
+        - Re-authenticate if possible
+        - Handle session lifecycle
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Setup mock cluster and session
             mock_cluster = Mock()
@@ -215,7 +340,28 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_concurrent_auth_failures(self):
-        """Test handling of concurrent authentication failures."""
+        """
+        Test handling of concurrent authentication failures.
+
+        What this tests:
+        ---------------
+        1. Multiple queries with auth failures
+        2. All failures handled independently
+        3. No error cascading or corruption
+        4. Consistent error types
+
+        Why this matters:
+        ----------------
+        Applications often run parallel queries:
+        - Batch operations
+        - Dashboard data fetching
+        - Concurrent API requests
+
+        Auth failures in one query shouldn't:
+        - Affect other queries
+        - Cause cascading failures
+        - Corrupt session state
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Setup mock cluster and session
             mock_cluster = Mock()
@@ -246,7 +392,29 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_auth_error_in_prepared_statement(self):
-        """Test authorization failure with prepared statements."""
+        """
+        Test authorization failure with prepared statements.
+
+        What this tests:
+        ---------------
+        1. Prepare succeeds (metadata access)
+        2. Execute fails (data access)
+        3. Different permission requirements
+        4. Error handling consistency
+
+        Why this matters:
+        ----------------
+        Prepared statements have two phases:
+        - Prepare: needs schema access
+        - Execute: needs data access
+
+        Users might have permission to see schema
+        but not to access data, leading to:
+        - Prepare success
+        - Execute failure
+
+        This split permission model must be handled.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Setup mock cluster and session
             mock_cluster = Mock()
@@ -289,7 +457,26 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_keyspace_auth_failure(self):
-        """Test authorization failure when switching keyspaces."""
+        """
+        Test authorization failure when switching keyspaces.
+
+        What this tests:
+        ---------------
+        1. Keyspace-level permissions
+        2. Connection fails with no keyspace access
+        3. NoHostAvailable with Unauthorized
+        4. Wrapped in ConnectionError
+
+        Why this matters:
+        ----------------
+        Keyspace permissions control:
+        - Which keyspaces users can access
+        - Data isolation between tenants
+        - Security boundaries
+
+        Connection failures due to keyspace access
+        need clear error messages for debugging.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster
             mock_cluster = Mock()
@@ -317,7 +504,26 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_auth_provider_callback_handling(self):
-        """Test custom auth provider with async callbacks."""
+        """
+        Test custom auth provider with async callbacks.
+
+        What this tests:
+        ---------------
+        1. Custom auth providers accepted
+        2. Async credential fetching supported
+        3. Provider integration works
+        4. No interference with driver auth
+
+        Why this matters:
+        ----------------
+        Advanced auth scenarios require:
+        - Dynamic credential fetching
+        - Token-based authentication
+        - External auth services
+
+        The async wrapper must support custom
+        auth providers for enterprise use cases.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster
             mock_cluster = Mock()
@@ -345,7 +551,26 @@ class TestAuthenticationFailures:
 
     @pytest.mark.asyncio
     async def test_auth_provider_refresh(self):
-        """Test auth provider that refreshes credentials."""
+        """
+        Test auth provider that refreshes credentials.
+
+        What this tests:
+        ---------------
+        1. Refreshable auth providers work
+        2. Credential rotation capability
+        3. Provider state management
+        4. Integration with async wrapper
+
+        Why this matters:
+        ----------------
+        Production auth often requires:
+        - Periodic credential refresh
+        - Token renewal before expiry
+        - Seamless rotation without downtime
+
+        Supporting refreshable providers enables
+        enterprise authentication patterns.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster
             mock_cluster = Mock()

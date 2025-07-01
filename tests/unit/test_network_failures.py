@@ -6,6 +6,21 @@ Tests how the async wrapper handles:
 - Connection timeouts
 - Slow network conditions
 - Coordinator failures mid-query
+
+Test Organization:
+==================
+1. Partial Failures - Connected but queries fail
+2. Timeout Handling - Different timeout types
+3. Network Instability - Flapping, congestion
+4. Connection Pool - Recovery after issues
+5. Network Topology - Partitions, distance changes
+
+Key Testing Principles:
+======================
+- Differentiate timeout types
+- Test recovery mechanisms
+- Simulate real network issues
+- Verify error propagation
 """
 
 import asyncio
@@ -24,7 +39,12 @@ class TestNetworkFailures:
     """Test various network failure scenarios."""
 
     def create_error_future(self, exception):
-        """Create a mock future that raises the given exception."""
+        """
+        Create a mock future that raises the given exception.
+
+        Helper to simulate driver futures that fail with
+        network-related exceptions.
+        """
         future = Mock()
         callbacks = []
         errbacks = []
@@ -44,7 +64,12 @@ class TestNetworkFailures:
         return future
 
     def create_success_future(self, result):
-        """Create a mock future that returns a result."""
+        """
+        Create a mock future that returns a result.
+
+        Helper to simulate successful driver futures after
+        network recovery.
+        """
         future = Mock()
         callbacks = []
         errbacks = []
@@ -75,7 +100,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_partial_network_failure(self, mock_session):
-        """Test handling of partial network failures (can connect but can't query)."""
+        """
+        Test handling of partial network failures (can connect but can't query).
+
+        What this tests:
+        ---------------
+        1. Connection established but queries fail
+        2. ConnectionException during execution
+        3. Wrapped in QueryError for context
+        4. Original exception preserved
+
+        Why this matters:
+        ----------------
+        Partial failures are common in production:
+        - Firewall rules changed mid-session
+        - Network degradation after connect
+        - Load balancer issues
+
+        Applications need to detect and handle
+        these "connected but broken" states.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Queries fail with connection error
@@ -92,7 +136,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_connection_timeout_during_query(self, mock_session):
-        """Test handling of connection timeouts during query execution."""
+        """
+        Test handling of connection timeouts during query execution.
+
+        What this tests:
+        ---------------
+        1. OperationTimedOut errors handled
+        2. Transient timeouts can recover
+        3. Multiple attempts tracked
+        4. Eventually succeeds
+
+        Why this matters:
+        ----------------
+        Timeouts can be transient:
+        - Network congestion
+        - Temporary overload
+        - GC pauses
+
+        Applications often retry timeouts
+        as they may succeed on retry.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate timeout patterns
@@ -123,7 +186,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_slow_network_simulation(self, mock_session):
-        """Test handling of slow network conditions."""
+        """
+        Test handling of slow network conditions.
+
+        What this tests:
+        ---------------
+        1. Slow queries still complete
+        2. No premature timeouts
+        3. Results returned correctly
+        4. Latency tracked
+
+        Why this matters:
+        ----------------
+        Not all slowness is a timeout:
+        - Cross-region queries
+        - Large result sets
+        - Complex aggregations
+
+        The wrapper must handle slow
+        operations without failing.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create a future that simulates delay
@@ -140,7 +222,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_coordinator_failure_mid_query(self, mock_session):
-        """Test coordinator node failing during query execution."""
+        """
+        Test coordinator node failing during query execution.
+
+        What this tests:
+        ---------------
+        1. Coordinator can fail mid-query
+        2. NoHostAvailable with details
+        3. Retry finds new coordinator
+        4. Query eventually succeeds
+
+        Why this matters:
+        ----------------
+        Coordinator failures happen:
+        - Node crashes
+        - Network partition
+        - Rolling restarts
+
+        The driver picks new coordinators
+        automatically on retry.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track coordinator changes
@@ -175,7 +276,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_network_flapping(self, mock_session):
-        """Test handling of network that rapidly connects/disconnects."""
+        """
+        Test handling of network that rapidly connects/disconnects.
+
+        What this tests:
+        ---------------
+        1. Alternating success/failure pattern
+        2. Each state change handled
+        3. No corruption from rapid changes
+        4. Accurate success/failure tracking
+
+        Why this matters:
+        ----------------
+        Network flapping occurs with:
+        - Faulty hardware
+        - Overloaded switches
+        - Misconfigured networking
+
+        The wrapper must remain stable
+        despite unstable network.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Simulate flapping network
@@ -214,7 +334,28 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_request_timeout_vs_connection_timeout(self, mock_session):
-        """Test differentiating between request and connection timeouts."""
+        """
+        Test differentiating between request and connection timeouts.
+
+        What this tests:
+        ---------------
+        1. ReadTimeout vs WriteTimeout vs OperationTimedOut
+        2. Each timeout type preserved
+        3. Timeout details maintained
+        4. Proper exception types raised
+
+        Why this matters:
+        ----------------
+        Different timeouts mean different things:
+        - ReadTimeout: query executed, waiting for data
+        - WriteTimeout: write may have partially succeeded
+        - OperationTimedOut: connection-level timeout
+
+        Applications handle each differently:
+        - Read timeouts often safe to retry
+        - Write timeouts need idempotency checks
+        - Connection timeouts may need backoff
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Test different timeout scenarios
@@ -257,7 +398,27 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_connection_pool_recovery_after_network_issue(self, mock_session):
-        """Test connection pool recovery after network issues."""
+        """
+        Test connection pool recovery after network issues.
+
+        What this tests:
+        ---------------
+        1. Pool can be exhausted by failures
+        2. Recovery happens automatically
+        3. Queries fail during recovery
+        4. Eventually queries succeed
+
+        Why this matters:
+        ----------------
+        Connection pools need time to recover:
+        - Reconnection attempts
+        - Health checks
+        - Pool replenishment
+
+        Applications should retry after
+        pool exhaustion as recovery
+        is often automatic.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track pool state
@@ -293,7 +454,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_network_congestion_backoff(self, mock_session):
-        """Test exponential backoff during network congestion."""
+        """
+        Test exponential backoff during network congestion.
+
+        What this tests:
+        ---------------
+        1. Congestion causes timeouts
+        2. Exponential backoff implemented
+        3. Delays increase appropriately
+        4. Eventually succeeds
+
+        Why this matters:
+        ----------------
+        Network congestion requires backoff:
+        - Prevents thundering herd
+        - Gives network time to recover
+        - Reduces overall load
+
+        Exponential backoff is a best
+        practice for congestion handling.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track retry attempts
@@ -335,7 +515,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_asymmetric_network_partition(self):
-        """Test asymmetric partition where node can send but not receive."""
+        """
+        Test asymmetric partition where node can send but not receive.
+
+        What this tests:
+        ---------------
+        1. Asymmetric network failures
+        2. Some hosts unreachable
+        3. Cluster finds working hosts
+        4. Connection eventually succeeds
+
+        Why this matters:
+        ----------------
+        Real network partitions are often asymmetric:
+        - One-way firewall rules
+        - Routing issues
+        - Split-brain scenarios
+
+        The cluster must work around
+        partially failed hosts.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster
             mock_cluster = Mock()
@@ -383,7 +582,28 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_host_distance_changes(self):
-        """Test handling of host distance changes (LOCAL to REMOTE)."""
+        """
+        Test handling of host distance changes (LOCAL to REMOTE).
+
+        What this tests:
+        ---------------
+        1. Host distance can change
+        2. LOCAL to REMOTE transitions
+        3. Distance changes tracked
+        4. Affects query routing
+
+        Why this matters:
+        ----------------
+        Host distances change due to:
+        - Datacenter reconfigurations
+        - Network topology changes
+        - Dynamic snitch updates
+
+        Distance affects:
+        - Query routing preferences
+        - Connection pool sizes
+        - Retry strategies
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster
             mock_cluster = Mock()
