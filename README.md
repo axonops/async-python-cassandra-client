@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)](http://mypy-lang.org/)
 
-> ⚠️ **IN ACTIVE DEVELOPMENT & TESTING WARNING**: This library is currently under active development and is NOT ready for use. Please come back later when we have a first release.
+> 📢 **Early Release**: This is an early release of async-cassandra. While it has been tested extensively, you may encounter edge cases. We welcome your feedback and contributions! Please report any issues on our [GitHub Issues](https://github.com/axonops/async-python-cassandra-client/issues) page.
 
 ## ✨ Overview
 
@@ -210,7 +210,7 @@ We understand this requirement may be inconvenient for some users, but it allows
 ## 🔧 Installation
 
 ```bash
-# From PyPI (when published)
+# From PyPI
 pip install async-cassandra
 
 # From source

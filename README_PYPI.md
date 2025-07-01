@@ -4,7 +4,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/async-cassandra)](https://pypi.org/project/async-cassandra/)
 [![PyPI Version](https://img.shields.io/pypi/v/async-cassandra)](https://pypi.org/project/async-cassandra/)
 
-> ⚠️ **IN ACTIVE DEVELOPMENT**: This library is currently under active development. Please check the GitHub repository for the latest updates.
+> 📢 **Early Release**: This is an early release of async-cassandra. While it has been tested extensively, you may encounter edge cases. We welcome your feedback and contributions! Please report any issues on our [GitHub Issues](https://github.com/axonops/async-python-cassandra-client/issues) page.
 
 ## 🎯 Overview
 
