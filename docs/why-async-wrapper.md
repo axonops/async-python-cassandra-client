@@ -194,14 +194,16 @@ future.add_errback(err_callback)
 
 ### async-cassandra Solution
 ```python
+from cassandra import InvalidRequest
+
 # Clean async/await pattern
 try:
     result = await session.execute(query)
     processed = await process(result)
     await save(processed)
-except QueryError as e:
-    # Natural error handling with full stack trace
-    logger.error(f"Query failed: {e}")
+except InvalidRequest as e:
+    # Natural error handling with Cassandra exceptions
+    logger.error(f"Invalid query: {e}")
 ```
 
 ## 7. Resource Management in Async Contexts

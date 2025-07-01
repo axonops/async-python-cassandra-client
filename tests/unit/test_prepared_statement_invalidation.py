@@ -16,7 +16,6 @@ from cassandra.cluster import Session
 from cassandra.query import BatchStatement, BatchType, PreparedStatement
 
 from async_cassandra import AsyncCassandraSession
-from async_cassandra.exceptions import QueryError
 
 
 class TestPreparedStatementInvalidation:
@@ -386,13 +385,11 @@ class TestPreparedStatementInvalidation:
         # Re-preparation fails (e.g., table dropped)
         mock_session.prepare.side_effect = InvalidRequest("Table test does not exist")
 
-        # Re-prepare attempt should fail - wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # Re-prepare attempt should fail - InvalidRequest passed through
+        with pytest.raises(InvalidRequest) as exc_info:
             await async_session.prepare("SELECT * FROM test WHERE id = ?")
 
         assert "Table test does not exist" in str(exc_info.value)
-        # Check the __cause__ attribute set by 'raise ... from e'
-        assert isinstance(exc_info.value.__cause__, InvalidRequest)
 
     @pytest.mark.asyncio
     async def test_prepared_statement_cache_behavior(self, mock_session):

@@ -32,7 +32,7 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import NoHostAvailable
 
 from async_cassandra import AsyncCluster
-from async_cassandra.exceptions import ConnectionError, QueryError
+from async_cassandra.exceptions import ConnectionError
 
 
 class TestAuthenticationFailures:
@@ -154,12 +154,11 @@ class TestAuthenticationFailures:
                 Unauthorized("User has no SELECT permission on <table test.users>")
             )
 
-            # Unauthorized is wrapped in QueryError
-            with pytest.raises(QueryError) as exc_info:
+            # Unauthorized is passed through directly (not wrapped)
+            with pytest.raises(Unauthorized) as exc_info:
                 await session.execute("SELECT * FROM test.users")
 
-            assert "Query execution failed: User has no SELECT permission" in str(exc_info.value)
-            assert isinstance(exc_info.value.cause, Unauthorized)
+            assert "User has no SELECT permission" in str(exc_info.value)
 
             await session.close()
             await async_cluster.shutdown()
@@ -214,12 +213,11 @@ class TestAuthenticationFailures:
                 AuthenticationFailed("Password verification failed")
             )
 
-            # AuthenticationFailed is wrapped in QueryError
-            with pytest.raises(QueryError) as exc_info:
+            # AuthenticationFailed is passed through directly
+            with pytest.raises(AuthenticationFailed) as exc_info:
                 await session.execute("SELECT * FROM test")
 
             assert "Password verification failed" in str(exc_info.value)
-            assert isinstance(exc_info.value.cause, AuthenticationFailed)
 
             await session.close()
             await async_cluster.shutdown()
@@ -274,12 +272,11 @@ class TestAuthenticationFailures:
                     Unauthorized(error_msg)
                 )
 
-                # Unauthorized is wrapped in QueryError
-                with pytest.raises(QueryError) as exc_info:
+                # Unauthorized is passed through directly
+                with pytest.raises(Unauthorized) as exc_info:
                     await session.execute(query)
 
                 assert error_msg in str(exc_info.value)
-                assert isinstance(exc_info.value.cause, Unauthorized)
 
             await session.close()
             await async_cluster.shutdown()
@@ -328,12 +325,11 @@ class TestAuthenticationFailures:
                 AuthenticationFailed("Session expired")
             )
 
-            # AuthenticationFailed is wrapped in QueryError
-            with pytest.raises(QueryError) as exc_info:
+            # AuthenticationFailed is passed through directly
+            with pytest.raises(AuthenticationFailed) as exc_info:
                 await session.execute("SELECT * FROM test")
 
             assert "Session expired" in str(exc_info.value)
-            assert isinstance(exc_info.value.cause, AuthenticationFailed)
 
             await session.close()
             await async_cluster.shutdown()
@@ -382,10 +378,9 @@ class TestAuthenticationFailures:
             # Execute multiple concurrent queries
             tasks = [session.execute(f"SELECT * FROM table{i}") for i in range(5)]
 
-            # All should fail with QueryError wrapping Unauthorized
+            # All should fail with Unauthorized directly
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            assert all(isinstance(r, QueryError) for r in results)
-            assert all(isinstance(r.cause, Unauthorized) for r in results)
+            assert all(isinstance(r, Unauthorized) for r in results)
 
             await session.close()
             await async_cluster.shutdown()
@@ -445,12 +440,11 @@ class TestAuthenticationFailures:
                 Unauthorized("User has no MODIFY permission on <table test.users>")
             )
 
-            # Unauthorized is wrapped in QueryError
-            with pytest.raises(QueryError) as exc_info:
+            # Unauthorized is passed through directly
+            with pytest.raises(Unauthorized) as exc_info:
                 await session.execute(stmt, [1, "test"])
 
             assert "no MODIFY permission" in str(exc_info.value)
-            assert isinstance(exc_info.value.cause, Unauthorized)
 
             await session.close()
             await async_cluster.shutdown()

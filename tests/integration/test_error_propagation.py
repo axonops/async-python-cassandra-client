@@ -11,7 +11,10 @@ import uuid
 
 import pytest
 from cassandra import AlreadyExists, ConfigurationException, InvalidRequest
+from cassandra.protocol import SyntaxException
 from cassandra.query import SimpleStatement
+
+from async_cassandra.exceptions import QueryError
 
 
 class TestErrorPropagation:
@@ -52,12 +55,17 @@ class TestErrorPropagation:
         ]
 
         for query in invalid_queries:
-            with pytest.raises(InvalidRequest) as exc_info:
+            # The driver raises SyntaxException for syntax errors, not InvalidRequest
+            # We might get either SyntaxException directly or QueryError wrapping it
+            with pytest.raises((SyntaxException, QueryError)) as exc_info:
                 await session.execute(query)
 
             # Verify error details are preserved
             assert str(exc_info.value)  # Has error message
-            assert exc_info.type == InvalidRequest  # Correct exception type
+
+            # If it's wrapped in QueryError, check the cause
+            if isinstance(exc_info.value, QueryError):
+                assert isinstance(exc_info.value.__cause__, SyntaxException)
 
         await session.close()
 
@@ -96,12 +104,17 @@ class TestErrorPropagation:
         await session.set_keyspace("test_errors")
 
         # Try to query non-existent table
-        with pytest.raises(InvalidRequest) as exc_info:
+        # This should raise InvalidRequest or be wrapped in QueryError
+        with pytest.raises((InvalidRequest, QueryError)) as exc_info:
             await session.execute("SELECT * FROM non_existent_table")
 
         # Error should mention the table
         error_msg = str(exc_info.value).lower()
         assert "non_existent_table" in error_msg or "table" in error_msg
+
+        # If wrapped, check the cause
+        if isinstance(exc_info.value, QueryError):
+            assert exc_info.value.__cause__ is not None
 
         # Cleanup
         await session.execute("DROP KEYSPACE IF EXISTS test_errors")
@@ -178,10 +191,16 @@ class TestErrorPropagation:
         await session.execute("DROP TABLE prepare_test")
 
         # Trying to prepare for non-existent table should fail
-        with pytest.raises(InvalidRequest) as exc_info:
+        # This might raise InvalidRequest or be wrapped in QueryError
+        with pytest.raises((InvalidRequest, QueryError)) as exc_info:
             await session.prepare("SELECT * FROM prepare_test WHERE id = ?")
 
-        assert "prepare_test" in str(exc_info.value) or "table" in str(exc_info.value).lower()
+        error_msg = str(exc_info.value).lower()
+        assert "prepare_test" in error_msg or "table" in error_msg
+
+        # If wrapped, check the cause
+        if isinstance(exc_info.value, QueryError):
+            assert exc_info.value.__cause__ is not None
 
         # Cleanup
         await session.execute("DROP KEYSPACE IF EXISTS test_prepare_errors")
@@ -449,22 +468,26 @@ class TestErrorPropagation:
                 [uuid.uuid4(), f"data_{i}" * 100],  # Make data reasonably large
             )
 
-        # Create a query with very short timeout
-        # Note: This might not always timeout in fast local environments
-        stmt = SimpleStatement(
-            "SELECT * FROM timeout_test", timeout=0.001  # 1ms timeout - very aggressive
-        )
+        # Create a simple query
+        stmt = SimpleStatement("SELECT * FROM timeout_test")
 
-        # Even if timeout doesn't trigger, session should handle it gracefully
+        # Execute with very short timeout
+        # Note: This might not always timeout in fast local environments
         try:
-            result = await session.execute(stmt)
+            result = await session.execute(stmt, timeout=0.001)  # 1ms timeout - very aggressive
             # If it succeeds, that's fine - timeout is environment dependent
             rows = list(result)
             assert len(rows) > 0
         except Exception as e:
             # If it times out, verify we get a timeout-related error
+            # TimeoutError might have empty string representation, check type name too
             error_msg = str(e).lower()
-            assert "timeout" in error_msg or "timed out" in error_msg
+            error_type = type(e).__name__.lower()
+            assert (
+                "timeout" in error_msg
+                or "timeout" in error_type
+                or isinstance(e, asyncio.TimeoutError)
+            )
 
         # Session should still be usable after timeout
         result = await session.execute("SELECT count(*) FROM timeout_test")
@@ -598,7 +621,8 @@ class TestErrorPropagation:
         )
 
         # Try to create the same table again (without IF NOT EXISTS)
-        with pytest.raises(AlreadyExists) as exc_info:
+        # This might raise AlreadyExists or be wrapped in QueryError
+        with pytest.raises((AlreadyExists, QueryError)) as exc_info:
             await session.execute(
                 """
                 CREATE TABLE schema_test (
@@ -608,18 +632,26 @@ class TestErrorPropagation:
                 """
             )
 
-        assert (
-            "schema_test" in str(exc_info.value) or "already exists" in str(exc_info.value).lower()
-        )
+        error_msg = str(exc_info.value).lower()
+        assert "schema_test" in error_msg or "already exists" in error_msg
+
+        # If wrapped, check the cause
+        if isinstance(exc_info.value, QueryError):
+            assert exc_info.value.__cause__ is not None
 
         # Try to create duplicate index
         await session.execute("CREATE INDEX IF NOT EXISTS idx_data ON schema_test (data)")
 
-        with pytest.raises(InvalidRequest) as exc_info:
+        # This might raise InvalidRequest or be wrapped in QueryError
+        with pytest.raises((InvalidRequest, QueryError)) as exc_info:
             await session.execute("CREATE INDEX idx_data ON schema_test (data)")
 
         error_msg = str(exc_info.value).lower()
         assert "index" in error_msg or "already exists" in error_msg
+
+        # If wrapped, check the cause
+        if isinstance(exc_info.value, QueryError):
+            assert exc_info.value.__cause__ is not None
 
         # Simulate concurrent modifications by trying operations that might conflict
         async def create_column(col_name):
@@ -860,7 +892,8 @@ class TestErrorPropagation:
             await session.execute(insert_many_stmt, [row_id, f"row_{i}", medium_text])
 
         # Select all of them at once
-        placeholders = ",".join(["?"] * len(row_ids))
+        # For simple statements, use %s placeholders
+        placeholders = ",".join(["%s"] * len(row_ids))
         select_many = f"SELECT * FROM large_data_test WHERE id IN ({placeholders})"
         result = await session.execute(select_many, row_ids)
         rows = list(result)

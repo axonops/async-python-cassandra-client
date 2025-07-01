@@ -10,8 +10,9 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from cassandra import InvalidRequest, OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
+from cassandra import DriverException
 from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, NoHostAvailable, Session
+from cassandra.protocol import ErrorMessage
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
 from .base import AsyncContextManageable
@@ -176,12 +177,9 @@ class AsyncCassandraSession(AsyncContextManageable):
             return result
 
         except (
-            InvalidRequest,
-            Unavailable,
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-            NoHostAvailable,
+            DriverException,  # Base class for all Cassandra driver exceptions
+            ErrorMessage,  # Base class for protocol-level errors like SyntaxException
+            NoHostAvailable,  # Not a DriverException but should pass through
         ) as e:
             # Re-raise Cassandra exceptions without wrapping
             error_type = type(e).__name__
@@ -292,12 +290,9 @@ class AsyncCassandraSession(AsyncContextManageable):
             return result
 
         except (
-            InvalidRequest,
-            Unavailable,
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-            NoHostAvailable,
+            DriverException,  # Base class for all Cassandra driver exceptions
+            ErrorMessage,  # Base class for protocol-level errors like SyntaxException
+            NoHostAvailable,  # Not a DriverException but should pass through
         ) as e:
             # Re-raise Cassandra exceptions without wrapping
             error_type = type(e).__name__
@@ -400,8 +395,9 @@ class AsyncCassandraSession(AsyncContextManageable):
             return prepared
         except asyncio.TimeoutError:
             raise
-        except (InvalidRequest, OperationTimedOut) as e:
-            raise QueryError(f"Statement preparation failed: {str(e)}") from e
+        except (DriverException, ErrorMessage, NoHostAvailable):
+            # Re-raise Cassandra exceptions without wrapping
+            raise
         except Exception as e:
             raise QueryError(f"Statement preparation failed: {str(e)}") from e
 

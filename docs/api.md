@@ -514,20 +514,37 @@ except ConnectionError as e:
 
 ### QueryError
 
-Raised when a query execution fails.
+Raised when a non-Cassandra exception occurs during query execution. Most Cassandra driver exceptions (like `InvalidRequest`, `Unauthorized`, `AlreadyExists`, etc.) are passed through directly without wrapping.
 
 ```python
+# Cassandra exceptions pass through directly
+from cassandra import InvalidRequest, Unauthorized
+
 try:
     result = await session.execute("SELECT * FROM invalid_table")
+except InvalidRequest as e:
+    print(f"Invalid query: {e}")  # Cassandra exception passed through
 except QueryError as e:
-    print(f"Query failed: {e}")
+    print(f"Unexpected error: {e}")  # Only non-Cassandra exceptions wrapped
     if e.cause:
         print(f"Caused by: {e.cause}")
 ```
 
+### Cassandra Driver Exceptions
+
+The following Cassandra driver exceptions are passed through directly without wrapping:
+- `InvalidRequest` - Invalid query syntax or schema issues
+- `Unauthorized` - Permission/authorization failures
+- `AuthenticationFailed` - Authentication failures
+- `AlreadyExists` - Schema already exists errors
+- `NoHostAvailable` - No Cassandra hosts available
+- `Unavailable`, `ReadTimeout`, `WriteTimeout` - Consistency/timeout errors
+- `OperationTimedOut` - Query timeout
+- Protocol exceptions like `SyntaxException`, `ServerError`
+
 ### Other Exceptions
 
-The library also defines TimeoutError, AuthenticationError, and ConfigurationError internally, but these are typically wrapped in the main exception types above. You should generally catch ConnectionError and QueryError in your code.
+The library defines `ConnectionError` for connection-related issues and `QueryError` for wrapping unexpected non-Cassandra exceptions. Most of the time, you should catch specific Cassandra exceptions for proper error handling.
 
 ## Complete Example
 
@@ -535,7 +552,8 @@ The library also defines TimeoutError, AuthenticationError, and ConfigurationErr
 import asyncio
 import uuid
 from async_cassandra import AsyncCluster, AsyncCassandraSession
-from async_cassandra.exceptions import QueryError, ConnectionError
+from async_cassandra.exceptions import ConnectionError
+from cassandra import InvalidRequest, AlreadyExists
 
 async def main():
     # Create cluster with authentication
@@ -591,8 +609,10 @@ async def main():
 
     except ConnectionError as e:
         print(f"Connection failed: {e}")
-    except QueryError as e:
-        print(f"Query failed: {e}")
+    except InvalidRequest as e:
+        print(f"Invalid query: {e}")
+    except AlreadyExists as e:
+        print(f"Schema already exists: {e.keyspace}.{e.table}")
     finally:
         await cluster.shutdown()
 

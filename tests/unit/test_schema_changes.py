@@ -16,7 +16,6 @@ import pytest
 from cassandra import AlreadyExists, InvalidRequest
 
 from async_cassandra import AsyncCassandraSession, AsyncCluster
-from async_cassandra.exceptions import QueryError
 
 
 class TestSchemaChanges:
@@ -119,13 +118,12 @@ class TestSchemaChanges:
         error = AlreadyExists(keyspace="test_ks", table="test_table")
         mock_session.execute_async.return_value = self.create_error_future(error)
 
-        # AlreadyExists is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # AlreadyExists is passed through directly
+        with pytest.raises(AlreadyExists) as exc_info:
             await async_session.execute("CREATE TABLE test_table (id int PRIMARY KEY)")
 
-        assert isinstance(exc_info.value.cause, AlreadyExists)
-        assert exc_info.value.cause.keyspace == "test_ks"
-        assert exc_info.value.cause.table == "test_table"
+        assert exc_info.value.keyspace == "test_ks"
+        assert exc_info.value.table == "test_table"
 
     @pytest.mark.asyncio
     async def test_ddl_invalid_syntax(self, mock_session):
@@ -189,16 +187,15 @@ class TestSchemaChanges:
         error = AlreadyExists(keyspace="test_keyspace", table=None)
         mock_session.execute_async.return_value = self.create_error_future(error)
 
-        # AlreadyExists is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # AlreadyExists is passed through directly
+        with pytest.raises(AlreadyExists) as exc_info:
             await async_session.execute(
                 "CREATE KEYSPACE test_keyspace WITH replication = "
                 "{'class': 'SimpleStrategy', 'replication_factor': 1}"
             )
 
-        assert isinstance(exc_info.value.cause, AlreadyExists)
-        assert exc_info.value.cause.keyspace == "test_keyspace"
-        assert exc_info.value.cause.table is None
+        assert exc_info.value.keyspace == "test_keyspace"
+        assert exc_info.value.table is None
 
     @pytest.mark.asyncio
     async def test_concurrent_ddl_operations(self, mock_session):
@@ -350,13 +347,14 @@ class TestSchemaChanges:
         error = AlreadyExists(keyspace="test_ks", table="address_type")
         mock_session.execute_async.return_value = self.create_error_future(error)
 
-        # AlreadyExists is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # AlreadyExists is passed through directly
+        with pytest.raises(AlreadyExists) as exc_info:
             await async_session.execute(
                 "CREATE TYPE address_type (street text, city text, zip int)"
             )
 
-        assert isinstance(exc_info.value.cause, AlreadyExists)
+        assert exc_info.value.keyspace == "test_ks"
+        assert exc_info.value.table == "address_type"
 
     @pytest.mark.asyncio
     async def test_batch_ddl_operations(self, mock_session):
@@ -471,8 +469,8 @@ class TestSchemaChanges:
         error = AlreadyExists(keyspace="test_ks", table="user_by_email")
         mock_session.execute_async.return_value = self.create_error_future(error)
 
-        # AlreadyExists is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # AlreadyExists is passed through directly
+        with pytest.raises(AlreadyExists) as exc_info:
             await async_session.execute(
                 """
                 CREATE MATERIALIZED VIEW user_by_email AS
@@ -482,5 +480,4 @@ class TestSchemaChanges:
             """
             )
 
-        assert isinstance(exc_info.value.cause, AlreadyExists)
-        assert exc_info.value.cause.table == "user_by_email"
+        assert exc_info.value.table == "user_by_email"

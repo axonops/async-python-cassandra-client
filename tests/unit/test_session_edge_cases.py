@@ -14,7 +14,6 @@ from cassandra.cluster import Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
 from async_cassandra import AsyncCassandraSession
-from async_cassandra.exceptions import QueryError
 
 
 class TestSessionEdgeCases:
@@ -288,12 +287,11 @@ class TestSessionEdgeCases:
         # Mock prepare to fail (it uses sync prepare in executor)
         mock_session.prepare.side_effect = InvalidRequest("Syntax error in CQL")
 
-        # Should wrap error in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # Should pass through InvalidRequest directly
+        with pytest.raises(InvalidRequest) as exc_info:
             await async_session.prepare("INVALID CQL SYNTAX")
 
-        assert "Statement preparation failed" in str(exc_info.value)
-        assert "Syntax error" in str(exc_info.value)
+        assert "Syntax error in CQL" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_execute_prepared_statement(self, async_session, mock_session):

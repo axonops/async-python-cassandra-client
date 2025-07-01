@@ -521,12 +521,11 @@ class TestProtocolExceptions:
         original_error = ServerError(0x0000, "Internal server error occurred", {})
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # ServerError is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ServerError is passed through directly (ErrorMessage subclass)
+        with pytest.raises(ServerError) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
-        assert "Query execution failed:" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, ServerError)
+        assert "Internal server error occurred" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_protocol_error(self, mock_session):
@@ -694,14 +693,12 @@ class TestProtocolExceptions:
         original_error = AlreadyExists(keyspace="test_ks", table="test_table")
         mock_session.execute_async.return_value = self.create_error_future(original_error)
 
-        # AlreadyExists is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # AlreadyExists is passed through directly
+        with pytest.raises(AlreadyExists) as exc_info:
             await async_session.execute("CREATE TABLE test_table (id int PRIMARY KEY)")
 
-        assert "Query execution failed:" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, AlreadyExists)
-        assert exc_info.value.cause.keyspace == "test_ks"
-        assert exc_info.value.cause.table == "test_table"
+        assert exc_info.value.keyspace == "test_ks"
+        assert exc_info.value.table == "test_table"
 
     @pytest.mark.asyncio
     async def test_invalid_request(self, mock_session):
