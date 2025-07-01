@@ -643,9 +643,9 @@ class TestPreparedStatements:
         and clear debugging information.
         """
         # Test preparing invalid query
-        from async_cassandra.exceptions import QueryError
+        from cassandra.protocol import SyntaxException
 
-        with pytest.raises(QueryError):
+        with pytest.raises(SyntaxException):
             await cassandra_session.prepare("INVALID SQL QUERY")
 
         # Create test table
@@ -689,7 +689,9 @@ class TestPreparedStatements:
             pass  # Expected
 
         # Test non-existent column
-        with pytest.raises(QueryError):
+        from cassandra import InvalidRequest
+
+        with pytest.raises(InvalidRequest):
             await cassandra_session.prepare(
                 f"INSERT INTO {table_name} (id, nonexistent) VALUES (?, ?)"
             )
