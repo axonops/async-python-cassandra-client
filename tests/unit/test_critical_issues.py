@@ -2,6 +2,21 @@
 Unit tests for critical issues identified in the technical review.
 
 These tests use mocking to isolate and test specific problematic code paths.
+
+Test Organization:
+==================
+1. Thread Safety Issues - Race conditions in AsyncResultHandler
+2. Memory Leaks - Reference cycles and page accumulation in streaming
+3. Error Consistency - Inconsistent error handling between methods
+
+Key Testing Principles:
+======================
+- Expose race conditions through concurrent access
+- Track object lifecycle with weakrefs
+- Verify error handling consistency
+- Test edge cases that trigger bugs
+
+Note: Some of these tests may fail, demonstrating the issues they test.
 """
 
 import asyncio
@@ -22,9 +37,25 @@ class TestAsyncResultHandlerThreadSafety:
 
     def test_race_condition_in_handle_page(self):
         """
-        GIVEN concurrent calls to _handle_page from multiple threads
-        WHEN driver callbacks happen simultaneously
-        THEN data corruption should not occur
+        Test race condition in _handle_page method.
+
+        What this tests:
+        ---------------
+        1. Concurrent _handle_page calls from driver threads
+        2. Data corruption from unsynchronized row appending
+        3. Missing or duplicated rows
+        4. Thread safety of shared state
+
+        Why this matters:
+        ----------------
+        The Cassandra driver calls callbacks from multiple threads.
+        Without proper synchronization, concurrent callbacks can:
+        - Corrupt the rows list
+        - Lose data
+        - Cause index errors
+
+        This test may fail, demonstrating the critical issue
+        that needs fixing with proper locking.
         """
         # Create handler with mock future
         mock_future = Mock()
@@ -69,9 +100,25 @@ class TestAsyncResultHandlerThreadSafety:
 
     def test_event_loop_thread_safety(self):
         """
-        GIVEN callbacks from non-event-loop threads
-        WHEN setting future results
-        THEN call_soon_threadsafe should be used
+        Test event loop thread safety in callbacks.
+
+        What this tests:
+        ---------------
+        1. Callbacks run in driver threads (not event loop)
+        2. Future results set from wrong thread
+        3. call_soon_threadsafe usage
+        4. Cross-thread future completion
+
+        Why this matters:
+        ----------------
+        asyncio futures must be completed from the event loop
+        thread. Driver callbacks run in executor threads, so:
+        - Direct future.set_result() is unsafe
+        - Must use call_soon_threadsafe()
+        - Otherwise: "Future attached to different loop" errors
+
+        This ensures the async wrapper properly bridges
+        thread boundaries for asyncio safety.
         """
 
         async def run_test():
@@ -138,9 +185,24 @@ class TestAsyncResultHandlerThreadSafety:
 
     def test_state_synchronization_issues(self):
         """
-        GIVEN shared state between threads
-        WHEN state is modified without proper synchronization
-        THEN race conditions can occur
+        Test state synchronization between threads.
+
+        What this tests:
+        ---------------
+        1. Unsynchronized access to handler.rows
+        2. Non-atomic operations on shared state
+        3. Lost updates from concurrent modifications
+        4. Data consistency under concurrent access
+
+        Why this matters:
+        ----------------
+        Multiple driver threads might modify handler state:
+        - rows.append() is not thread-safe
+        - len() followed by append() is not atomic
+        - Can lose rows or corrupt list structure
+
+        This demonstrates why locks are needed around
+        all shared state modifications.
         """
         mock_future = Mock()
         mock_future.has_more_pages = True
@@ -180,9 +242,25 @@ class TestStreamingMemoryLeaks:
 
     def test_page_reference_cleanup(self):
         """
-        GIVEN streaming result set processing pages
-        WHEN pages are consumed
-        THEN old pages should be garbage collectible
+        Test page reference cleanup in streaming.
+
+        What this tests:
+        ---------------
+        1. Pages are not accumulated in memory
+        2. Only current page is retained
+        3. Old pages become garbage collectible
+        4. Memory usage is bounded
+
+        Why this matters:
+        ----------------
+        Streaming is designed for large result sets.
+        If pages accumulate:
+        - Memory usage grows unbounded
+        - Defeats purpose of streaming
+        - Can cause OOM with large results
+
+        This verifies the streaming implementation
+        properly releases old pages.
         """
         # Track pages created
         pages_created = []
@@ -263,9 +341,25 @@ class TestStreamingMemoryLeaks:
 
     def test_callback_reference_cycles(self):
         """
-        GIVEN callbacks that might create reference cycles
-        WHEN streaming completes or errors
-        THEN reference cycles should be broken
+        Test for callback reference cycles.
+
+        What this tests:
+        ---------------
+        1. Callbacks don't create reference cycles
+        2. Handler -> Future -> Callback -> Handler cycles
+        3. Objects are garbage collected after use
+        4. No memory leaks from circular references
+
+        Why this matters:
+        ----------------
+        Callbacks often reference the handler:
+        - Handler registers callbacks on future
+        - Future stores reference to callbacks
+        - Callbacks reference handler methods
+        - Creates circular reference
+
+        Without breaking cycles, these objects
+        leak memory even after streaming completes.
         """
         # Track object lifecycle
         handler_refs = []
@@ -322,9 +416,24 @@ class TestStreamingMemoryLeaks:
 
     def test_streaming_config_lifecycle(self):
         """
-        GIVEN streaming with callbacks and config
-        WHEN streaming completes
-        THEN config and callbacks should be cleaned up
+        Test streaming config and callback cleanup.
+
+        What this tests:
+        ---------------
+        1. StreamConfig doesn't leak memory
+        2. Page callbacks are properly released
+        3. Callback data is garbage collected
+        4. No references retained after completion
+
+        Why this matters:
+        ----------------
+        Page callbacks might reference large objects:
+        - Progress tracking data structures
+        - Metric collectors
+        - UI update handlers
+
+        These must be released when streaming ends
+        to avoid memory leaks in long-running apps.
         """
         callback_refs = []
 
@@ -374,9 +483,24 @@ class TestErrorHandlingConsistency:
     @pytest.mark.asyncio
     async def test_execute_vs_execute_stream_error_wrapping(self):
         """
-        GIVEN the same underlying error
-        WHEN it occurs in execute() vs execute_stream()
-        THEN error handling should be consistent
+        Test error handling consistency between methods.
+
+        What this tests:
+        ---------------
+        1. execute() and execute_stream() handle errors the same
+        2. No extra wrapping in QueryError
+        3. Original error types preserved
+        4. Error messages unchanged
+
+        Why this matters:
+        ----------------
+        Applications need consistent error handling:
+        - Same error type for same problem
+        - Can use same except clauses
+        - Error handling code is reusable
+
+        Inconsistent wrapping makes error handling
+        complex and error-prone.
         """
         from cassandra import InvalidRequest
 
@@ -420,9 +544,24 @@ class TestErrorHandlingConsistency:
 
     def test_timeout_error_consistency(self):
         """
-        GIVEN timeout errors
-        WHEN they occur in different contexts
-        THEN they should be handled consistently
+        Test timeout error handling consistency.
+
+        What this tests:
+        ---------------
+        1. Timeout errors preserved across contexts
+        2. OperationTimedOut not wrapped
+        3. Error details maintained
+        4. Same handling in all code paths
+
+        Why this matters:
+        ----------------
+        Timeouts need special handling:
+        - May indicate overload
+        - Might need backoff/retry
+        - Critical for monitoring
+
+        Consistent timeout errors enable proper
+        timeout handling strategies.
         """
         from cassandra import OperationTimedOut
 

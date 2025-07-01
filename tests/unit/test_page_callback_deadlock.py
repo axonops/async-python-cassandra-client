@@ -1,5 +1,23 @@
 """
 Unit tests for page callback execution outside lock.
+
+This module tests a critical deadlock prevention mechanism in streaming
+results. Page callbacks must be executed outside the internal lock to
+prevent deadlocks when callbacks try to interact with the result set.
+
+Test Organization:
+==================
+- Lock behavior during callbacks
+- Error isolation in callbacks
+- Performance with slow callbacks
+- Callback data accuracy
+
+Key Testing Principles:
+======================
+- Callbacks must not hold internal locks
+- Callback errors must not affect streaming
+- Slow callbacks must not block iteration
+- Callbacks are optional (no overhead when unused)
 """
 
 import threading
@@ -16,7 +34,27 @@ class TestPageCallbackDeadlock:
     """Test that page callbacks are executed outside the lock to prevent deadlocks."""
 
     async def test_page_callback_executed_outside_lock(self):
-        """Test that page callback is called outside the lock."""
+        """
+        Test that page callback is called outside the lock.
+
+        What this tests:
+        ---------------
+        1. Page callback runs without holding _lock
+        2. Lock is released before callback execution
+        3. Callback can acquire lock if needed
+        4. No deadlock risk from callbacks
+
+        Why this matters:
+        ----------------
+        Previous implementations held the lock during callbacks,
+        which caused deadlocks when:
+        - Callbacks tried to iterate the result set
+        - Callbacks called methods that needed the lock
+        - Multiple threads were involved
+
+        This test ensures callbacks run in a "clean" context
+        without holding internal locks, preventing deadlocks.
+        """
         # Track if callback was called while lock was held
         lock_held_during_callback = None
         callback_called = threading.Event()
@@ -51,7 +89,26 @@ class TestPageCallbackDeadlock:
         assert lock_held_during_callback is False
 
     async def test_callback_error_does_not_affect_streaming(self):
-        """Test that callback errors don't affect streaming functionality."""
+        """
+        Test that callback errors don't affect streaming functionality.
+
+        What this tests:
+        ---------------
+        1. Callback exceptions are caught and isolated
+        2. Streaming continues normally after callback error
+        3. All rows are still accessible
+        4. No corruption of internal state
+
+        Why this matters:
+        ----------------
+        User callbacks might have bugs or throw exceptions.
+        These errors should not:
+        - Crash the streaming process
+        - Lose data or skip rows
+        - Corrupt the result set state
+
+        This ensures robustness against user code errors.
+        """
 
         # Create a callback that raises an error
         def bad_callback(page_num, row_count):
@@ -85,7 +142,27 @@ class TestPageCallbackDeadlock:
         assert rows == ["row1", "row2"]
 
     async def test_slow_callback_does_not_block_iteration(self):
-        """Test that slow callbacks don't block result iteration."""
+        """
+        Test that slow callbacks don't block result iteration.
+
+        What this tests:
+        ---------------
+        1. Slow callbacks run asynchronously
+        2. Row iteration proceeds without waiting
+        3. Callback duration doesn't affect iteration speed
+        4. No performance impact from slow callbacks
+
+        Why this matters:
+        ----------------
+        Page callbacks might do expensive operations:
+        - Write to databases
+        - Send network requests
+        - Perform complex calculations
+
+        These slow operations should not block the main
+        iteration thread. Users can process rows immediately
+        while callbacks run in the background.
+        """
         callback_times = []
         iteration_start_time = None
 
@@ -131,7 +208,26 @@ class TestPageCallbackDeadlock:
         thread.join(timeout=1.0)
 
     async def test_callback_receives_correct_page_info(self):
-        """Test that callbacks receive correct page information."""
+        """
+        Test that callbacks receive correct page information.
+
+        What this tests:
+        ---------------
+        1. Page numbers increment correctly (1, 2, 3...)
+        2. Row counts match actual page sizes
+        3. Multiple pages tracked accurately
+        4. Last page handled correctly
+
+        Why this matters:
+        ----------------
+        Callbacks often need to:
+        - Track progress through large result sets
+        - Update progress bars or metrics
+        - Log page processing statistics
+        - Detect when processing is complete
+
+        Accurate page information enables these use cases.
+        """
         page_infos = []
 
         def track_pages(page_num, row_count):
@@ -164,7 +260,26 @@ class TestPageCallbackDeadlock:
         assert page_infos[2] == (3, 1)  # Third page: 1 row
 
     async def test_no_callback_no_overhead(self):
-        """Test that having no callback doesn't add overhead."""
+        """
+        Test that having no callback doesn't add overhead.
+
+        What this tests:
+        ---------------
+        1. No performance penalty without callbacks
+        2. Page handling is fast when no callback
+        3. 1000 rows processed in <10ms
+        4. Optional feature has zero cost when unused
+
+        Why this matters:
+        ----------------
+        Most streaming operations don't use callbacks.
+        The callback feature should have zero overhead
+        when not used, following the principle:
+        "You don't pay for what you don't use"
+
+        This ensures the callback feature doesn't slow
+        down the common case of simple iteration.
+        """
         # Create streaming result set without callback
         response_future = Mock()
         response_future.has_more_pages = False

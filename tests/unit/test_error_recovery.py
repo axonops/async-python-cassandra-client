@@ -2,6 +2,22 @@
 
 This module tests various error scenarios including NoHostAvailable,
 connection errors, and proper error propagation through the async layer.
+
+Test Organization:
+==================
+1. Connection Errors - NoHostAvailable, pool exhaustion
+2. Query Errors - InvalidRequest, Unavailable
+3. Callback Errors - Errors in async callbacks
+4. Shutdown Scenarios - Graceful shutdown with pending queries
+5. Error Isolation - Concurrent query error isolation
+
+Key Testing Principles:
+======================
+- Errors must propagate with full context
+- Stack traces must be preserved
+- Concurrent errors must be isolated
+- Graceful degradation under failure
+- Recovery after transient failures
 """
 
 import asyncio
@@ -16,7 +32,12 @@ from async_cassandra import AsyncCluster
 
 
 def create_mock_response_future(rows=None, has_more_pages=False):
-    """Helper to create a properly configured mock ResponseFuture."""
+    """
+    Helper to create a properly configured mock ResponseFuture.
+
+    This helper ensures mock ResponseFutures behave like real ones,
+    with proper callback handling and attribute setup.
+    """
     mock_future = Mock()
     mock_future.has_more_pages = has_more_pages
     mock_future.timeout = None  # Avoid comparison issues
@@ -37,7 +58,26 @@ class TestErrorRecovery:
     @pytest.mark.quick
     @pytest.mark.critical
     async def test_no_host_available_error(self):
-        """Test handling of NoHostAvailable errors."""
+        """
+        Test handling of NoHostAvailable errors.
+
+        What this tests:
+        ---------------
+        1. NoHostAvailable errors propagate correctly
+        2. Error details include all failed hosts
+        3. Connection errors for each host preserved
+        4. Error message is informative
+
+        Why this matters:
+        ----------------
+        NoHostAvailable is a critical error indicating:
+        - All nodes are down or unreachable
+        - Network partition or configuration issues
+        - Need for manual intervention
+
+        Applications need full error details to diagnose
+        and alert on infrastructure problems.
+        """
         errors = {
             "127.0.0.1": ConnectionRefusedError("Connection refused"),
             "127.0.0.2": TimeoutError("Connection timeout"),
@@ -60,7 +100,26 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_invalid_request_error(self):
-        """Test handling of invalid request errors."""
+        """
+        Test handling of invalid request errors.
+
+        What this tests:
+        ---------------
+        1. InvalidRequest errors propagate cleanly
+        2. Error message preserved exactly
+        3. No wrapping or modification
+        4. Useful for debugging CQL issues
+
+        Why this matters:
+        ----------------
+        InvalidRequest indicates:
+        - Syntax errors in CQL
+        - Schema mismatches
+        - Invalid parameters
+
+        Developers need the exact error message from
+        Cassandra to fix their queries.
+        """
         mock_session = Mock()
         mock_session.execute_async.side_effect = InvalidRequest("Invalid CQL syntax")
 
@@ -71,7 +130,28 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_unavailable_error(self):
-        """Test handling of unavailable errors."""
+        """
+        Test handling of unavailable errors.
+
+        What this tests:
+        ---------------
+        1. Unavailable errors include consistency details
+        2. Required vs available replicas reported
+        3. Consistency level preserved
+        4. All error attributes accessible
+
+        Why this matters:
+        ----------------
+        Unavailable errors help diagnose:
+        - Insufficient replicas for consistency
+        - Node failures affecting availability
+        - Need to adjust consistency levels
+
+        Applications can use this info to:
+        - Retry with lower consistency
+        - Alert on degraded availability
+        - Make informed consistency trade-offs
+        """
         mock_session = Mock()
         mock_session.execute_async.side_effect = Unavailable(
             "Cannot achieve consistency",
@@ -92,7 +172,25 @@ class TestErrorRecovery:
     @pytest.mark.resilience
     @pytest.mark.critical
     async def test_error_in_async_callback(self):
-        """Test error handling in async callbacks."""
+        """
+        Test error handling in async callbacks.
+
+        What this tests:
+        ---------------
+        1. Errors in callbacks are captured
+        2. AsyncResultHandler propagates callback errors
+        3. Original error type and message preserved
+        4. Async layer doesn't swallow errors
+
+        Why this matters:
+        ----------------
+        The async wrapper uses callbacks to bridge
+        sync driver to async/await. Errors in this
+        bridge must not be lost or corrupted.
+
+        This ensures reliability of error reporting
+        through the entire async pipeline.
+        """
         from async_cassandra.result import AsyncResultHandler
 
         # Create a mock ResponseFuture
@@ -112,7 +210,27 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_connection_pool_exhaustion_recovery(self):
-        """Test recovery from connection pool exhaustion."""
+        """
+        Test recovery from connection pool exhaustion.
+
+        What this tests:
+        ---------------
+        1. Pool exhaustion errors are transient
+        2. Retry after exhaustion can succeed
+        3. No permanent failure from temporary exhaustion
+        4. Application can recover automatically
+
+        Why this matters:
+        ----------------
+        Connection pools can be temporarily exhausted during:
+        - Traffic spikes
+        - Slow queries holding connections
+        - Network delays
+
+        Applications should be able to recover when
+        connections become available again, without
+        manual intervention or restart.
+        """
         mock_session = Mock()
 
         # Create a mock ResponseFuture for successful response
@@ -139,7 +257,26 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_partial_write_error_handling(self):
-        """Test handling of partial write errors."""
+        """
+        Test handling of partial write errors.
+
+        What this tests:
+        ---------------
+        1. Coordinator timeout errors propagate
+        2. Write might have partially succeeded
+        3. Error message indicates uncertainty
+        4. Application can handle ambiguity
+
+        Why this matters:
+        ----------------
+        Partial writes are dangerous because:
+        - Some replicas might have the data
+        - Some might not (inconsistent state)
+        - Retry might cause duplicates
+
+        Applications need to know when writes
+        are ambiguous to handle appropriately.
+        """
         mock_session = Mock()
 
         # Simulate partial write success
@@ -154,7 +291,26 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_error_during_prepared_statement(self):
-        """Test error handling during prepared statement execution."""
+        """
+        Test error handling during prepared statement execution.
+
+        What this tests:
+        ---------------
+        1. Prepare succeeds but execute can fail
+        2. Parameter validation errors propagate
+        3. Prepared statements don't mask errors
+        4. Error occurs at execution, not preparation
+
+        Why this matters:
+        ----------------
+        Prepared statements can fail at execution due to:
+        - Invalid parameter types
+        - Null values where not allowed
+        - Value size exceeding limits
+
+        The async layer must propagate these execution
+        errors clearly for debugging.
+        """
         mock_session = Mock()
         mock_prepared = Mock()
 
@@ -178,7 +334,27 @@ class TestErrorRecovery:
     @pytest.mark.critical
     @pytest.mark.timeout(40)  # Increase timeout to account for 5s shutdown delay
     async def test_graceful_shutdown_with_pending_queries(self):
-        """Test graceful shutdown when queries are pending."""
+        """
+        Test graceful shutdown when queries are pending.
+
+        What this tests:
+        ---------------
+        1. Shutdown waits for driver to finish
+        2. Pending queries can complete during shutdown
+        3. 5-second grace period for completion
+        4. Clean shutdown without hanging
+
+        Why this matters:
+        ----------------
+        Applications need graceful shutdown to:
+        - Complete in-flight requests
+        - Avoid data loss or corruption
+        - Clean up resources properly
+
+        The 5-second delay gives driver threads
+        time to complete ongoing operations before
+        forcing termination.
+        """
         mock_session = Mock()
         mock_cluster = Mock()
 
@@ -256,7 +432,27 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_error_stack_trace_preservation(self):
-        """Test that error stack traces are preserved through async layer."""
+        """
+        Test that error stack traces are preserved through async layer.
+
+        What this tests:
+        ---------------
+        1. Original exception traceback preserved
+        2. Error message unchanged
+        3. Exception type maintained
+        4. Debugging information intact
+
+        Why this matters:
+        ----------------
+        Stack traces are critical for debugging:
+        - Show where error originated
+        - Include call chain context
+        - Help identify root cause
+
+        The async wrapper must not lose or corrupt
+        this debugging information while propagating
+        errors across thread boundaries.
+        """
         mock_session = Mock()
 
         # Create an error with traceback info
@@ -278,7 +474,27 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     async def test_concurrent_error_isolation(self):
-        """Test that errors in concurrent queries don't affect each other."""
+        """
+        Test that errors in concurrent queries don't affect each other.
+
+        What this tests:
+        ---------------
+        1. Each query gets its own error/result
+        2. Failures don't cascade to other queries
+        3. Mixed success/failure scenarios work
+        4. Error types are preserved per query
+
+        Why this matters:
+        ----------------
+        Applications often run many queries concurrently:
+        - Dashboard fetching multiple metrics
+        - Batch processing different tables
+        - Parallel data aggregation
+
+        One query's failure should not affect others.
+        Each query should succeed or fail independently
+        based on its own merits.
+        """
         mock_session = Mock()
 
         # Different errors for different queries
