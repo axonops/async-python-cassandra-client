@@ -20,7 +20,26 @@ class TestSimpleStatements:
 
     @pytest.mark.asyncio
     async def test_simple_statement_basic_usage(self, cassandra_session):
-        """Test basic SimpleStatement usage with parameters."""
+        """
+        Test basic SimpleStatement usage with parameters.
+
+        What this tests:
+        ---------------
+        1. SimpleStatement creation
+        2. Parameter binding with %s
+        3. Query execution
+        4. Result retrieval
+
+        Why this matters:
+        ----------------
+        SimpleStatement needed for:
+        - Legacy code compatibility
+        - Dynamic queries
+        - One-off statements
+
+        Must work but prepared
+        statements preferred.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -45,7 +64,26 @@ class TestSimpleStatements:
 
     @pytest.mark.asyncio
     async def test_simple_statement_without_parameters(self, cassandra_session):
-        """Test SimpleStatement without parameters for queries."""
+        """
+        Test SimpleStatement without parameters for queries.
+
+        What this tests:
+        ---------------
+        1. Parameterless queries
+        2. Fetch size configuration
+        3. Result pagination
+        4. Multiple row handling
+
+        Why this matters:
+        ----------------
+        Some queries need no params:
+        - Table scans
+        - Aggregations
+        - DDL operations
+
+        SimpleStatement supports
+        all query options.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -72,7 +110,26 @@ class TestSimpleStatements:
 
     @pytest.mark.asyncio
     async def test_simple_statement_vs_prepared_performance(self, cassandra_session):
-        """Compare SimpleStatement vs PreparedStatement (prepared should be faster)."""
+        """
+        Compare SimpleStatement vs PreparedStatement (prepared should be faster).
+
+        What this tests:
+        ---------------
+        1. Performance comparison
+        2. Both statement types work
+        3. Timing measurements
+        4. Prepared advantages
+
+        Why this matters:
+        ----------------
+        Shows why prepared better:
+        - Query plan caching
+        - Type validation
+        - Network efficiency
+
+        Educates on best
+        practices.
+        """
         import time
 
         # Get the unique table name
@@ -111,7 +168,26 @@ class TestSimpleStatements:
 
     @pytest.mark.asyncio
     async def test_simple_statement_with_custom_payload(self, cassandra_session):
-        """Test SimpleStatement with custom payload."""
+        """
+        Test SimpleStatement with custom payload.
+
+        What this tests:
+        ---------------
+        1. Custom payload support
+        2. Bytes payload format
+        3. Payload passed through
+        4. Query still works
+
+        Why this matters:
+        ----------------
+        Custom payloads enable:
+        - Request tracing
+        - Application metadata
+        - Cross-system correlation
+
+        Advanced feature for
+        observability.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -138,7 +214,26 @@ class TestSimpleStatements:
 
     @pytest.mark.asyncio
     async def test_simple_statement_batch_not_recommended(self, cassandra_session):
-        """Test that SimpleStatements work in batches but prepared is preferred."""
+        """
+        Test that SimpleStatements work in batches but prepared is preferred.
+
+        What this tests:
+        ---------------
+        1. SimpleStatement in batches
+        2. Batch execution works
+        3. Not recommended pattern
+        4. Compatibility maintained
+
+        Why this matters:
+        ----------------
+        Shows anti-pattern:
+        - Poor performance
+        - No query plan reuse
+        - Network inefficient
+
+        Works but educates on
+        better approaches.
+        """
         from cassandra.query import BatchStatement, BatchType
 
         # Get the unique table name

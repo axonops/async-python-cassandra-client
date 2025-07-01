@@ -93,7 +93,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_create_table_already_exists(self, mock_session):
-        """Test handling of AlreadyExists errors during schema changes."""
+        """
+        Test handling of AlreadyExists errors during schema changes.
+
+        What this tests:
+        ---------------
+        1. CREATE TABLE on existing table
+        2. AlreadyExists wrapped in QueryError
+        3. Keyspace and table info preserved
+        4. Error details accessible
+
+        Why this matters:
+        ----------------
+        Schema conflicts common in:
+        - Concurrent deployments
+        - Idempotent migrations
+        - Multi-datacenter setups
+
+        Applications need to handle
+        schema conflicts gracefully.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock AlreadyExists error
@@ -110,7 +129,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_ddl_invalid_syntax(self, mock_session):
-        """Test handling of invalid DDL syntax."""
+        """
+        Test handling of invalid DDL syntax.
+
+        What this tests:
+        ---------------
+        1. DDL syntax errors detected
+        2. InvalidRequest not wrapped
+        3. Parser error details shown
+        4. Line/column info preserved
+
+        Why this matters:
+        ----------------
+        DDL syntax errors indicate:
+        - Typos in schema scripts
+        - Version incompatibilities
+        - Invalid CQL constructs
+
+        Clear errors help developers
+        fix schema definitions quickly.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock InvalidRequest error
@@ -125,7 +163,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_create_keyspace_already_exists(self, mock_session):
-        """Test handling of keyspace already exists errors."""
+        """
+        Test handling of keyspace already exists errors.
+
+        What this tests:
+        ---------------
+        1. CREATE KEYSPACE conflicts
+        2. AlreadyExists for keyspaces
+        3. Table field is None
+        4. Wrapped in QueryError
+
+        Why this matters:
+        ----------------
+        Keyspace conflicts occur when:
+        - Multiple apps create keyspaces
+        - Deployment race conditions
+        - Recreating environments
+
+        Idempotent keyspace creation
+        requires proper error handling.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock AlreadyExists error for keyspace
@@ -145,7 +202,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_concurrent_ddl_operations(self, mock_session):
-        """Test handling of concurrent DDL operations."""
+        """
+        Test handling of concurrent DDL operations.
+
+        What this tests:
+        ---------------
+        1. Multiple DDL ops can run concurrently
+        2. No interference between operations
+        3. All operations complete
+        4. Order not guaranteed
+
+        Why this matters:
+        ----------------
+        Schema migrations often involve:
+        - Multiple table creations
+        - Index additions
+        - Concurrent alterations
+
+        Async wrapper must handle parallel
+        DDL operations safely.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Track DDL operations
@@ -180,7 +256,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_alter_table_column_type_error(self, mock_session):
-        """Test handling of invalid column type changes."""
+        """
+        Test handling of invalid column type changes.
+
+        What this tests:
+        ---------------
+        1. Invalid type changes rejected
+        2. InvalidRequest not wrapped
+        3. Type conflict details shown
+        4. Original types mentioned
+
+        Why this matters:
+        ----------------
+        Type changes restricted because:
+        - Data compatibility issues
+        - Storage format conflicts
+        - Query implications
+
+        Developers need clear guidance
+        on valid schema evolution.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock InvalidRequest for incompatible type change
@@ -195,7 +290,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_drop_nonexistent_keyspace(self, mock_session):
-        """Test dropping a non-existent keyspace."""
+        """
+        Test dropping a non-existent keyspace.
+
+        What this tests:
+        ---------------
+        1. DROP on missing keyspace
+        2. InvalidRequest not wrapped
+        3. Clear error message
+        4. Keyspace name in error
+
+        Why this matters:
+        ----------------
+        Drop operations may fail when:
+        - Cleanup scripts run twice
+        - Keyspace already removed
+        - Name typos
+
+        IF EXISTS clause recommended
+        for idempotent drops.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock InvalidRequest for non-existent keyspace
@@ -210,7 +324,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_create_type_already_exists(self, mock_session):
-        """Test creating a user-defined type that already exists."""
+        """
+        Test creating a user-defined type that already exists.
+
+        What this tests:
+        ---------------
+        1. CREATE TYPE conflicts
+        2. UDTs treated like tables
+        3. AlreadyExists wrapped
+        4. Type name in error
+
+        Why this matters:
+        ----------------
+        User-defined types (UDTs):
+        - Share namespace with tables
+        - Support complex data models
+        - Need conflict handling
+
+        Schema with UDTs requires
+        careful version control.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock AlreadyExists for UDT
@@ -227,7 +360,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_batch_ddl_operations(self, mock_session):
-        """Test that DDL operations cannot be batched."""
+        """
+        Test that DDL operations cannot be batched.
+
+        What this tests:
+        ---------------
+        1. DDL not allowed in batches
+        2. InvalidRequest not wrapped
+        3. Clear error message
+        4. Cassandra limitation enforced
+
+        Why this matters:
+        ----------------
+        DDL restrictions exist because:
+        - Schema changes are global
+        - Cannot be transactional
+        - Affect all nodes
+
+        Schema changes must be
+        executed individually.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock InvalidRequest for DDL in batch
@@ -249,7 +401,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_schema_metadata_access(self):
-        """Test accessing schema metadata through the cluster."""
+        """
+        Test accessing schema metadata through the cluster.
+
+        What this tests:
+        ---------------
+        1. Metadata accessible via cluster
+        2. Keyspace information available
+        3. Schema discovery works
+        4. No async wrapper needed
+
+        Why this matters:
+        ----------------
+        Metadata access enables:
+        - Dynamic schema discovery
+        - Table introspection
+        - Type information
+
+        Applications use metadata for
+        ORM mapping and validation.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             # Create mock cluster with metadata
             mock_cluster = Mock()
@@ -274,7 +445,26 @@ class TestSchemaChanges:
 
     @pytest.mark.asyncio
     async def test_materialized_view_already_exists(self, mock_session):
-        """Test creating a materialized view that already exists."""
+        """
+        Test creating a materialized view that already exists.
+
+        What this tests:
+        ---------------
+        1. MV conflicts detected
+        2. AlreadyExists wrapped
+        3. View name in error
+        4. Same handling as tables
+
+        Why this matters:
+        ----------------
+        Materialized views:
+        - Auto-maintained denormalization
+        - Share table namespace
+        - Need conflict resolution
+
+        MV schema changes require same
+        care as regular tables.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Mock AlreadyExists for materialized view

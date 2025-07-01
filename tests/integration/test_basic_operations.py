@@ -21,7 +21,26 @@ class TestBasicOperations:
     async def test_connection_and_keyspace(
         self, cassandra_cluster, shared_keyspace_setup, pytestconfig
     ):
-        """Test connecting to Cassandra and using shared keyspace."""
+        """
+        Test connecting to Cassandra and using shared keyspace.
+
+        What this tests:
+        ---------------
+        1. Cluster connection works
+        2. Keyspace can be set
+        3. Tables can be created
+        4. Cleanup is performed
+
+        Why this matters:
+        ----------------
+        Connection management is fundamental:
+        - Must handle network issues
+        - Keyspace isolation important
+        - Resource cleanup critical
+
+        Basic connectivity is the
+        foundation of all operations.
+        """
         session = await cassandra_cluster.connect()
 
         try:
@@ -54,7 +73,26 @@ class TestBasicOperations:
             await session.close()
 
     async def test_async_iteration(self, cassandra_session):
-        """Test async iteration over results with proper patterns."""
+        """
+        Test async iteration over results with proper patterns.
+
+        What this tests:
+        ---------------
+        1. Async for loop works
+        2. Multiple rows handled
+        3. Row attributes accessible
+        4. No blocking in iteration
+
+        Why this matters:
+        ----------------
+        Async iteration enables:
+        - Non-blocking data processing
+        - Memory-efficient streaming
+        - Responsive applications
+
+        Critical for handling large
+        result sets efficiently.
+        """
         # Use the unique users table created for this test
         users_table = cassandra_session._test_users_table
 
@@ -98,7 +136,26 @@ class TestBasicOperations:
             pytest.fail(f"Test setup failed: {e}")
 
     async def test_error_handling(self, cassandra_session):
-        """Test error handling for invalid queries."""
+        """
+        Test error handling for invalid queries.
+
+        What this tests:
+        ---------------
+        1. Invalid table errors caught
+        2. Invalid keyspace errors caught
+        3. Syntax errors propagated
+        4. Error messages preserved
+
+        Why this matters:
+        ----------------
+        Proper error handling enables:
+        - Debugging query issues
+        - Graceful failure modes
+        - Clear error messages
+
+        Applications need clear errors
+        to handle failures properly.
+        """
         # Test invalid table query
         with pytest.raises(InvalidRequest) as exc_info:
             await cassandra_session.execute("SELECT * FROM non_existent_table")

@@ -79,7 +79,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_with_invalid_request(self, async_session, mock_session):
-        """Test handling of InvalidRequest errors."""
+        """
+        Test handling of InvalidRequest errors.
+
+        What this tests:
+        ---------------
+        1. InvalidRequest not wrapped
+        2. Error message preserved
+        3. Direct propagation
+        4. Query syntax errors
+
+        Why this matters:
+        ----------------
+        InvalidRequest indicates:
+        - Query syntax errors
+        - Schema mismatches
+        - Invalid operations
+
+        Clear errors help developers
+        fix queries quickly.
+        """
         # Mock execute_async to fail with InvalidRequest
         future = self._create_mock_future(error=InvalidRequest("Table does not exist"))
         mock_session.execute_async.return_value = future
@@ -93,7 +112,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_with_timeout(self, async_session, mock_session):
-        """Test handling of operation timeout."""
+        """
+        Test handling of operation timeout.
+
+        What this tests:
+        ---------------
+        1. OperationTimedOut propagated
+        2. Timeout errors not wrapped
+        3. Message preserved
+        4. Clean error handling
+
+        Why this matters:
+        ----------------
+        Timeouts are common:
+        - Slow queries
+        - Network issues
+        - Overloaded nodes
+
+        Applications need clear
+        timeout information.
+        """
         # Mock execute_async to fail with timeout
         future = self._create_mock_future(error=OperationTimedOut("Query timed out"))
         mock_session.execute_async.return_value = future
@@ -106,7 +144,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_with_read_timeout(self, async_session, mock_session):
-        """Test handling of read timeout."""
+        """
+        Test handling of read timeout.
+
+        What this tests:
+        ---------------
+        1. ReadTimeout details preserved
+        2. Response counts available
+        3. Data retrieval flag set
+        4. Not wrapped
+
+        Why this matters:
+        ----------------
+        Read timeout details crucial:
+        - Shows partial success
+        - Indicates retry potential
+        - Helps tune consistency
+
+        Details enable smart
+        retry decisions.
+        """
         # Mock read timeout
         future = self._create_mock_future(
             error=ReadTimeout(
@@ -128,7 +185,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_with_write_timeout(self, async_session, mock_session):
-        """Test handling of write timeout."""
+        """
+        Test handling of write timeout.
+
+        What this tests:
+        ---------------
+        1. WriteTimeout propagated
+        2. Write type preserved
+        3. Response details available
+        4. Proper error type
+
+        Why this matters:
+        ----------------
+        Write timeouts critical:
+        - May have partial writes
+        - Write type matters for retry
+        - Data consistency concerns
+
+        Details determine if
+        retry is safe.
+        """
         # Mock write timeout (write_type needs to be numeric)
         from cassandra import WriteType
 
@@ -152,7 +228,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_with_unavailable(self, async_session, mock_session):
-        """Test handling of Unavailable exception."""
+        """
+        Test handling of Unavailable exception.
+
+        What this tests:
+        ---------------
+        1. Unavailable propagated
+        2. Replica counts preserved
+        3. Consistency level shown
+        4. Clear error info
+
+        Why this matters:
+        ----------------
+        Unavailable means:
+        - Not enough replicas up
+        - Cluster health issue
+        - Cannot meet consistency
+
+        Shows cluster state for
+        operations decisions.
+        """
         # Mock unavailable (consistency is first positional arg)
         future = self._create_mock_future(
             error=Unavailable(
@@ -170,7 +265,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_prepare_statement_error(self, async_session, mock_session):
-        """Test error handling during statement preparation."""
+        """
+        Test error handling during statement preparation.
+
+        What this tests:
+        ---------------
+        1. Prepare errors wrapped
+        2. QueryError with cause
+        3. Error message clear
+        4. Original exception preserved
+
+        Why this matters:
+        ----------------
+        Prepare failures indicate:
+        - Syntax errors
+        - Schema issues
+        - Permission problems
+
+        Wrapped to distinguish from
+        execution errors.
+        """
         # Mock prepare to fail (it uses sync prepare in executor)
         mock_session.prepare.side_effect = InvalidRequest("Syntax error in CQL")
 
@@ -183,7 +297,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_prepared_statement(self, async_session, mock_session):
-        """Test executing prepared statements."""
+        """
+        Test executing prepared statements.
+
+        What this tests:
+        ---------------
+        1. Prepared statements work
+        2. Parameters handled
+        3. Results returned
+        4. Proper execution flow
+
+        Why this matters:
+        ----------------
+        Prepared statements are:
+        - Performance critical
+        - Security essential
+        - Most common pattern
+
+        Must work seamlessly
+        through async wrapper.
+        """
         # Create mock prepared statement
         prepared = Mock(spec=PreparedStatement)
         prepared.query = "SELECT * FROM users WHERE id = ?"
@@ -201,7 +334,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execute_batch_statement(self, async_session, mock_session):
-        """Test executing batch statements."""
+        """
+        Test executing batch statements.
+
+        What this tests:
+        ---------------
+        1. Batch execution works
+        2. Multiple statements grouped
+        3. Parameters preserved
+        4. Batch type maintained
+
+        Why this matters:
+        ----------------
+        Batches provide:
+        - Atomic operations
+        - Better performance
+        - Reduced round trips
+
+        Critical for bulk
+        data operations.
+        """
         # Create batch statement
         batch = BatchStatement()
         batch.add(SimpleStatement("INSERT INTO users (id, name) VALUES (%s, %s)"), (1, "user1"))
@@ -223,7 +375,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_concurrent_queries(self, async_session, mock_session):
-        """Test concurrent query execution."""
+        """
+        Test concurrent query execution.
+
+        What this tests:
+        ---------------
+        1. Concurrent execution allowed
+        2. All queries complete
+        3. Results independent
+        4. True parallelism
+
+        Why this matters:
+        ----------------
+        Concurrency essential for:
+        - High throughput
+        - Parallel processing
+        - Efficient resource use
+
+        Async wrapper must enable
+        true concurrent execution.
+        """
         # Track execution order to verify concurrency
         execution_times = []
 
@@ -264,7 +435,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_session_close_idempotent(self, async_session, mock_session):
-        """Test that session close is idempotent."""
+        """
+        Test that session close is idempotent.
+
+        What this tests:
+        ---------------
+        1. Multiple closes safe
+        2. Shutdown called once
+        3. No errors on re-close
+        4. State properly tracked
+
+        Why this matters:
+        ----------------
+        Idempotent close needed for:
+        - Error handling paths
+        - Multiple cleanup sources
+        - Resource leak prevention
+
+        Safe cleanup in all
+        code paths.
+        """
         # Setup shutdown
         mock_session.shutdown = Mock()
 
@@ -279,7 +469,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_query_after_close(self, async_session, mock_session):
-        """Test querying after session is closed."""
+        """
+        Test querying after session is closed.
+
+        What this tests:
+        ---------------
+        1. Closed sessions reject queries
+        2. ConnectionError raised
+        3. Clear error message
+        4. State checking works
+
+        Why this matters:
+        ----------------
+        Using closed resources:
+        - Common bug source
+        - Hard to debug
+        - Silent failures bad
+
+        Clear errors prevent
+        mysterious failures.
+        """
         # Close session
         mock_session.shutdown = Mock()
         await async_session.close()
@@ -294,7 +503,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_metrics_recording_on_success(self, mock_session):
-        """Test metrics are recorded on successful queries."""
+        """
+        Test metrics are recorded on successful queries.
+
+        What this tests:
+        ---------------
+        1. Success metrics recorded
+        2. Async metrics work
+        3. Proper success flag
+        4. No error type
+
+        Why this matters:
+        ----------------
+        Metrics enable:
+        - Performance monitoring
+        - Error tracking
+        - Capacity planning
+
+        Accurate metrics critical
+        for production observability.
+        """
         # Create metrics mock
         mock_metrics = Mock()
         mock_metrics.record_query_metrics = AsyncMock()
@@ -323,7 +551,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_metrics_recording_on_failure(self, mock_session):
-        """Test metrics are recorded on failed queries."""
+        """
+        Test metrics are recorded on failed queries.
+
+        What this tests:
+        ---------------
+        1. Failure metrics recorded
+        2. Error type captured
+        3. Success flag false
+        4. Async recording works
+
+        Why this matters:
+        ----------------
+        Error metrics reveal:
+        - Problem patterns
+        - Error types
+        - Failure rates
+
+        Essential for debugging
+        production issues.
+        """
         # Create metrics mock
         mock_metrics = Mock()
         mock_metrics.record_query_metrics = AsyncMock()
@@ -350,7 +597,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_custom_payload_handling(self, async_session, mock_session):
-        """Test custom payload in queries."""
+        """
+        Test custom payload in queries.
+
+        What this tests:
+        ---------------
+        1. Custom payloads passed through
+        2. Correct parameter position
+        3. Payload preserved
+        4. Driver feature works
+
+        Why this matters:
+        ----------------
+        Custom payloads enable:
+        - Request tracing
+        - Debugging metadata
+        - Cross-system correlation
+
+        Important for distributed
+        system observability.
+        """
         # Mock execution with custom payload
         result = Mock()
         result.custom_payload = {"server_time": "2024-01-01"}
@@ -368,7 +634,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_trace_execution(self, async_session, mock_session):
-        """Test query tracing."""
+        """
+        Test query tracing.
+
+        What this tests:
+        ---------------
+        1. Trace flag passed through
+        2. Correct parameter position
+        3. Tracing enabled
+        4. Request setup correct
+
+        Why this matters:
+        ----------------
+        Query tracing helps:
+        - Debug slow queries
+        - Understand execution
+        - Optimize performance
+
+        Essential debugging tool
+        for production issues.
+        """
         # Mock execution with trace
         result = Mock()
         result.get_query_trace = Mock(return_value=Mock(trace_id="abc123"))
@@ -388,7 +673,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_execution_profile_handling(self, async_session, mock_session):
-        """Test using execution profiles."""
+        """
+        Test using execution profiles.
+
+        What this tests:
+        ---------------
+        1. Execution profiles work
+        2. Profile name passed
+        3. Correct parameter position
+        4. Driver feature accessible
+
+        Why this matters:
+        ----------------
+        Execution profiles control:
+        - Consistency levels
+        - Retry policies
+        - Load balancing
+
+        Critical for workload
+        optimization.
+        """
         # Mock execution
         result = Mock()
         result.rows = []
@@ -404,7 +708,26 @@ class TestSessionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_timeout_parameter(self, async_session, mock_session):
-        """Test query timeout parameter."""
+        """
+        Test query timeout parameter.
+
+        What this tests:
+        ---------------
+        1. Timeout parameter works
+        2. Value passed correctly
+        3. Correct position
+        4. Per-query timeouts
+
+        Why this matters:
+        ----------------
+        Query timeouts prevent:
+        - Hanging queries
+        - Resource exhaustion
+        - Poor user experience
+
+        Per-query control enables
+        SLA compliance.
+        """
         # Mock execution
         result = Mock()
         result.rows = []

@@ -17,7 +17,26 @@ class TestClusterConnectionRetry:
     """Test cluster connection retry behavior."""
 
     async def test_connection_retries_on_failure(self):
-        """Test that connection attempts are retried on failure."""
+        """
+        Test that connection attempts are retried on failure.
+
+        What this tests:
+        ---------------
+        1. Failed connections retry
+        2. Third attempt succeeds
+        3. Total of 3 attempts
+        4. Eventually returns session
+
+        Why this matters:
+        ----------------
+        Connection failures are common:
+        - Network hiccups
+        - Node startup delays
+        - Temporary unavailability
+
+        Automatic retry improves
+        reliability significantly.
+        """
         mock_cluster = Mock()
         # Mock protocol version to pass validation
         mock_cluster.protocol_version = 5
@@ -46,7 +65,26 @@ class TestClusterConnectionRetry:
                 assert connect_attempts == 3
 
     async def test_connection_fails_after_max_retries(self):
-        """Test that connection fails after maximum retry attempts."""
+        """
+        Test that connection fails after maximum retry attempts.
+
+        What this tests:
+        ---------------
+        1. Max retry limit enforced
+        2. Exactly 3 attempts made
+        3. ConnectionError raised
+        4. Clear failure message
+
+        Why this matters:
+        ----------------
+        Must give up eventually:
+        - Prevent infinite loops
+        - Fail with clear error
+        - Allow app to handle
+
+        Bounded retries prevent
+        hanging applications.
+        """
         mock_cluster = Mock()
         # Mock protocol version to pass validation
         mock_cluster.protocol_version = 5
@@ -73,7 +111,26 @@ class TestClusterConnectionRetry:
                 assert create_call_count == 3
 
     async def test_connection_retry_with_increasing_delay(self):
-        """Test that retry delays increase with each attempt."""
+        """
+        Test that retry delays increase with each attempt.
+
+        What this tests:
+        ---------------
+        1. Delays between retries
+        2. Exponential backoff
+        3. NoHostAvailable gets longer delays
+        4. Prevents thundering herd
+
+        Why this matters:
+        ----------------
+        Exponential backoff:
+        - Reduces server load
+        - Allows recovery time
+        - Prevents retry storms
+
+        Smart retry timing improves
+        overall system stability.
+        """
         mock_cluster = Mock()
         # Mock protocol version to pass validation
         mock_cluster.protocol_version = 5
@@ -106,7 +163,26 @@ class TestClusterConnectionRetry:
                     assert sleep_delays[1] == 4.0
 
     async def test_timeout_error_not_retried(self):
-        """Test that asyncio.TimeoutError is not retried."""
+        """
+        Test that asyncio.TimeoutError is not retried.
+
+        What this tests:
+        ---------------
+        1. Timeouts fail immediately
+        2. No retry for timeouts
+        3. TimeoutError propagated
+        4. Fast failure mode
+
+        Why this matters:
+        ----------------
+        Timeouts indicate:
+        - User-specified limit hit
+        - Operation too slow
+        - Should fail fast
+
+        Retrying timeouts would
+        violate user expectations.
+        """
         mock_cluster = Mock()
 
         # Create session that takes too long
@@ -130,7 +206,26 @@ class TestClusterConnectionRetry:
                 # Should not have retried (create was called only once)
 
     async def test_other_exceptions_use_shorter_delay(self):
-        """Test that non-NoHostAvailable exceptions use shorter retry delay."""
+        """
+        Test that non-NoHostAvailable exceptions use shorter retry delay.
+
+        What this tests:
+        ---------------
+        1. Different delays by error type
+        2. Generic errors get short delay
+        3. NoHostAvailable gets long delay
+        4. Smart backoff strategy
+
+        Why this matters:
+        ----------------
+        Error-specific delays:
+        - Network errors need more time
+        - Generic errors retry quickly
+        - Optimizes recovery time
+
+        Adaptive retry delays improve
+        connection success rates.
+        """
         mock_cluster = Mock()
         # Mock protocol version to pass validation
         mock_cluster.protocol_version = 5

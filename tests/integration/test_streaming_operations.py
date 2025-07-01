@@ -19,7 +19,26 @@ class TestStreamingIntegration:
     """Test streaming operations with real Cassandra using proper context managers."""
 
     async def test_basic_streaming(self, cassandra_session):
-        """Test basic streaming functionality with context managers."""
+        """
+        Test basic streaming functionality with context managers.
+
+        What this tests:
+        ---------------
+        1. Basic streaming works
+        2. Context manager usage
+        3. Row iteration
+        4. Total rows tracked
+
+        Why this matters:
+        ----------------
+        Context managers ensure:
+        - Resources cleaned up
+        - No memory leaks
+        - Proper error handling
+
+        CRITICAL for production
+        streaming usage.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -62,7 +81,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Streaming test failed: {e}")
 
     async def test_page_based_streaming(self, cassandra_session):
-        """Test streaming by pages with proper context managers."""
+        """
+        Test streaming by pages with proper context managers.
+
+        What this tests:
+        ---------------
+        1. Page-by-page iteration
+        2. Fetch size respected
+        3. Multiple pages handled
+        4. Filter conditions work
+
+        Why this matters:
+        ----------------
+        Page iteration enables:
+        - Batch processing
+        - Progress tracking
+        - Memory control
+
+        Essential for ETL and
+        bulk operations.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -104,7 +142,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Page-based streaming test failed: {e}")
 
     async def test_streaming_with_progress_callback(self, cassandra_session):
-        """Test streaming with progress callback using context managers."""
+        """
+        Test streaming with progress callback using context managers.
+
+        What this tests:
+        ---------------
+        1. Progress callbacks fire
+        2. Page numbers accurate
+        3. Row counts correct
+        4. Callback integration
+
+        Why this matters:
+        ----------------
+        Progress tracking enables:
+        - User feedback
+        - Long operation monitoring
+        - Cancellation decisions
+
+        Critical for interactive
+        applications.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -134,7 +191,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Progress callback test failed: {e}")
 
     async def test_streaming_statement_helper(self, cassandra_session):
-        """Test using the streaming statement helper with context managers."""
+        """
+        Test using the streaming statement helper with context managers.
+
+        What this tests:
+        ---------------
+        1. Helper function works
+        2. Statement configuration
+        3. LIMIT respected
+        4. Page tracking
+
+        Why this matters:
+        ----------------
+        Helper functions simplify:
+        - Statement creation
+        - Config management
+        - Common patterns
+
+        Improves developer
+        experience.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -156,7 +232,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Streaming statement helper test failed: {e}")
 
     async def test_streaming_with_parameters(self, cassandra_session):
-        """Test streaming with parameterized queries using context managers."""
+        """
+        Test streaming with parameterized queries using context managers.
+
+        What this tests:
+        ---------------
+        1. Prepared statements work
+        2. Parameters bound correctly
+        3. Filtering accurate
+        4. Type safety maintained
+
+        Why this matters:
+        ----------------
+        Parameterized queries:
+        - Prevent injection
+        - Improve performance
+        - Type checking
+
+        Security and performance
+        critical.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -195,7 +290,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Parameterized streaming test failed: {e}")
 
     async def test_streaming_empty_result(self, cassandra_session):
-        """Test streaming with empty result set using context managers."""
+        """
+        Test streaming with empty result set using context managers.
+
+        What this tests:
+        ---------------
+        1. Empty results handled
+        2. No errors on empty
+        3. Counts are zero
+        4. Context still works
+
+        Why this matters:
+        ----------------
+        Empty results common:
+        - No matching data
+        - Filtered queries
+        - Edge conditions
+
+        Must handle gracefully
+        without errors.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -215,7 +329,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Empty result streaming test failed: {e}")
 
     async def test_streaming_vs_regular_results(self, cassandra_session):
-        """Test that streaming and regular execute return same data."""
+        """
+        Test that streaming and regular execute return same data.
+
+        What this tests:
+        ---------------
+        1. Results identical
+        2. No data loss
+        3. Same row count
+        4. ID consistency
+
+        Why this matters:
+        ----------------
+        Streaming must be:
+        - Accurate alternative
+        - No data corruption
+        - Reliable results
+
+        Ensures streaming is
+        trustworthy.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -247,7 +380,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Streaming vs regular comparison failed: {e}")
 
     async def test_streaming_max_pages_limit(self, cassandra_session):
-        """Test streaming with maximum pages limit using context managers."""
+        """
+        Test streaming with maximum pages limit using context managers.
+
+        What this tests:
+        ---------------
+        1. Max pages enforced
+        2. Stops at limit
+        3. Row count limited
+        4. Page count accurate
+
+        Why this matters:
+        ----------------
+        Page limits enable:
+        - Resource control
+        - Preview functionality
+        - Sampling data
+
+        Prevents runaway
+        queries.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -270,7 +422,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Max pages limit test failed: {e}")
 
     async def test_streaming_early_exit(self, cassandra_session):
-        """Test early exit from streaming with proper cleanup."""
+        """
+        Test early exit from streaming with proper cleanup.
+
+        What this tests:
+        ---------------
+        1. Break works correctly
+        2. Cleanup still happens
+        3. Partial results OK
+        4. No resource leaks
+
+        Why this matters:
+        ----------------
+        Early exit common for:
+        - Finding first match
+        - User cancellation
+        - Error conditions
+
+        Must clean up properly
+        in all cases.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -305,7 +476,26 @@ class TestStreamingIntegration:
             pytest.fail(f"Early exit test failed: {e}")
 
     async def test_streaming_exception_handling(self, cassandra_session):
-        """Test exception handling during streaming with context managers."""
+        """
+        Test exception handling during streaming with context managers.
+
+        What this tests:
+        ---------------
+        1. Exceptions propagate
+        2. Cleanup on error
+        3. Context manager robust
+        4. No hanging resources
+
+        Why this matters:
+        ----------------
+        Error handling critical:
+        - Processing errors
+        - Network failures
+        - Application bugs
+
+        Resources must be freed
+        even on exceptions.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 

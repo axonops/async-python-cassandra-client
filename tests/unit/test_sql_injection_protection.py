@@ -12,7 +12,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_prepared_statements_used_for_user_input(self):
-        """Test that all user inputs use prepared statements."""
+        """
+        Test that all user inputs use prepared statements.
+
+        What this tests:
+        ---------------
+        1. User input via prepared statements
+        2. No dynamic SQL construction
+        3. Parameters properly bound
+        4. LIMIT values parameterized
+
+        Why this matters:
+        ----------------
+        SQL injection prevention requires:
+        - ALWAYS use prepared statements
+        - NEVER concatenate user input
+        - Parameterize ALL values
+
+        This is THE most critical
+        security requirement.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
@@ -29,7 +48,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_update_query_no_dynamic_sql(self):
-        """Test that UPDATE queries don't use dynamic SQL construction."""
+        """
+        Test that UPDATE queries don't use dynamic SQL construction.
+
+        What this tests:
+        ---------------
+        1. UPDATE queries predefined
+        2. No dynamic column lists
+        3. All variations prepared
+        4. Static query patterns
+
+        Why this matters:
+        ----------------
+        Dynamic SQL construction risky:
+        - Column names from user = danger
+        - Dynamic SET clauses = injection
+        - Must prepare all variations
+
+        Prefer multiple prepared statements
+        over dynamic SQL generation.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
@@ -55,7 +93,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_table_name_validation_before_use(self):
-        """Test that table names are validated before use in queries."""
+        """
+        Test that table names are validated before use in queries.
+
+        What this tests:
+        ---------------
+        1. Table names validated first
+        2. System tables checked
+        3. Only valid tables queried
+        4. Prevents table name injection
+
+        Why this matters:
+        ----------------
+        Table names cannot be parameterized:
+        - Must validate against whitelist
+        - Check system_schema.tables
+        - Reject unknown tables
+
+        Critical when table names come
+        from external sources.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
 
@@ -86,7 +143,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_no_string_interpolation_in_queries(self):
-        """Test that queries don't use string interpolation with user input."""
+        """
+        Test that queries don't use string interpolation with user input.
+
+        What this tests:
+        ---------------
+        1. No f-strings with queries
+        2. No .format() with SQL
+        3. No string concatenation
+        4. Safe parameter handling
+
+        Why this matters:
+        ----------------
+        String interpolation = SQL injection:
+        - f"{query}" is ALWAYS wrong
+        - "query " + value is DANGEROUS
+        - .format() enables attacks
+
+        Prepared statements are the
+        ONLY safe approach.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
@@ -113,7 +189,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_hardcoded_keyspace_names(self):
-        """Test that keyspace names are hardcoded, not from user input."""
+        """
+        Test that keyspace names are hardcoded, not from user input.
+
+        What this tests:
+        ---------------
+        1. Keyspace names are constants
+        2. No dynamic keyspace creation
+        3. DDL uses fixed names
+        4. set_keyspace uses constants
+
+        Why this matters:
+        ----------------
+        Keyspace names critical for security:
+        - Cannot be parameterized
+        - Must be hardcoded/whitelisted
+        - User input = disaster
+
+        Never let users control
+        keyspace or table names.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
 
@@ -140,7 +235,26 @@ class TestSQLInjectionProtection:
 
     @pytest.mark.asyncio
     async def test_streaming_queries_use_prepared_statements(self):
-        """Test that streaming queries use prepared statements."""
+        """
+        Test that streaming queries use prepared statements.
+
+        What this tests:
+        ---------------
+        1. Streaming queries prepared
+        2. Parameters used with streams
+        3. No dynamic SQL in streams
+        4. Safe LIMIT handling
+
+        Why this matters:
+        ----------------
+        Streaming queries especially risky:
+        - Process large data sets
+        - Long-running operations
+        - Injection = massive impact
+
+        Must use prepared statements
+        even for streaming queries.
+        """
         # Create mock session
         mock_session = AsyncMock(spec=AsyncCassandraSession)
         mock_stmt = AsyncMock()
@@ -157,7 +271,26 @@ class TestSQLInjectionProtection:
         mock_session.execute_stream.assert_called_with(mock_stmt, [limit])
 
     def test_sql_injection_patterns_not_present(self):
-        """Test that common SQL injection patterns are not in the codebase."""
+        """
+        Test that common SQL injection patterns are not in the codebase.
+
+        What this tests:
+        ---------------
+        1. No f-string SQL queries
+        2. No .format() with queries
+        3. No string concatenation
+        4. No %-formatting SQL
+
+        Why this matters:
+        ----------------
+        Static analysis prevents:
+        - Accidental SQL injection
+        - Bad patterns creeping in
+        - Security regressions
+
+        Code reviews should check
+        for these dangerous patterns.
+        """
         # This is a meta-test to ensure dangerous patterns aren't used
         dangerous_patterns = [
             'f"SELECT',  # f-string SQL

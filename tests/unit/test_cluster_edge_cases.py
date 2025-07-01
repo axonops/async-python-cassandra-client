@@ -28,7 +28,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_protocol_version_validation(self):
-        """Test that protocol versions below v5 are rejected."""
+        """
+        Test that protocol versions below v5 are rejected.
+
+        What this tests:
+        ---------------
+        1. Protocol v4 and below rejected
+        2. ConfigurationError at creation
+        3. v5+ versions accepted
+        4. Clear error messages
+
+        Why this matters:
+        ----------------
+        async-cassandra requires v5+ for:
+        - Required async features
+        - Better performance
+        - Modern functionality
+
+        Failing early prevents confusing
+        runtime errors.
+        """
         from async_cassandra.exceptions import ConfigurationError
 
         # Should reject v4 and below
@@ -53,7 +72,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_connection_retry_with_protocol_error(self):
-        """Test that protocol version errors are not retried."""
+        """
+        Test that protocol version errors are not retried.
+
+        What this tests:
+        ---------------
+        1. Protocol errors fail fast
+        2. No retry for version mismatch
+        3. Clear error message
+        4. Single attempt only
+
+        Why this matters:
+        ----------------
+        Protocol errors aren't transient:
+        - Server won't change version
+        - Retrying wastes time
+        - User needs to upgrade
+
+        Fast failure enables quick
+        diagnosis and resolution.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -86,7 +124,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_connection_retry_with_reset_errors(self):
-        """Test connection retry with connection reset errors."""
+        """
+        Test connection retry with connection reset errors.
+
+        What this tests:
+        ---------------
+        1. Connection resets trigger retry
+        2. Exponential backoff applied
+        3. Eventually succeeds
+        4. Retry timing increases
+
+        Why this matters:
+        ----------------
+        Connection resets are transient:
+        - Network hiccups
+        - Server restarts
+        - Load balancer changes
+
+        Automatic retry with backoff
+        handles temporary issues gracefully.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster.protocol_version = 5  # Set a valid protocol version
@@ -130,7 +187,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_concurrent_connect_attempts(self):
-        """Test handling of concurrent connection attempts."""
+        """
+        Test handling of concurrent connection attempts.
+
+        What this tests:
+        ---------------
+        1. Concurrent connects allowed
+        2. Each gets separate session
+        3. No connection reuse
+        4. Thread-safe operation
+
+        Why this matters:
+        ----------------
+        Real apps may connect concurrently:
+        - Multiple workers starting
+        - Parallel initialization
+        - No singleton pattern
+
+        Must handle concurrent connects
+        without deadlock or corruption.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -167,7 +243,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_cluster_shutdown_timeout(self):
-        """Test cluster shutdown with timeout."""
+        """
+        Test cluster shutdown with timeout.
+
+        What this tests:
+        ---------------
+        1. Shutdown can timeout
+        2. TimeoutError raised
+        3. Hanging shutdown detected
+        4. Async timeout works
+
+        Why this matters:
+        ----------------
+        Shutdown can hang due to:
+        - Network issues
+        - Deadlocked threads
+        - Resource cleanup bugs
+
+        Timeout prevents app hanging
+        during shutdown.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -190,7 +285,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_cluster_double_shutdown(self):
-        """Test that cluster shutdown is idempotent."""
+        """
+        Test that cluster shutdown is idempotent.
+
+        What this tests:
+        ---------------
+        1. Multiple shutdowns safe
+        2. Only shuts down once
+        3. is_closed flag works
+        4. close() also idempotent
+
+        Why this matters:
+        ----------------
+        Idempotent shutdown critical for:
+        - Error handling paths
+        - Cleanup in finally blocks
+        - Multiple shutdown sources
+
+        Prevents errors during cleanup
+        and resource leaks.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -215,7 +329,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_cluster_metadata_access(self):
-        """Test accessing cluster metadata."""
+        """
+        Test accessing cluster metadata.
+
+        What this tests:
+        ---------------
+        1. Metadata accessible
+        2. Keyspace info available
+        3. Direct passthrough
+        4. No async wrapper needed
+
+        Why this matters:
+        ----------------
+        Metadata access enables:
+        - Schema discovery
+        - Dynamic queries
+        - ORM functionality
+
+        Must work seamlessly through
+        async wrapper.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_metadata = Mock()
@@ -232,7 +365,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_register_user_type(self):
-        """Test user type registration."""
+        """
+        Test user type registration.
+
+        What this tests:
+        ---------------
+        1. UDT registration works
+        2. Delegates to driver
+        3. Parameters passed through
+        4. Type mapping enabled
+
+        Why this matters:
+        ----------------
+        User-defined types (UDTs):
+        - Complex data modeling
+        - Type-safe operations
+        - ORM integration
+
+        Registration must work for
+        proper UDT handling.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster.register_user_type = Mock()
@@ -253,7 +405,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_connection_with_auth_failure(self):
-        """Test connection with authentication failure."""
+        """
+        Test connection with authentication failure.
+
+        What this tests:
+        ---------------
+        1. Auth failures retried
+        2. Multiple attempts made
+        3. Eventually fails
+        4. Clear error message
+
+        Why this matters:
+        ----------------
+        Auth failures might be transient:
+        - Token expiration timing
+        - Auth service hiccup
+        - Race conditions
+
+        Limited retry gives auth
+        issues chance to resolve.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -279,7 +450,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_connection_with_mixed_errors(self):
-        """Test connection with different errors on different attempts."""
+        """
+        Test connection with different errors on different attempts.
+
+        What this tests:
+        ---------------
+        1. Different errors per attempt
+        2. All attempts exhausted
+        3. Last error reported
+        4. Varied error handling
+
+        Why this matters:
+        ----------------
+        Real failures are messy:
+        - Different nodes fail differently
+        - Errors change over time
+        - Mixed failure modes
+
+        Must handle varied errors
+        during connection attempts.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster
@@ -317,7 +507,26 @@ class TestClusterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_create_with_auth_convenience_method(self):
-        """Test create_with_auth convenience method."""
+        """
+        Test create_with_auth convenience method.
+
+        What this tests:
+        ---------------
+        1. Auth provider created
+        2. Credentials passed correctly
+        3. Other params preserved
+        4. Convenience method works
+
+        Why this matters:
+        ----------------
+        Simple auth setup critical:
+        - Common use case
+        - Easy to get wrong
+        - Security sensitive
+
+        Convenience method reduces
+        auth configuration errors.
+        """
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster = self._create_mock_cluster()
             mock_cluster_class.return_value = mock_cluster

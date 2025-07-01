@@ -16,13 +16,51 @@ pytest_plugins = ["tests._fixtures.cassandra"]
 
 @scenario("features/concurrent_load.feature", "Thread pool exhaustion prevention")
 def test_thread_pool_exhaustion():
-    """Test thread pool exhaustion prevention."""
+    """
+    Test thread pool exhaustion prevention.
+
+    What this tests:
+    ---------------
+    1. Thread pool limits respected
+    2. No deadlock under load
+    3. Queries complete eventually
+    4. Graceful degradation
+
+    Why this matters:
+    ----------------
+    Thread exhaustion causes:
+    - Application hangs
+    - Query timeouts
+    - Poor user experience
+
+    Must handle high load
+    without blocking.
+    """
     pass
 
 
 @scenario("features/concurrent_load.feature", "Memory leak prevention under load")
 def test_memory_leak_prevention():
-    """Test memory leak prevention."""
+    """
+    Test memory leak prevention.
+
+    What this tests:
+    ---------------
+    1. Memory usage stable
+    2. GC works effectively
+    3. No continuous growth
+    4. Resources cleaned up
+
+    Why this matters:
+    ----------------
+    Memory leaks fatal:
+    - OOM crashes
+    - Performance degradation
+    - Service instability
+
+    Long-running apps need
+    stable memory usage.
+    """
     pass
 
 

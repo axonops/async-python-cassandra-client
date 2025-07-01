@@ -19,7 +19,26 @@ class TestSelectOperations:
 
     @pytest.mark.asyncio
     async def test_select_with_large_result_set(self, cassandra_session):
-        """Test SELECT with large result sets to verify paging and retries work."""
+        """
+        Test SELECT with large result sets to verify paging and retries work.
+
+        What this tests:
+        ---------------
+        1. Large result sets (1000+ rows)
+        2. Automatic paging with fetch_size
+        3. Memory-efficient iteration
+        4. ALLOW FILTERING queries
+
+        Why this matters:
+        ----------------
+        Large result sets require:
+        - Paging to avoid OOM
+        - Streaming for efficiency
+        - Proper retry handling
+
+        Critical for analytics and
+        bulk data processing.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -58,7 +77,26 @@ class TestSelectOperations:
 
     @pytest.mark.asyncio
     async def test_select_with_limit_and_ordering(self, cassandra_session):
-        """Test SELECT with LIMIT and ordering to ensure retries preserve results."""
+        """
+        Test SELECT with LIMIT and ordering to ensure retries preserve results.
+
+        What this tests:
+        ---------------
+        1. LIMIT clause respected
+        2. Clustering order preserved
+        3. Time series queries
+        4. Result consistency
+
+        Why this matters:
+        ----------------
+        Ordered queries critical for:
+        - Time series data
+        - Top-N queries
+        - Pagination
+
+        Order must be consistent
+        across retries.
+        """
         # Create a table with clustering columns for ordering
         await cassandra_session.execute("DROP TABLE IF EXISTS time_series")
         await cassandra_session.execute(

@@ -14,7 +14,26 @@ class TestProtocolVersionIntegration:
 
     @pytest.mark.asyncio
     async def test_protocol_v5_connection(self):
-        """Test successful connection with protocol v5."""
+        """
+        Test successful connection with protocol v5.
+
+        What this tests:
+        ---------------
+        1. Protocol v5 connects
+        2. Queries execute OK
+        3. Results returned
+        4. Clean shutdown
+
+        Why this matters:
+        ----------------
+        Protocol v5 required:
+        - Async features
+        - Better performance
+        - New data types
+
+        Verifies minimum protocol
+        version works.
+        """
         cluster = AsyncCluster(contact_points=["localhost"], protocol_version=5)
 
         try:
@@ -31,7 +50,26 @@ class TestProtocolVersionIntegration:
 
     @pytest.mark.asyncio
     async def test_no_protocol_version_uses_negotiation(self):
-        """Test that omitting protocol version allows negotiation."""
+        """
+        Test that omitting protocol version allows negotiation.
+
+        What this tests:
+        ---------------
+        1. Auto-negotiation works
+        2. Driver picks version
+        3. Connection succeeds
+        4. Queries work
+
+        Why this matters:
+        ----------------
+        Flexible configuration:
+        - Works with any server
+        - Future compatibility
+        - Easier deployment
+
+        Default behavior should
+        just work.
+        """
         cluster = AsyncCluster(
             contact_points=["localhost"]
             # No protocol_version specified - driver will negotiate

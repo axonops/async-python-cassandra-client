@@ -79,7 +79,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_overloaded_error_message(self, mock_session):
-        """Test handling of OverloadedErrorMessage from coordinator."""
+        """
+        Test handling of OverloadedErrorMessage from coordinator.
+
+        What this tests:
+        ---------------
+        1. Server overload errors handled
+        2. OperationTimedOut for overload
+        3. Clear error message
+        4. Not wrapped (timeout exception)
+
+        Why this matters:
+        ----------------
+        Server overload indicates:
+        - Too much concurrent load
+        - Insufficient cluster capacity
+        - Need for backpressure
+
+        Applications should respond with
+        backoff and retry strategies.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create OverloadedErrorMessage - this is typically wrapped in OperationTimedOut
@@ -93,7 +112,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_read_timeout(self, mock_session):
-        """Test handling of ReadTimeout errors."""
+        """
+        Test handling of ReadTimeout errors.
+
+        What this tests:
+        ---------------
+        1. Read timeouts not wrapped
+        2. Consistency level preserved
+        3. Response count available
+        4. Data retrieval flag set
+
+        Why this matters:
+        ----------------
+        Read timeouts tell you:
+        - How many replicas responded
+        - Whether any data was retrieved
+        - If retry might succeed
+
+        Applications can make informed
+        retry decisions based on details.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         error = ReadTimeout(
@@ -114,7 +152,27 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_write_timeout(self, mock_session):
-        """Test handling of WriteTimeout errors."""
+        """
+        Test handling of WriteTimeout errors.
+
+        What this tests:
+        ---------------
+        1. Write timeouts not wrapped
+        2. Write type preserved
+        3. Response counts available
+        4. Consistency level included
+
+        Why this matters:
+        ----------------
+        Write timeout details critical for:
+        - Determining if write succeeded
+        - Understanding failure mode
+        - Deciding on retry safety
+
+        Different write types (SIMPLE, BATCH,
+        UNLOGGED_BATCH, COUNTER) need different
+        retry strategies.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         from cassandra import WriteType
@@ -138,7 +196,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_unavailable(self, mock_session):
-        """Test handling of Unavailable errors (not enough replicas)."""
+        """
+        Test handling of Unavailable errors (not enough replicas).
+
+        What this tests:
+        ---------------
+        1. Unavailable errors not wrapped
+        2. Required replica count shown
+        3. Alive replica count shown
+        4. Consistency level preserved
+
+        Why this matters:
+        ----------------
+        Unavailable means:
+        - Not enough replicas up
+        - Cannot meet consistency
+        - Cluster health issue
+
+        Retry won't help until more
+        replicas come online.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         error = Unavailable(
@@ -154,7 +231,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_read_failure(self, mock_session):
-        """Test handling of ReadFailure errors (replicas failed during read)."""
+        """
+        Test handling of ReadFailure errors (replicas failed during read).
+
+        What this tests:
+        ---------------
+        1. ReadFailure wrapped in QueryError
+        2. Failure count preserved
+        3. Data retrieval flag available
+        4. Original exception accessible
+
+        Why this matters:
+        ----------------
+        Read failures indicate:
+        - Replicas crashed/errored
+        - Data corruption possible
+        - More serious than timeout
+
+        Unlike timeouts, failures suggest
+        retry unlikely to succeed.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = ReadFailure("Read failed on replicas", data_retrieved=False)
@@ -176,7 +272,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_write_failure(self, mock_session):
-        """Test handling of WriteFailure errors (replicas failed during write)."""
+        """
+        Test handling of WriteFailure errors (replicas failed during write).
+
+        What this tests:
+        ---------------
+        1. WriteFailure wrapped in QueryError
+        2. Write type preserved
+        3. Failure count available
+        4. Response details included
+
+        Why this matters:
+        ----------------
+        Write failures mean:
+        - Replicas rejected write
+        - Possible constraint violation
+        - Data inconsistency risk
+
+        Critical for understanding if
+        write partially succeeded.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         from cassandra import WriteType
@@ -199,7 +314,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_function_failure(self, mock_session):
-        """Test handling of FunctionFailure errors (UDF execution failed)."""
+        """
+        Test handling of FunctionFailure errors (UDF execution failed).
+
+        What this tests:
+        ---------------
+        1. FunctionFailure wrapped in QueryError
+        2. Function details preserved
+        3. Keyspace and name available
+        4. Argument types included
+
+        Why this matters:
+        ----------------
+        UDF failures indicate:
+        - Logic errors in function
+        - Invalid input data
+        - Resource constraints
+
+        Details help debug which function
+        failed and why.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create the actual FunctionFailure that would come from the driver
@@ -225,7 +359,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_cdc_write_failure(self, mock_session):
-        """Test handling of CDCWriteFailure errors."""
+        """
+        Test handling of CDCWriteFailure errors.
+
+        What this tests:
+        ---------------
+        1. CDCWriteFailure wrapped in QueryError
+        2. CDC-specific error identified
+        3. Original cause preserved
+        4. Clear error message
+
+        Why this matters:
+        ----------------
+        CDC (Change Data Capture) failures:
+        - CDC log space exhausted
+        - CDC disabled on table
+        - System overload
+
+        Applications using CDC need to
+        handle these specific errors.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = CDCWriteFailure("CDC write failed")
@@ -240,7 +393,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_coordinator_failure(self, mock_session):
-        """Test handling of CoordinationFailure errors."""
+        """
+        Test handling of CoordinationFailure errors.
+
+        What this tests:
+        ---------------
+        1. CoordinationFailure wrapped in QueryError
+        2. Coordinator node failure handled
+        3. Error message preserved
+        4. Cause accessible
+
+        Why this matters:
+        ----------------
+        Coordination failures mean:
+        - Coordinator node issues
+        - Cannot orchestrate query
+        - Different from replica failures
+
+        May succeed on retry with
+        different coordinator.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = CoordinationFailure("Coordinator failed to execute query")
@@ -255,7 +427,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_is_bootstrapping_error(self, mock_session):
-        """Test handling of IsBootstrappingErrorMessage."""
+        """
+        Test handling of IsBootstrappingErrorMessage.
+
+        What this tests:
+        ---------------
+        1. Bootstrapping errors in NoHostAvailable
+        2. Node state errors handled
+        3. Connection exceptions preserved
+        4. Host-specific errors shown
+
+        Why this matters:
+        ----------------
+        Bootstrapping nodes:
+        - Still joining cluster
+        - Not ready for queries
+        - Temporary state
+
+        Applications should retry on
+        other nodes until bootstrap completes.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Bootstrapping errors are typically wrapped in NoHostAvailable
@@ -271,7 +462,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_truncate_error(self, mock_session):
-        """Test handling of TruncateError."""
+        """
+        Test handling of TruncateError.
+
+        What this tests:
+        ---------------
+        1. Truncate timeouts handled
+        2. OperationTimedOut for truncate
+        3. Error message specific
+        4. Not wrapped
+
+        Why this matters:
+        ----------------
+        Truncate errors indicate:
+        - Truncate taking too long
+        - Cluster coordination issues
+        - Heavy operation timeout
+
+        Truncate is expensive - timeouts
+        expected on large tables.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # TruncateError is typically wrapped in OperationTimedOut
@@ -285,7 +495,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_server_error(self, mock_session):
-        """Test handling of generic ServerError."""
+        """
+        Test handling of generic ServerError.
+
+        What this tests:
+        ---------------
+        1. ServerError wrapped in QueryError
+        2. Error code preserved
+        3. Error message included
+        4. Additional info available
+
+        Why this matters:
+        ----------------
+        Generic server errors indicate:
+        - Internal Cassandra errors
+        - Unexpected conditions
+        - Bugs or edge cases
+
+        Error codes help identify
+        specific server issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # ServerError is an ErrorMessage subclass that requires code, message, info
@@ -301,7 +530,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_protocol_error(self, mock_session):
-        """Test handling of ProtocolError."""
+        """
+        Test handling of ProtocolError.
+
+        What this tests:
+        ---------------
+        1. ProtocolError wrapped in QueryError
+        2. Protocol violations caught
+        3. Error message preserved
+        4. Original cause accessible
+
+        Why this matters:
+        ----------------
+        Protocol errors serious:
+        - Version mismatches
+        - Message corruption
+        - Driver/server bugs
+
+        Usually requires investigation,
+        not simple retry.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # ProtocolError from connection module takes just a message
@@ -317,7 +565,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_connection_busy(self, mock_session):
-        """Test handling of ConnectionBusy errors."""
+        """
+        Test handling of ConnectionBusy errors.
+
+        What this tests:
+        ---------------
+        1. ConnectionBusy wrapped in QueryError
+        2. In-flight request limit hit
+        3. Connection saturation handled
+        4. Clear error message
+
+        Why this matters:
+        ----------------
+        Connection busy means:
+        - Too many concurrent requests
+        - Per-connection limit reached
+        - Need more connections or less load
+
+        Different from pool exhaustion -
+        this is per-connection limit.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = ConnectionBusy("Connection has too many in-flight requests")
@@ -334,7 +601,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_connection_shutdown(self, mock_session):
-        """Test handling of ConnectionShutdown errors."""
+        """
+        Test handling of ConnectionShutdown errors.
+
+        What this tests:
+        ---------------
+        1. ConnectionShutdown wrapped in QueryError
+        2. Graceful shutdown detected
+        3. Connection closing handled
+        4. Error message clear
+
+        Why this matters:
+        ----------------
+        Connection shutdown occurs when:
+        - Node shutting down cleanly
+        - Connection being recycled
+        - Maintenance operations
+
+        Applications should retry on
+        different connection.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = ConnectionShutdown("Connection is shutting down")
@@ -349,7 +635,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_no_connections_available(self, mock_session):
-        """Test handling of NoConnectionsAvailable from pool."""
+        """
+        Test handling of NoConnectionsAvailable from pool.
+
+        What this tests:
+        ---------------
+        1. NoConnectionsAvailable wrapped in QueryError
+        2. Pool exhaustion detected
+        3. Clear error message
+        4. Original cause preserved
+
+        Why this matters:
+        ----------------
+        No connections available means:
+        - Connection pool exhausted
+        - All connections busy
+        - Need to wait or expand pool
+
+        Common under high load -
+        applications must handle gracefully.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = NoConnectionsAvailable("Connection pool exhausted")
@@ -364,7 +669,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_already_exists(self, mock_session):
-        """Test handling of AlreadyExists errors."""
+        """
+        Test handling of AlreadyExists errors.
+
+        What this tests:
+        ---------------
+        1. AlreadyExists wrapped in QueryError
+        2. Keyspace/table info preserved
+        3. Schema conflict detected
+        4. Details accessible
+
+        Why this matters:
+        ----------------
+        Already exists errors for:
+        - CREATE TABLE conflicts
+        - CREATE KEYSPACE conflicts
+        - Schema synchronization issues
+
+        May be safe to ignore if
+        idempotent schema creation.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         original_error = AlreadyExists(keyspace="test_ks", table="test_table")
@@ -381,7 +705,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_invalid_request(self, mock_session):
-        """Test handling of InvalidRequest errors."""
+        """
+        Test handling of InvalidRequest errors.
+
+        What this tests:
+        ---------------
+        1. InvalidRequest not wrapped
+        2. Syntax errors caught
+        3. Clear error message
+        4. Driver exception passed through
+
+        Why this matters:
+        ----------------
+        Invalid requests indicate:
+        - CQL syntax errors
+        - Schema mismatches
+        - Invalid operations
+
+        These are programming errors
+        that need fixing, not retrying.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         error = InvalidRequest("Invalid CQL syntax")
@@ -394,7 +737,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_multiple_error_types_in_sequence(self, mock_session):
-        """Test handling different error types in sequence."""
+        """
+        Test handling different error types in sequence.
+
+        What this tests:
+        ---------------
+        1. Multiple error types handled
+        2. Each preserves its type
+        3. No error state pollution
+        4. Clean error handling
+
+        Why this matters:
+        ----------------
+        Real applications see various errors:
+        - Must handle each appropriately
+        - Error handling can't break
+        - State must stay clean
+
+        Ensures robust error handling
+        across all exception types.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         errors = [
@@ -414,7 +776,25 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_error_during_prepared_statement(self, mock_session):
-        """Test error handling during prepared statement execution."""
+        """
+        Test error handling during prepared statement execution.
+
+        What this tests:
+        ---------------
+        1. Prepare succeeds, execute fails
+        2. Prepared statement errors handled
+        3. WriteTimeout during execution
+        4. Error details preserved
+
+        Why this matters:
+        ----------------
+        Prepared statements can fail at:
+        - Preparation time (schema issues)
+        - Execution time (timeout/failures)
+
+        Both error paths must work correctly
+        for production reliability.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare succeeds
@@ -444,7 +824,26 @@ class TestProtocolExceptions:
 
     @pytest.mark.asyncio
     async def test_no_host_available_with_multiple_errors(self, mock_session):
-        """Test NoHostAvailable with different errors per host."""
+        """
+        Test NoHostAvailable with different errors per host.
+
+        What this tests:
+        ---------------
+        1. NoHostAvailable aggregates errors
+        2. Per-host errors preserved
+        3. Different failure modes shown
+        4. All error details available
+
+        Why this matters:
+        ----------------
+        NoHostAvailable shows why each host failed:
+        - Connection refused
+        - Authentication failed
+        - Timeout
+
+        Detailed errors essential for
+        diagnosing cluster-wide issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Multiple hosts with different failures

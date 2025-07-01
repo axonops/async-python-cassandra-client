@@ -16,7 +16,26 @@ class TestEventLoopHandling:
     """Test that event loop references are not stored."""
 
     async def test_result_handler_no_stored_loop_reference(self):
-        """Test that AsyncResultHandler doesn't store event loop reference initially."""
+        """
+        Test that AsyncResultHandler doesn't store event loop reference initially.
+
+        What this tests:
+        ---------------
+        1. No loop reference at creation
+        2. Future not created eagerly
+        3. Early result tracking exists
+        4. Lazy initialization pattern
+
+        Why this matters:
+        ----------------
+        Event loop references problematic:
+        - Can't share across threads
+        - Prevents object reuse
+        - Causes "attached to different loop" errors
+
+        Lazy creation allows flexible
+        usage across different contexts.
+        """
         # Create handler
         response_future = Mock()
         response_future.has_more_pages = False
@@ -34,7 +53,26 @@ class TestEventLoopHandling:
         assert hasattr(handler, "_early_error")
 
     async def test_streaming_no_stored_loop_reference(self):
-        """Test that AsyncStreamingResultSet doesn't store event loop reference initially."""
+        """
+        Test that AsyncStreamingResultSet doesn't store event loop reference initially.
+
+        What this tests:
+        ---------------
+        1. Loop starts as None
+        2. No eager event creation
+        3. Clean initial state
+        4. Ready for any loop
+
+        Why this matters:
+        ----------------
+        Streaming objects created in threads:
+        - Driver callbacks from thread pool
+        - No event loop in creation context
+        - Must defer loop capture
+
+        Enables thread-safe object creation
+        before async iteration.
+        """
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = False
@@ -46,7 +84,27 @@ class TestEventLoopHandling:
         assert result_set._loop is None
 
     async def test_future_created_on_first_get_result(self):
-        """Test that future is created on first call to get_result."""
+        """
+        Test that future is created on first call to get_result.
+
+        What this tests:
+        ---------------
+        1. Future created on demand
+        2. Loop captured at usage time
+        3. Callbacks work correctly
+        4. Results properly aggregated
+
+        Why this matters:
+        ----------------
+        Just-in-time future creation:
+        - Captures correct event loop
+        - Avoids cross-loop issues
+        - Works with any async context
+
+        Critical for framework integration
+        where object creation context differs
+        from usage context.
+        """
         # Create handler with has_more_pages=True to prevent immediate completion
         response_future = Mock()
         response_future.has_more_pages = True  # Start with more pages
@@ -85,7 +143,27 @@ class TestEventLoopHandling:
         assert len(result.rows) == 2
 
     async def test_streaming_page_ready_lazy_creation(self):
-        """Test that page_ready event is created lazily."""
+        """
+        Test that page_ready event is created lazily.
+
+        What this tests:
+        ---------------
+        1. Event created on iteration start
+        2. Thread callbacks work correctly
+        3. Loop captured at right time
+        4. Cross-thread coordination works
+
+        Why this matters:
+        ----------------
+        Streaming uses thread callbacks:
+        - Driver calls from thread pool
+        - Event needed for coordination
+        - Must work across thread boundaries
+
+        Lazy event creation ensures
+        correct loop association for
+        thread-to-async communication.
+        """
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = False

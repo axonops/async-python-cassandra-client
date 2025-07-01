@@ -40,7 +40,26 @@ class TestReconnectionBehavior:
 
     @pytest.mark.integration
     def test_raw_driver_reconnection(self):
-        """Test reconnection with raw Cassandra driver (synchronous)."""
+        """
+        Test reconnection with raw Cassandra driver (synchronous).
+
+        What this tests:
+        ---------------
+        1. Raw driver reconnects
+        2. After service outage
+        3. Reconnection policy works
+        4. Full functionality restored
+
+        Why this matters:
+        ----------------
+        Baseline behavior shows:
+        - Expected reconnection time
+        - Driver capabilities
+        - Recovery patterns
+
+        Wrapper must match this
+        baseline behavior.
+        """
         print("\n=== Testing Raw Driver Reconnection ===")
 
         # Skip this test in CI since we can't control Cassandra service
@@ -131,7 +150,26 @@ class TestReconnectionBehavior:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_async_wrapper_reconnection(self):
-        """Test reconnection with async wrapper."""
+        """
+        Test reconnection with async wrapper.
+
+        What this tests:
+        ---------------
+        1. Wrapper reconnects properly
+        2. Async operations resume
+        3. No blocking during outage
+        4. Same behavior as raw driver
+
+        Why this matters:
+        ----------------
+        Wrapper must not break:
+        - Driver reconnection logic
+        - Automatic recovery
+        - Connection pooling
+
+        Critical for production
+        reliability.
+        """
         print("\n=== Testing Async Wrapper Reconnection ===")
 
         # Skip this test in CI since we can't control Cassandra service
@@ -223,7 +261,26 @@ class TestReconnectionBehavior:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reconnection_timing_comparison(self):
-        """Compare reconnection timing between raw driver and async wrapper."""
+        """
+        Compare reconnection timing between raw driver and async wrapper.
+
+        What this tests:
+        ---------------
+        1. Both reconnect similarly
+        2. Timing within 5 seconds
+        3. No wrapper overhead
+        4. Parallel comparison
+
+        Why this matters:
+        ----------------
+        Performance validation:
+        - Wrapper adds minimal delay
+        - Recovery time predictable
+        - Production SLAs met
+
+        Ensures wrapper doesn't
+        degrade reconnection.
+        """
         print("\n=== Comparing Reconnection Timing ===")
 
         # Skip this test in CI since we can't control Cassandra service

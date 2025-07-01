@@ -23,6 +23,23 @@ class TestContextManagerSafetyIntegration:
     async def test_session_remains_open_after_query_error(self, cassandra_session):
         """
         Test that session remains usable after a query error occurs.
+
+        What this tests:
+        ---------------
+        1. Query errors don't close session
+        2. Session still usable
+        3. New queries work
+        4. Insert/select functional
+
+        Why this matters:
+        ----------------
+        Error recovery critical:
+        - Apps have query errors
+        - Must continue operating
+        - No resource leaks
+
+        Sessions must survive
+        individual query failures.
         """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
@@ -52,6 +69,23 @@ class TestContextManagerSafetyIntegration:
     async def test_streaming_error_doesnt_close_session(self, cassandra_session):
         """
         Test that an error during streaming doesn't close the session.
+
+        What this tests:
+        ---------------
+        1. Stream errors handled
+        2. Session stays open
+        3. New streams work
+        4. Regular queries work
+
+        Why this matters:
+        ----------------
+        Streaming failures common:
+        - Large result sets
+        - Network interruptions
+        - Query timeouts
+
+        Session must survive
+        streaming failures.
         """
         # Create test table
         await cassandra_session.execute(
@@ -97,6 +131,23 @@ class TestContextManagerSafetyIntegration:
     async def test_concurrent_streaming_sessions(self, cassandra_session, cassandra_cluster):
         """
         Test that multiple sessions can stream concurrently without interference.
+
+        What this tests:
+        ---------------
+        1. Multiple sessions work
+        2. Concurrent streaming OK
+        3. No interference
+        4. Independent results
+
+        Why this matters:
+        ----------------
+        Multi-session patterns:
+        - Worker processes
+        - Parallel processing
+        - Load distribution
+
+        Sessions must be truly
+        independent.
         """
         # Create test table
         await cassandra_session.execute(
@@ -156,6 +207,23 @@ class TestContextManagerSafetyIntegration:
     async def test_session_context_manager_with_streaming(self, cassandra_cluster):
         """
         Test using session context manager with streaming operations.
+
+        What this tests:
+        ---------------
+        1. Session context managers
+        2. Streaming within context
+        3. Error cleanup works
+        4. Resources freed
+
+        Why this matters:
+        ----------------
+        Context managers ensure:
+        - Proper cleanup
+        - Exception safety
+        - Resource management
+
+        Critical for production
+        reliability.
         """
         try:
             # Use session in context manager
@@ -211,6 +279,23 @@ class TestContextManagerSafetyIntegration:
     async def test_cluster_context_manager_multiple_sessions(self, cassandra_cluster):
         """
         Test cluster context manager with multiple sessions.
+
+        What this tests:
+        ---------------
+        1. Multiple sessions per cluster
+        2. Independent session lifecycle
+        3. Cluster cleanup on exit
+        4. Session isolation
+
+        Why this matters:
+        ----------------
+        Multi-session patterns:
+        - Connection pooling
+        - Worker threads
+        - Service isolation
+
+        Cluster must manage all
+        sessions properly.
         """
         # Use cluster in context manager
         async with AsyncCluster(["localhost"]) as cluster:
@@ -246,6 +331,23 @@ class TestContextManagerSafetyIntegration:
     async def test_nested_streaming_contexts(self, cassandra_session):
         """
         Test nested streaming context managers.
+
+        What this tests:
+        ---------------
+        1. Nested streams work
+        2. Inner/outer independence
+        3. Proper cleanup order
+        4. No resource conflicts
+
+        Why this matters:
+        ----------------
+        Nested patterns common:
+        - Parent-child queries
+        - Hierarchical data
+        - Complex workflows
+
+        Must handle nested contexts
+        without deadlocks.
         """
         # Create test tables
         await cassandra_session.execute(

@@ -24,7 +24,26 @@ class TestFastAPIReconnectionIsolation:
     @pytest.mark.asyncio
     @pytest.mark.skip(reason="Requires container control not available in CI")
     async def test_session_health_check_pattern(self):
-        """Test the FastAPI health check pattern that might prevent reconnection."""
+        """
+        Test the FastAPI health check pattern that might prevent reconnection.
+
+        What this tests:
+        ---------------
+        1. Health check pattern
+        2. Failure detection
+        3. Recovery behavior
+        4. Session reuse
+
+        Why this matters:
+        ----------------
+        FastAPI patterns:
+        - Health endpoints common
+        - Global session reuse
+        - Must handle outages
+
+        Verifies reconnection works
+        with app patterns.
+        """
         pytest.skip("This test requires container control capabilities")
         print("\n=== Testing FastAPI Health Check Pattern ===")
 
@@ -136,7 +155,26 @@ class TestFastAPIReconnectionIsolation:
     @pytest.mark.asyncio
     @pytest.mark.skip(reason="Requires container control not available in CI")
     async def test_global_session_reconnection(self):
-        """Test reconnection with global session variable like FastAPI."""
+        """
+        Test reconnection with global session variable like FastAPI.
+
+        What this tests:
+        ---------------
+        1. Global session pattern
+        2. Reconnection works
+        3. No session replacement
+        4. Automatic recovery
+
+        Why this matters:
+        ----------------
+        Global state common:
+        - FastAPI apps
+        - Flask apps
+        - Service patterns
+
+        Must reconnect without
+        manual intervention.
+        """
         pytest.skip("This test requires container control capabilities")
         print("\n=== Testing Global Session Reconnection ===")
 

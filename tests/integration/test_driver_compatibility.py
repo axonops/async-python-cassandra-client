@@ -38,7 +38,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_basic_query_compatibility(self, sync_session, session_with_keyspace):
-        """Test basic query execution matches between sync and async."""
+        """
+        Test basic query execution matches between sync and async.
+
+        What this tests:
+        ---------------
+        1. Same query syntax works
+        2. Prepared statements compatible
+        3. Results format matches
+        4. Independent keyspaces
+
+        Why this matters:
+        ----------------
+        API compatibility ensures:
+        - Easy migration
+        - Same patterns work
+        - No relearning needed
+
+        Drop-in replacement for
+        sync driver.
+        """
         async_session, keyspace = session_with_keyspace
 
         # Create table in both sessions' keyspace
@@ -82,7 +101,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_batch_compatibility(self, sync_session, session_with_keyspace):
-        """Test batch operations compatibility."""
+        """
+        Test batch operations compatibility.
+
+        What this tests:
+        ---------------
+        1. Batch types work same
+        2. Counter batches OK
+        3. Statement binding
+        4. Execution results
+
+        Why this matters:
+        ----------------
+        Batch operations critical:
+        - Atomic operations
+        - Performance optimization
+        - Complex workflows
+
+        Must work identically
+        to sync driver.
+        """
         async_session, keyspace = session_with_keyspace
 
         # Create tables in both keyspaces
@@ -176,7 +214,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_row_factory_compatibility(self, sync_session, session_with_keyspace):
-        """Test row factories work the same."""
+        """
+        Test row factories work the same.
+
+        What this tests:
+        ---------------
+        1. dict_factory works
+        2. Same result format
+        3. Key/value access
+        4. Custom factories
+
+        Why this matters:
+        ----------------
+        Row factories enable:
+        - Custom result types
+        - ORM integration
+        - Flexible data access
+
+        Must preserve driver's
+        flexibility.
+        """
         async_session, keyspace = session_with_keyspace
 
         table_name = f"compat_factory_{uuid.uuid4().hex[:8]}"
@@ -228,7 +285,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_timeout_compatibility(self, sync_session, session_with_keyspace):
-        """Test timeout behavior is similar."""
+        """
+        Test timeout behavior is similar.
+
+        What this tests:
+        ---------------
+        1. Timeouts respected
+        2. Same timeout API
+        3. No crashes
+        4. Error handling
+
+        Why this matters:
+        ----------------
+        Timeout control critical:
+        - Prevent hanging
+        - Resource management
+        - User experience
+
+        Must match sync driver
+        timeout behavior.
+        """
         async_session, keyspace = session_with_keyspace
 
         table_name = f"compat_timeout_{uuid.uuid4().hex[:8]}"
@@ -268,7 +344,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_trace_compatibility(self, sync_session, session_with_keyspace):
-        """Test query tracing works the same."""
+        """
+        Test query tracing works the same.
+
+        What this tests:
+        ---------------
+        1. Tracing enabled
+        2. Trace data available
+        3. Same trace API
+        4. Debug capability
+
+        Why this matters:
+        ----------------
+        Tracing essential for:
+        - Performance debugging
+        - Query optimization
+        - Issue diagnosis
+
+        Must preserve debugging
+        capabilities.
+        """
         async_session, keyspace = session_with_keyspace
 
         table_name = f"compat_trace_{uuid.uuid4().hex[:8]}"
@@ -314,7 +409,26 @@ class TestDriverCompatibility:
 
     @pytest.mark.asyncio
     async def test_lwt_compatibility(self, sync_session, session_with_keyspace):
-        """Test lightweight transactions work the same."""
+        """
+        Test lightweight transactions work the same.
+
+        What this tests:
+        ---------------
+        1. IF NOT EXISTS works
+        2. Conditional updates
+        3. Applied flag correct
+        4. Failure handling
+
+        Why this matters:
+        ----------------
+        LWT critical for:
+        - ACID operations
+        - Conflict resolution
+        - Data consistency
+
+        Must work identically
+        for correctness.
+        """
         async_session, keyspace = session_with_keyspace
 
         table_name = f"compat_lwt_{uuid.uuid4().hex[:8]}"

@@ -118,7 +118,26 @@ class TestPreparedStatementInvalidation:
     async def test_prepared_statement_invalidation_error(
         self, mock_session, mock_prepared_statement
     ):
-        """Test that invalidated prepared statements raise InvalidRequest."""
+        """
+        Test that invalidated prepared statements raise InvalidRequest.
+
+        What this tests:
+        ---------------
+        1. Invalidated statements detected
+        2. InvalidRequest exception raised
+        3. Clear error message provided
+        4. No automatic re-preparation
+
+        Why this matters:
+        ----------------
+        Schema changes invalidate statements:
+        - Column added/removed
+        - Table recreated
+        - Type changes
+
+        Applications must handle invalidation
+        and re-prepare statements.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # First prepare succeeds (using sync prepare method)
@@ -141,7 +160,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_manual_reprepare_after_invalidation(self, mock_session, mock_prepared_statement):
-        """Test manual re-preparation after invalidation."""
+        """
+        Test manual re-preparation after invalidation.
+
+        What this tests:
+        ---------------
+        1. Re-preparation creates new statement
+        2. New statement has different ID
+        3. Execution works after re-prepare
+        4. Old statement remains invalid
+
+        Why this matters:
+        ----------------
+        Recovery pattern after invalidation:
+        - Catch InvalidRequest
+        - Re-prepare statement
+        - Retry with new statement
+
+        Critical for handling schema
+        evolution in production.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # First prepare succeeds (using sync prepare method)
@@ -184,7 +222,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_concurrent_invalidation_handling(self, mock_session, mock_prepared_statement):
-        """Test that concurrent executions all fail with invalidation."""
+        """
+        Test that concurrent executions all fail with invalidation.
+
+        What this tests:
+        ---------------
+        1. All concurrent queries fail
+        2. Each gets InvalidRequest
+        3. No race conditions
+        4. Consistent error handling
+
+        Why this matters:
+        ----------------
+        Under high concurrency:
+        - Many queries may use same statement
+        - All must handle invalidation
+        - No query should hang or corrupt
+
+        Ensures thread-safe error propagation
+        for invalidated statements.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare statement
@@ -208,7 +265,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_invalidation_during_batch_execution(self, mock_session, mock_prepared_statement):
-        """Test prepared statement invalidation during batch execution."""
+        """
+        Test prepared statement invalidation during batch execution.
+
+        What this tests:
+        ---------------
+        1. Batch with prepared statements
+        2. Invalidation affects batch
+        3. Whole batch fails
+        4. Error clearly indicates issue
+
+        Why this matters:
+        ----------------
+        Batches often contain prepared statements:
+        - Bulk inserts/updates
+        - Multi-row operations
+        - Transaction-like semantics
+
+        Batch invalidation requires re-preparing
+        all statements in the batch.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare statement
@@ -233,7 +309,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_invalidation_error_propagation(self, mock_session, mock_prepared_statement):
-        """Test that non-invalidation errors are properly propagated."""
+        """
+        Test that non-invalidation errors are properly propagated.
+
+        What this tests:
+        ---------------
+        1. Non-invalidation errors preserved
+        2. Timeouts not confused with invalidation
+        3. Error types maintained
+        4. No incorrect error wrapping
+
+        Why this matters:
+        ----------------
+        Different errors need different handling:
+        - Timeouts: retry same statement
+        - Invalidation: re-prepare needed
+        - Other errors: various responses
+
+        Accurate error types enable
+        correct recovery strategies.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare statement
@@ -253,7 +348,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_reprepare_failure_handling(self, mock_session, mock_prepared_statement):
-        """Test handling when re-preparation itself fails."""
+        """
+        Test handling when re-preparation itself fails.
+
+        What this tests:
+        ---------------
+        1. Re-preparation can fail
+        2. Table might be dropped
+        3. QueryError wraps prepare errors
+        4. Original cause preserved
+
+        Why this matters:
+        ----------------
+        Re-preparation fails when:
+        - Table/keyspace dropped
+        - Permissions changed
+        - Query now invalid
+
+        Applications must handle both
+        invalidation AND re-prepare failure.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Initial prepare succeeds
@@ -282,7 +396,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_prepared_statement_cache_behavior(self, mock_session):
-        """Test that prepared statements are not cached by the async wrapper."""
+        """
+        Test that prepared statements are not cached by the async wrapper.
+
+        What this tests:
+        ---------------
+        1. No built-in caching in wrapper
+        2. Each prepare goes to driver
+        3. Driver handles caching
+        4. Different IDs for re-prepares
+
+        Why this matters:
+        ----------------
+        Caching strategy important:
+        - Driver caches per connection
+        - Application may cache globally
+        - Wrapper stays simple
+
+        Applications should implement
+        their own caching strategy.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create different prepared statements for same query
@@ -313,7 +446,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_invalidation_with_custom_payload(self, mock_session, mock_prepared_statement):
-        """Test prepared statement invalidation with custom payload."""
+        """
+        Test prepared statement invalidation with custom payload.
+
+        What this tests:
+        ---------------
+        1. Custom payloads work with prepare
+        2. Payload passed to driver
+        3. Invalidation still detected
+        4. Tracing/debugging preserved
+
+        Why this matters:
+        ----------------
+        Custom payloads used for:
+        - Request tracing
+        - Performance monitoring
+        - Debugging metadata
+
+        Must work correctly even during
+        error scenarios like invalidation.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare with custom payload
@@ -337,7 +489,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_statement_id_tracking(self, mock_session):
-        """Test that statement IDs are properly tracked."""
+        """
+        Test that statement IDs are properly tracked.
+
+        What this tests:
+        ---------------
+        1. Each statement has unique ID
+        2. IDs preserved in errors
+        3. Can identify which statement failed
+        4. Helpful error messages
+
+        Why this matters:
+        ----------------
+        Statement IDs help debugging:
+        - Which statement invalidated
+        - Correlate with server logs
+        - Track statement lifecycle
+
+        Essential for troubleshooting
+        production invalidation issues.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Create statements with specific IDs
@@ -368,7 +539,26 @@ class TestPreparedStatementInvalidation:
 
     @pytest.mark.asyncio
     async def test_invalidation_after_schema_change(self, mock_session):
-        """Test prepared statement invalidation after schema change."""
+        """
+        Test prepared statement invalidation after schema change.
+
+        What this tests:
+        ---------------
+        1. Statement works before change
+        2. Schema change invalidates
+        3. Result metadata mismatch detected
+        4. Clear error about metadata
+
+        Why this matters:
+        ----------------
+        Common schema changes that invalidate:
+        - ALTER TABLE ADD COLUMN
+        - DROP/RECREATE TABLE
+        - Type modifications
+
+        This is the most common cause of
+        invalidation in production systems.
+        """
         async_session = AsyncCassandraSession(mock_session)
 
         # Prepare statement

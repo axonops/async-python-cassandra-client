@@ -18,7 +18,26 @@ class TestResponseFutureCleanup:
     """Test explicit cleanup of ResponseFuture callbacks."""
 
     async def test_handler_cleanup_on_error(self):
-        """Test that callbacks are cleaned up when handler encounters error."""
+        """
+        Test that callbacks are cleaned up when handler encounters error.
+
+        What this tests:
+        ---------------
+        1. Callbacks cleared on error
+        2. ResponseFuture cleanup called
+        3. No dangling references
+        4. Error still propagated
+
+        Why this matters:
+        ----------------
+        Callback cleanup prevents:
+        - Memory leaks
+        - Circular references
+        - Ghost callbacks firing
+
+        Critical for long-running apps
+        with many queries.
+        """
         # Create mock response future
         response_future = Mock()
         response_future.has_more_pages = True  # Prevent immediate completion
@@ -56,7 +75,26 @@ class TestResponseFutureCleanup:
         assert callbacks_cleared, "Callbacks were not cleared on error"
 
     async def test_streaming_cleanup_on_error(self):
-        """Test that streaming callbacks are cleaned up on error."""
+        """
+        Test that streaming callbacks are cleaned up on error.
+
+        What this tests:
+        ---------------
+        1. Streaming error triggers cleanup
+        2. Callbacks cleared properly
+        3. Error propagated to iterator
+        4. Resources freed
+
+        Why this matters:
+        ----------------
+        Streaming holds more resources:
+        - Page callbacks
+        - Event handlers
+        - Buffer memory
+
+        Must clean up even on partial
+        stream consumption.
+        """
         # Create mock response future
         response_future = Mock()
         response_future.has_more_pages = True
@@ -101,7 +139,26 @@ class TestResponseFutureCleanup:
         assert callbacks_cleared, "Callbacks were not cleared on streaming error"
 
     async def test_handler_cleanup_on_timeout(self):
-        """Test cleanup when operation times out."""
+        """
+        Test cleanup when operation times out.
+
+        What this tests:
+        ---------------
+        1. Timeout triggers cleanup
+        2. Callbacks cleared
+        3. TimeoutError raised
+        4. No hanging callbacks
+
+        Why this matters:
+        ----------------
+        Timeouts common in production:
+        - Network issues
+        - Overloaded servers
+        - Slow queries
+
+        Must clean up to prevent
+        resource accumulation.
+        """
         # Create mock response future that never completes
         response_future = Mock()
         response_future.has_more_pages = True  # Prevent immediate completion
@@ -128,7 +185,26 @@ class TestResponseFutureCleanup:
         assert callbacks_cleared, "Callbacks were not cleared on timeout"
 
     async def test_no_memory_leak_on_error(self):
-        """Test that error handling cleans up properly to prevent memory leaks."""
+        """
+        Test that error handling cleans up properly to prevent memory leaks.
+
+        What this tests:
+        ---------------
+        1. Error path cleans callbacks
+        2. Internal state cleaned
+        3. Future marked done
+        4. Circular refs broken
+
+        Why this matters:
+        ----------------
+        Memory leaks kill apps:
+        - Gradual memory growth
+        - Eventually OOM
+        - Hard to diagnose
+
+        Proper cleanup essential for
+        production stability.
+        """
         # Create response future
         response_future = Mock()
         response_future.has_more_pages = True  # Prevent immediate completion
@@ -164,7 +240,26 @@ class TestResponseFutureCleanup:
         assert handler._future.done()  # Future completed with error
 
     async def test_session_cleanup_on_close(self):
-        """Test that session cleans up callbacks when closed."""
+        """
+        Test that session cleans up callbacks when closed.
+
+        What this tests:
+        ---------------
+        1. Session close prevents new ops
+        2. Existing ops complete
+        3. New ops raise ConnectionError
+        4. Clean shutdown behavior
+
+        Why this matters:
+        ----------------
+        Graceful shutdown requires:
+        - Complete in-flight queries
+        - Reject new queries
+        - Clean up resources
+
+        Prevents data loss and
+        connection leaks.
+        """
         # Create mock session
         mock_session = Mock()
 
@@ -219,7 +314,26 @@ class TestResponseFutureCleanup:
             await async_session.execute("SELECT after close")
 
     async def test_cleanup_prevents_callback_execution(self):
-        """Test that cleaned callbacks don't execute."""
+        """
+        Test that cleaned callbacks don't execute.
+
+        What this tests:
+        ---------------
+        1. Cleared callbacks don't fire
+        2. No zombie callbacks
+        3. Cleanup is effective
+        4. State properly cleared
+
+        Why this matters:
+        ----------------
+        Zombie callbacks cause:
+        - Unexpected behavior
+        - Race conditions
+        - Data corruption
+
+        Cleanup must truly prevent
+        future callback execution.
+        """
         # Create response future
         response_future = Mock()
         response_future.has_more_pages = False

@@ -20,7 +20,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_session_reuse_across_many_operations(self, cassandra_cluster):
-        """Test that a session can be reused for many operations."""
+        """
+        Test that a session can be reused for many operations.
+
+        What this tests:
+        ---------------
+        1. Session reuse works
+        2. Many operations OK
+        3. No degradation
+        4. Long-lived sessions
+
+        Why this matters:
+        ----------------
+        Production pattern:
+        - One session per app
+        - Thousands of queries
+        - No reconnection cost
+
+        Must support connection
+        pooling correctly.
+        """
         # Create session once
         session = await cassandra_cluster.connect()
 
@@ -49,7 +68,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_cluster_creates_multiple_sessions(self, cassandra_cluster):
-        """Test that a cluster can create multiple sessions."""
+        """
+        Test that a cluster can create multiple sessions.
+
+        What this tests:
+        ---------------
+        1. Multiple sessions work
+        2. Sessions independent
+        3. Concurrent usage OK
+        4. Resource isolation
+
+        Why this matters:
+        ----------------
+        Multi-session needs:
+        - Microservices
+        - Different keyspaces
+        - Isolation requirements
+
+        Cluster manages many
+        sessions properly.
+        """
         # Create multiple sessions from same cluster
         sessions = []
         session_count = 5
@@ -82,7 +120,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_session_survives_errors(self, cassandra_cluster):
-        """Test that session remains usable after query errors."""
+        """
+        Test that session remains usable after query errors.
+
+        What this tests:
+        ---------------
+        1. Errors don't kill session
+        2. Recovery automatic
+        3. Multiple error types
+        4. Continued operation
+
+        Why this matters:
+        ----------------
+        Real apps have errors:
+        - Bad queries
+        - Missing tables
+        - Syntax issues
+
+        Session must survive all
+        non-fatal errors.
+        """
         session = await cassandra_cluster.connect()
         await session.execute(
             "CREATE KEYSPACE IF NOT EXISTS test_long_lived "
@@ -126,7 +183,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_prepared_statements_are_cached(self, cassandra_cluster):
-        """Test that prepared statements can be reused efficiently."""
+        """
+        Test that prepared statements can be reused efficiently.
+
+        What this tests:
+        ---------------
+        1. Statement caching works
+        2. Reuse is efficient
+        3. Multiple statements OK
+        4. No re-preparation
+
+        Why this matters:
+        ----------------
+        Performance critical:
+        - Prepare once
+        - Execute many times
+        - Reduced latency
+
+        Core optimization for
+        production apps.
+        """
         session = await cassandra_cluster.connect()
 
         # Prepare statement once
@@ -152,7 +228,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_session_lifetime_measurement(self, cassandra_cluster):
-        """Test that sessions can live for extended periods."""
+        """
+        Test that sessions can live for extended periods.
+
+        What this tests:
+        ---------------
+        1. Extended lifetime OK
+        2. No timeout issues
+        3. Sustained throughput
+        4. Stable performance
+
+        Why this matters:
+        ----------------
+        Production sessions:
+        - Days to weeks alive
+        - Millions of queries
+        - No restarts needed
+
+        Proves long-term
+        stability.
+        """
         session = await cassandra_cluster.connect()
         start_time = time.time()
 
@@ -182,7 +277,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_context_manager_closes_session(self):
-        """Test that context manager does close session (for scripts/tests)."""
+        """
+        Test that context manager does close session (for scripts/tests).
+
+        What this tests:
+        ---------------
+        1. Context manager works
+        2. Session closed on exit
+        3. Cluster still usable
+        4. Clean resource handling
+
+        Why this matters:
+        ----------------
+        Script patterns:
+        - Short-lived sessions
+        - Automatic cleanup
+        - No leaks
+
+        Different from production
+        but still supported.
+        """
         # Create cluster manually to test context manager
         cluster = AsyncCluster(["localhost"])
 
@@ -207,7 +321,26 @@ class TestLongLivedConnections:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_production_pattern(self):
-        """Test the recommended production pattern."""
+        """
+        Test the recommended production pattern.
+
+        What this tests:
+        ---------------
+        1. Production lifecycle
+        2. Startup/shutdown once
+        3. Many requests handled
+        4. Concurrent load OK
+
+        Why this matters:
+        ----------------
+        Best practice pattern:
+        - Initialize once
+        - Reuse everywhere
+        - Clean shutdown
+
+        Template for real
+        applications.
+        """
         # This simulates a production application lifecycle
 
         # Application startup

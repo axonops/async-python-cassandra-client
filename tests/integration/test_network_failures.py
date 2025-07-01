@@ -23,7 +23,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_unavailable_handling(self, cassandra_session):
-        """Test handling of Unavailable exceptions."""
+        """
+        Test handling of Unavailable exceptions.
+
+        What this tests:
+        ---------------
+        1. Unavailable errors caught
+        2. Replica count reported
+        3. Consistency level impact
+        4. Error message clarity
+
+        Why this matters:
+        ----------------
+        Unavailable errors indicate:
+        - Not enough replicas
+        - Cluster health issues
+        - Consistency impossible
+
+        Apps must handle cluster
+        degradation gracefully.
+        """
         # Create a table with high replication factor in a new keyspace
         # This test needs its own keyspace to test replication
         await cassandra_session.execute(
@@ -79,7 +98,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_connection_pool_exhaustion(self, cassandra_session: AsyncCassandraSession):
-        """Test behavior when connection pool is exhausted."""
+        """
+        Test behavior when connection pool is exhausted.
+
+        What this tests:
+        ---------------
+        1. Many concurrent queries
+        2. Pool limits respected
+        3. Most queries succeed
+        4. Graceful degradation
+
+        Why this matters:
+        ----------------
+        Pool exhaustion happens:
+        - Traffic spikes
+        - Slow queries
+        - Resource limits
+
+        System must degrade
+        gracefully, not crash.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -124,7 +162,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_read_timeout_behavior(self, cassandra_session: AsyncCassandraSession):
-        """Test read timeout behavior with different scenarios."""
+        """
+        Test read timeout behavior with different scenarios.
+
+        What this tests:
+        ---------------
+        1. Short timeouts fail fast
+        2. Reasonable timeouts work
+        3. Timeout errors caught
+        4. Query-level timeouts
+
+        Why this matters:
+        ----------------
+        Timeout control prevents:
+        - Hanging operations
+        - Resource exhaustion
+        - Poor user experience
+
+        Critical for responsive
+        applications.
+        """
         # Create test data
         await cassandra_session.execute("DROP TABLE IF EXISTS read_timeout_test")
         await cassandra_session.execute(
@@ -186,7 +243,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_concurrent_failures_recovery(self, cassandra_session: AsyncCassandraSession):
-        """Test that the system recovers properly from concurrent failures."""
+        """
+        Test that the system recovers properly from concurrent failures.
+
+        What this tests:
+        ---------------
+        1. Retry logic works
+        2. Exponential backoff
+        3. High success rate
+        4. Concurrent recovery
+
+        Why this matters:
+        ----------------
+        Transient failures common:
+        - Network hiccups
+        - Temporary overload
+        - Node restarts
+
+        Smart retries maintain
+        reliability.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
@@ -247,7 +323,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_connection_timeout_handling(self):
-        """Test connection timeout with unreachable hosts."""
+        """
+        Test connection timeout with unreachable hosts.
+
+        What this tests:
+        ---------------
+        1. Unreachable hosts timeout
+        2. Timeout respected
+        3. Fast failure
+        4. Clear error
+
+        Why this matters:
+        ----------------
+        Connection timeouts prevent:
+        - Hanging startup
+        - Infinite waits
+        - Resource tie-up
+
+        Fast failure enables
+        quick recovery.
+        """
         # Try to connect to non-existent host
         async with AsyncCluster(
             contact_points=["192.168.255.255"],  # Non-routable IP
@@ -264,7 +359,26 @@ class TestNetworkFailures:
 
     @pytest.mark.asyncio
     async def test_batch_operations_with_failures(self, cassandra_session: AsyncCassandraSession):
-        """Test batch operation behavior during failures."""
+        """
+        Test batch operation behavior during failures.
+
+        What this tests:
+        ---------------
+        1. Batch execution works
+        2. Unlogged batches
+        3. Multiple statements
+        4. Data verification
+
+        Why this matters:
+        ----------------
+        Batch operations must:
+        - Handle partial failures
+        - Complete successfully
+        - Insert all data
+
+        Critical for bulk
+        data operations.
+        """
         # Get the unique table name
         users_table = cassandra_session._test_users_table
 
