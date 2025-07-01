@@ -1,21 +1,16 @@
 # Architecture Overview
 
-This document provides a detailed overview of the async-cassandra library architecture and how it integrates with the DataStax Cassandra driver.
+This document provides a high-level overview of how async-cassandra bridges the gap between the synchronous DataStax Cassandra driver and Python's async/await ecosystem.
 
 ## Table of Contents
 
 - [Problem Statement](#problem-statement)
 - [Solution Architecture](#solution-architecture)
-- [Component Overview](#component-overview)
-  - [Core Components](#core-components)
-  - [Streaming Components](#streaming-components)
-  - [Metrics & Monitoring](#metrics--monitoring)
+- [Key Components](#key-components)
 - [Execution Flow](#execution-flow)
   - [Query Execution](#query-execution)
   - [Streaming Execution](#streaming-execution)
-  - [Batch Operations](#batch-operations)
-- [Performance Considerations](#performance-considerations)
-- [Architectural Patterns](#architectural-patterns)
+- [Design Principles](#design-principles)
 
 ## Problem Statement
 
@@ -63,179 +58,36 @@ sequenceDiagram
     EventLoop-->>App: Resume coroutine
 ```
 
-## Component Overview
+## Key Components
 
-### Core Components
+### AsyncCluster
+- Wraps the DataStax `Cluster` class
+- Manages cluster lifecycle (connect, shutdown)
+- Provides async context manager support
+- Handles authentication and configuration
 
-#### 1. AsyncCluster
+### AsyncCassandraSession
+- Wraps the DataStax `Session` class
+- Converts synchronous operations to async/await
+- Provides streaming support for large result sets
+- Integrates with metrics collection
 
-Manages cluster configuration and lifecycle:
+### AsyncResultSet
+- Wraps query results for async consumption
+- Handles paging transparently
+- Provides familiar result access methods (one(), all())
 
-```mermaid
-classDiagram
-    class AsyncCluster {
-        +metadata ClusterMetadata
-        +__init__(contact_points, auth_provider, retry_policy, ...)
-        +create_with_auth(contact_points, username, password)
-        +connect(keyspace) AsyncCassandraSession
-        +register_user_type(keyspace, type_name, klass)
-        +shutdown()
-    }
-
-    class Cluster {
-        <<DataStax Driver>>
-        +connect()
-        +shutdown()
-        +metadata
-    }
-
-    AsyncCluster --> Cluster : wraps
-```
-
-#### 2. AsyncCassandraSession
-
-Provides async interface for query execution:
-
-```mermaid
-classDiagram
-    class AsyncCassandraSession {
-        +keyspace str
-        +execute(query, parameters) AsyncResultSet
-        +execute_stream(query, stream_config) AsyncStreamingResultSet
-        +prepare(query) PreparedStatement
-        +set_keyspace(keyspace)
-        +close()
-    }
-
-    class Session {
-        <<DataStax Driver>>
-        +execute_async()
-        +prepare()
-        +set_keyspace()
-        +shutdown()
-    }
-
-    AsyncCassandraSession --> Session : wraps
-    AsyncCassandraSession --> MetricsMiddleware : uses
-```
-
-#### 3. AsyncResultSet
-
-Provides async-friendly result iteration:
-
-```mermaid
-classDiagram
-    class AsyncResultSet {
-        +all() list
-        +one() Row
-        +first() Row
-        +current_rows list
-        +has_more_pages bool
-        +paging_state bytes
-    }
-
-    class ResultSet {
-        <<DataStax Driver>>
-        +current_rows
-        +has_more_pages
-        +paging_state
-    }
-
-    AsyncResultSet --> ResultSet : wraps
-```
-
-### Streaming Components
-
-#### 4. AsyncStreamingResultSet
-
-Enables memory-efficient processing of large result sets:
-
-```mermaid
-classDiagram
-    class AsyncStreamingResultSet {
-        +__aiter__() AsyncIterator[Row]
-        +pages() AsyncIterator[List[Row]]
-        +cancel()
-        +page_number int
-        +total_rows_fetched int
-    }
-
-    class StreamConfig {
-        +fetch_size int
-        +page_callback Callable
-    }
-
-    AsyncStreamingResultSet --> StreamConfig : configured by
-```
-
-### Metrics & Monitoring
-
-#### 5. Metrics System
-
-Provides comprehensive query and connection metrics:
-
-```mermaid
-classDiagram
-    class MetricsMiddleware {
-        +collectors List[MetricsCollector]
-        +record_query_metrics(query, duration, success, ...)
-        +record_connection_metrics(host, is_healthy, ...)
-        +enable()
-        +disable()
-    }
-
-    class MetricsCollector {
-        <<Interface>>
-        +record_query(metrics: QueryMetrics)*
-        +record_connection_health(metrics: ConnectionMetrics)*
-        +get_stats()*
-    }
-
-    class InMemoryMetricsCollector {
-        +query_metrics deque
-        +connection_metrics dict
-        +max_entries int
-    }
-
-    class PrometheusMetricsCollector {
-        +query_duration Histogram
-        +query_success_total Counter
-        +query_error_total Counter
-    }
-
-    MetricsMiddleware --> MetricsCollector : manages
-    InMemoryMetricsCollector --|> MetricsCollector : implements
-    PrometheusMetricsCollector --|> MetricsCollector : implements
-```
-
-#### 6. Retry Policies
-
-Provides idempotency-aware retry logic:
-
-```mermaid
-classDiagram
-    class AsyncRetryPolicy {
-        +max_retries int
-        +on_read_timeout(...) (decision, consistency)
-        +on_write_timeout(...) (decision, consistency)
-        +on_unavailable(...) (decision, consistency)
-    }
-
-    class RetryPolicy {
-        <<DataStax Driver>>
-        +RETRY
-        +RETHROW
-        +RETRY_NEXT_HOST
-    }
-
-    AsyncRetryPolicy --|> RetryPolicy : extends
-
-    note for AsyncRetryPolicy "Only retries writes if query.is_idempotent == True"
-```
+### AsyncStreamingResultSet
+- Enables memory-efficient processing of large results
+- Supports async iteration over rows
+- Provides page-level access for batch processing
+- Includes progress tracking capabilities
 
 ## Execution Flow
 
 ### Query Execution
+
+The following diagram shows how a standard query flows through the async wrapper:
 
 ```mermaid
 sequenceDiagram
@@ -261,6 +113,8 @@ sequenceDiagram
 ```
 
 ### Streaming Execution
+
+For large result sets, streaming provides memory-efficient processing:
 
 ```mermaid
 sequenceDiagram
@@ -290,239 +144,39 @@ sequenceDiagram
     end
 ```
 
-### Batch Operations
+## Design Principles
 
-```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Session as AsyncCassandraSession
-    participant Batch as BatchStatement
-    participant DB as Cassandra
+### 1. Thin Wrapper Approach
+- We wrap, not reimplement, the DataStax driver
+- All driver features remain accessible
+- Minimal performance overhead
 
-    App->>Batch: Create BatchStatement
-    App->>Batch: Add multiple statements
-    App->>Session: await execute(batch)
-    Session->>DB: Execute batch atomically
-    DB-->>Session: Batch result
-    Session-->>App: Return AsyncResultSet
-```
+### 2. True Async/Await Support
+- All blocking operations converted to async
+- Proper integration with Python's event loop
+- No blocking of the event loop
 
-### Connection Pooling
+### 3. Memory Efficiency
+- Streaming support for large result sets
+- Configurable fetch sizes
+- Page-based processing options
 
-For detailed information about connection pooling behavior, limitations, and best practices, see our [Connection Pooling Documentation](connection-pooling.md).
+### 4. Developer Experience
+- Familiar async/await syntax
+- Context manager support
+- Type hints throughout
 
-Key points:
-- Protocol v3+ uses one TCP connection per host
-- Each connection supports up to 32,768 concurrent requests
-- Python driver behavior differs from Java/C++ drivers due to GIL
+### 5. Production Ready
+- Comprehensive error handling
+- Metrics and monitoring built-in
+- Battle-tested retry policies
 
-## Performance Considerations
+## Important Limitations
 
-### 1. Connection Pool Efficiency
+While async-cassandra provides async/await syntax, it's important to understand:
 
-The async wrapper maintains the driver's connection pooling:
+1. **The underlying I/O is still synchronous** - The DataStax driver uses blocking sockets in threads
+2. **Thread pool constraints apply** - Concurrency is limited by the driver's thread pool size
+3. **Not a true async driver** - This is a compatibility layer, not a ground-up async implementation
 
-```mermaid
-graph LR
-    subgraph "Traditional Sync"
-        S1[Request 1] --> T1[Thread 1]
-        S2[Request 2] --> T2[Thread 2]
-        S3[Request 3] --> T3[Thread 3]
-        T1 --> DB1[(Cassandra)]
-        T2 --> DB1
-        T3 --> DB1
-        Note1[Threads blocked during I/O]
-    end
-
-    subgraph "Async Wrapper"
-        A1[Request 1] --> EL[Event Loop]
-        A2[Request 2] --> EL
-        A3[Request 3] --> EL
-        EL --> CP[Connection Pool]
-        CP --> DB2[(Cassandra)]
-        Note2[Single thread, non-blocking]
-    end
-```
-
-### 2. Concurrency Model
-
-```mermaid
-graph TB
-    subgraph "Async Concurrency"
-        EL[Event Loop]
-        C1[Coroutine 1]
-        C2[Coroutine 2]
-        C3[Coroutine 3]
-
-        EL --> C1
-        EL --> C2
-        EL --> C3
-
-        C1 -.->|await| IO1[I/O Operation]
-        C2 -.->|await| IO2[I/O Operation]
-        C3 -.->|await| IO3[I/O Operation]
-    end
-
-    Note[All coroutines share same thread,<br/>switching context during I/O waits]
-```
-
-### 3. Resource Usage Comparison
-
-```mermaid
-graph LR
-    subgraph "Sync Driver"
-        direction TB
-        ST[Threads: 100]
-        SM[Memory: High]
-        SC[Context Switches: Many]
-    end
-
-    subgraph "Async Wrapper"
-        direction TB
-        AT[Threads: 1-4]
-        AM[Memory: Low]
-        AC[Context Switches: Few]
-    end
-
-    ST --> |"Under Load"| SP[Performance Degradation]
-    AT --> |"Under Load"| AP[Stable Performance]
-```
-
-## Best Practices
-
-1. **Connection Management**: Create cluster and session at application startup
-2. **Prepared Statements**: Use prepared statements for repeated queries
-3. **Batch Operations**: Group related writes for better performance
-4. **Error Handling**: Implement proper retry logic for transient failures
-5. **Resource Cleanup**: Always close sessions and clusters properly
-
-## Integration with FastAPI
-
-```mermaid
-sequenceDiagram
-    participant Client as HTTP Client
-    participant FastAPI as FastAPI
-    participant Deps as Dependencies
-    participant Session as AsyncCassandraSession
-    participant DB as Cassandra
-
-    Client->>FastAPI: HTTP Request
-    FastAPI->>Deps: Get session dependency
-    Deps-->>FastAPI: Inject session
-    FastAPI->>Session: await execute(query)
-    Session->>DB: Async query
-    DB-->>Session: Result
-    Session-->>FastAPI: AsyncResultSet
-    FastAPI-->>Client: HTTP Response
-```
-
-This architecture enables efficient, scalable applications that can handle thousands of concurrent requests without the thread pool bottlenecks of traditional synchronous drivers.
-
-## Architectural Patterns
-
-### Base Class Hierarchy
-
-async-cassandra uses a consistent base class pattern for resource management:
-
-```mermaid
-classDiagram
-    class AsyncCloseable {
-        <<abstract>>
-        +close()
-        +closed bool
-        #_close_lock Lock
-    }
-
-    class AsyncContextManageable {
-        <<abstract>>
-        +__aenter__()
-        +__aexit__()
-    }
-
-    class AsyncCluster {
-        +shutdown()
-    }
-
-    class AsyncCassandraSession {
-        +close()
-    }
-
-    AsyncCloseable <|-- AsyncCluster
-    AsyncCloseable <|-- AsyncCassandraSession
-    AsyncContextManageable <|-- AsyncCluster
-    AsyncContextManageable <|-- AsyncCassandraSession
-```
-
-### Middleware Pattern
-
-The metrics system uses a middleware pattern for extensibility:
-
-```mermaid
-graph LR
-    subgraph "Query Execution"
-        Q[Query] --> MW[MetricsMiddleware]
-        MW --> S[Session]
-        S --> C[Cassandra]
-        C --> S
-        S --> MW
-        MW --> R[Result]
-    end
-
-    subgraph "Metrics Collection"
-        MW --> MC1[InMemoryCollector]
-        MW --> MC2[PrometheusCollector]
-        MW --> MC3[CustomCollector]
-    end
-```
-
-### Handler Pattern
-
-Result processing uses specialized handlers for different result types:
-
-```mermaid
-classDiagram
-    class ResultHandler {
-        <<interface>>
-        +handle_response(response_future)
-    }
-
-    class AsyncResultHandler {
-        +get_result() AsyncResultSet
-        -_convert_to_async(response_future)
-    }
-
-    class StreamingResultHandler {
-        +get_streaming_result() AsyncStreamingResultSet
-        -_setup_streaming(response_future)
-    }
-
-    ResultHandler <|-- AsyncResultHandler
-    ResultHandler <|-- StreamingResultHandler
-```
-
-### Error Handling Strategy
-
-```mermaid
-stateDiagram-v2
-    [*] --> Executing: Query sent
-    Executing --> Success: No errors
-    Executing --> Retryable: Timeout/Unavailable
-    Executing --> NonRetryable: Invalid query
-
-    Retryable --> CheckIdempotent: Write operation?
-    CheckIdempotent --> Retry: is_idempotent=True
-    CheckIdempotent --> Fail: is_idempotent=False
-
-    Retry --> Executing: Retry with policy
-    Retry --> Fail: Max retries exceeded
-
-    Success --> [*]: Return result
-    Fail --> [*]: Raise exception
-    NonRetryable --> [*]: Raise exception
-```
-
-These architectural patterns ensure:
-- Consistent resource management across all components
-- Extensible metrics and monitoring capabilities
-- Safe retry behavior with idempotency checking
-- Clear separation of concerns between different result types
+For more details on these limitations and when to use this wrapper, see [Why an Async Wrapper is Necessary](why-async-wrapper.md).

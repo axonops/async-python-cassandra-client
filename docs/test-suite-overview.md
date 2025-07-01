@@ -22,46 +22,35 @@ This project follows strict TDD (Test-Driven Development) principles due to its 
 
 ## Test Organization
 
-```
-tests/
-├── unit/                          # Isolated component tests with mocks
-│   ├── test_async_wrapper.py      # Core async wrapper functionality
-│   ├── test_cluster.py            # AsyncCluster tests
-│   ├── test_session.py            # AsyncCassandraSession tests
-│   ├── test_retry_policy_unified.py    # ✅ All retry policy tests (consolidated)
-│   ├── test_timeout_unified.py         # ✅ All timeout tests (consolidated)
-│   ├── test_streaming_unified.py       # ✅ All streaming tests (consolidated)
-│   ├── test_monitoring_unified.py      # ✅ All monitoring tests (consolidated)
-│   ├── test_race_conditions.py    # Race condition scenarios
-│   ├── test_error_recovery.py     # Error handling and recovery
-│   └── ...                        # Other specialized unit tests
-│
-├── integration/                   # Tests against real Cassandra
-│   ├── test_crud_operations.py              # ✅ All CRUD operations (consolidated)
-│   ├── test_batch_and_lwt_operations.py     # ✅ Batch & LWT tests (consolidated)
-│   ├── test_data_types_and_counters.py      # ✅ Data types & counters (consolidated)
-│   ├── test_consistency_and_prepared_statements.py  # ✅ Consistency & prepared (consolidated)
-│   ├── test_concurrent_and_stress_operations.py     # ✅ Concurrent & stress (consolidated)
-│   ├── test_basic_operations.py   # Connection and error handling
-│   ├── test_streaming_operations.py # Streaming-specific tests
-│   └── ...                        # Network, reconnection, etc.
-│
-├── bdd/                           # Behavior-driven acceptance tests
-│   ├── test_bdd_concurrent_load.py
-│   ├── test_bdd_context_manager_safety.py
-│   └── test_bdd_fastapi.py
-│
-├── benchmarks/                    # Performance regression tests
-│   ├── test_query_performance.py
-│   ├── test_streaming_performance.py
-│   └── test_concurrency_performance.py
-│
-├── examples/fastapi_app/tests/    # FastAPI integration tests
-│   ├── test_fastapi_app.py       # Comprehensive FastAPI test suite
-│   └── conftest.py               # FastAPI test configuration
-│
-└── test_utils.py                  # Shared testing utilities
-```
+The test suite is organized into several categories:
+
+- **unit/** - Isolated component tests with mocks
+  - Core async wrapper functionality tests
+  - Cluster and session management tests
+  - Consolidated tests for retry policies, timeouts, streaming, and monitoring
+  - Race condition and error recovery scenarios
+
+- **integration/** - Tests against real Cassandra instances
+  - CRUD operations (consolidated)
+  - Batch operations and lightweight transactions (consolidated)
+  - Data types and counter operations (consolidated)
+  - Consistency levels and prepared statements (consolidated)
+  - Concurrent and stress testing (consolidated)
+  - Network and reconnection behavior
+
+- **bdd/** - Behavior-driven acceptance tests
+  - Concurrent load testing
+  - Context manager safety verification
+  - FastAPI integration scenarios
+
+- **benchmarks/** - Performance regression tests
+  - Query performance benchmarks
+  - Streaming performance tests
+  - Concurrency performance measurements
+
+- **examples/fastapi_app/tests/** - Real-world integration testing
+  - Comprehensive FastAPI application tests
+  - Configuration and setup utilities
 
 ## Unit Tests
 

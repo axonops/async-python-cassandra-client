@@ -21,7 +21,56 @@ When using the standard Cassandra driver in async applications, blocking operati
 
 In async Python applications, an **event loop** manages all operations in a single thread. Think of it like a smart traffic controller - it efficiently switches between tasks whenever one is waiting for I/O (like a database query). This allows handling thousands of concurrent requests without creating thousands of threads.
 
-However, when you use a **synchronous (blocking)** operation in an async application, it's like that traffic controller suddenly freezing - all traffic stops until that one operation completes. If a database query takes 100ms and blocks the event loop, that means your web server can't process ANY other requests during those 100ms. This is why the standard Cassandra driver's thread pool approach doesn't work well with async frameworks.
+**The key issue**: When you use the standard Cassandra driver (which is synchronous) inside an async web framework like FastAPI or aiohttp, you create a blocking problem. The synchronous driver operations block the event loop, preventing your async application from handling other requests.
+
+**Important clarification**: This blocking issue only occurs when:
+1. You're building an async application (using FastAPI, aiohttp, Quart, etc.)
+2. You use synchronous database operations inside async handlers
+
+If you're building a traditional synchronous application (Flask, Django without async views), the standard Cassandra driver works fine and you don't need this wrapper.
+
+Here's a concrete example showing the problem and solution:
+
+```python
+# ❌ Synchronous code in an async handler - BLOCKS the event loop
+from fastapi import FastAPI
+from cassandra.cluster import Cluster
+
+app = FastAPI()
+cluster = Cluster(['localhost'])
+session = cluster.connect()
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
+    # This blocks the event loop! While this query runs,
+    # your FastAPI app cannot process ANY other requests
+    result = session.execute("SELECT * FROM users WHERE id = %s", [user_id])
+    return {"user": result.one()}
+```
+
+```python
+# ✅ Async code with our wrapper - NON-BLOCKING
+from fastapi import FastAPI
+from async_cassandra import AsyncCluster
+
+app = FastAPI()
+cluster = AsyncCluster(['localhost'])
+session = None
+
+@app.on_event("startup")
+async def startup():
+    global session
+    session = await cluster.connect()
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
+    # This doesn't block! The event loop remains free to handle
+    # other requests while waiting for the database response
+    result = await session.execute("SELECT * FROM users WHERE id = %s", [user_id])
+    return {"user": result.one()}
+```
+
+The key difference: with the sync driver, each database query blocks your entire async application from handling other requests. With async-cassandra, the event loop remains free to process other work while waiting for database responses.
 
 ### The Benefits
 
