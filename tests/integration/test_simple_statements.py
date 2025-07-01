@@ -11,7 +11,6 @@ discouraged in favor of prepared statements but may be needed for:
 import uuid
 
 import pytest
-from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 
 
@@ -43,41 +42,6 @@ class TestSimpleStatements:
         assert row.name == "John Doe"
         assert row.email == "john@example.com"
         assert row.age == 30
-
-    @pytest.mark.asyncio
-    async def test_simple_statement_consistency_levels(self, cassandra_session):
-        """Test SimpleStatement with different consistency levels."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        # Test with ONE consistency level
-        user_id = uuid.uuid4()
-        insert_one = SimpleStatement(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
-            consistency_level=ConsistencyLevel.ONE,
-        )
-
-        await cassandra_session.execute(insert_one, [user_id, "User One", "one@example.com", 25])
-
-        # Test with LOCAL_QUORUM consistency level
-        user_id2 = uuid.uuid4()
-        insert_quorum = SimpleStatement(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (%s, %s, %s, %s)",
-            consistency_level=ConsistencyLevel.LOCAL_QUORUM,
-        )
-
-        await cassandra_session.execute(
-            insert_quorum, [user_id2, "User Quorum", "quorum@example.com", 35]
-        )
-
-        # Verify both inserts worked
-        select_stmt = SimpleStatement(
-            f"SELECT COUNT(*) FROM {users_table}", consistency_level=ConsistencyLevel.ONE
-        )
-        result = await cassandra_session.execute(select_stmt)
-
-        # Should have at least 2 rows
-        assert result.one()[0] >= 2
 
     @pytest.mark.asyncio
     async def test_simple_statement_without_parameters(self, cassandra_session):

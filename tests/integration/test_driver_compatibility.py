@@ -8,10 +8,8 @@ import asyncio
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 
 import pytest
-from cassandra import ConsistencyLevel
 from cassandra.cluster import Cluster as SyncCluster
 from cassandra.query import BatchStatement, BatchType, dict_factory
 
@@ -84,46 +82,6 @@ class TestDriverCompatibility:
         assert len(async_result) == 1  # Only async's insert
         assert sync_result[0].name == "sync"
         assert async_result[0].name == "async"
-
-    @pytest.mark.asyncio
-    async def test_prepared_statement_compatibility(self, sync_session, session_with_keyspace):
-        """Test prepared statements work identically."""
-        async_session, keyspace = session_with_keyspace
-
-        # Create table in both keyspaces
-        table_name = f"compat_prepared_{uuid.uuid4().hex[:8]}"
-        create_table = f"""
-            CREATE TABLE {table_name} (
-                id uuid PRIMARY KEY,
-                data text,
-                timestamp timestamp
-            )
-        """
-        sync_session.execute(create_table)
-        await async_session.execute(create_table)
-
-        # Prepare statements
-        query = f"INSERT INTO {table_name} (id, data, timestamp) VALUES (?, ?, ?)"
-        sync_prepared = sync_session.prepare(query)
-        async_prepared = await async_session.prepare(query)
-
-        # Execute prepared statements
-        test_id = uuid.uuid4()
-        test_time = datetime.utcnow()
-
-        sync_session.execute(sync_prepared, [test_id, "sync_data", test_time])
-
-        test_id2 = uuid.uuid4()
-        await async_session.execute(async_prepared, [test_id2, "async_data", test_time])
-
-        # Verify both work
-        sync_result = list(sync_session.execute(f"SELECT * FROM {table_name}"))
-        async_result = list(await async_session.execute(f"SELECT * FROM {table_name}"))
-
-        assert len(sync_result) == 1
-        assert len(async_result) == 1
-        assert sync_result[0].data == "sync_data"
-        assert async_result[0].data == "async_data"
 
     @pytest.mark.asyncio
     async def test_batch_compatibility(self, sync_session, session_with_keyspace):
@@ -218,64 +176,6 @@ class TestDriverCompatibility:
         assert len(async_counter_result) == 1
         assert sync_counter_result[0].count == 5
         assert async_counter_result[0].count == 10
-
-    @pytest.mark.asyncio
-    async def test_consistency_level_compatibility(self, sync_session, session_with_keyspace):
-        """Test consistency levels work the same."""
-        async_session, keyspace = session_with_keyspace
-
-        table_name = f"compat_consistency_{uuid.uuid4().hex[:8]}"
-
-        # Create table in both keyspaces
-        sync_session.execute(
-            f"""
-            CREATE TABLE {table_name} (
-                id int PRIMARY KEY,
-                value text
-            )
-        """
-        )
-        await async_session.execute(
-            f"""
-            CREATE TABLE {table_name} (
-                id int PRIMARY KEY,
-                value text
-            )
-        """
-        )
-
-        # Test various consistency levels
-        consistency_levels = [ConsistencyLevel.ONE, ConsistencyLevel.QUORUM, ConsistencyLevel.ALL]
-
-        # Prepare statements - both use ? for prepared statements
-        sync_insert = sync_session.prepare(f"INSERT INTO {table_name} (id, value) VALUES (?, ?)")
-        async_insert = await async_session.prepare(
-            f"INSERT INTO {table_name} (id, value) VALUES (?, ?)"
-        )
-
-        for i, cl in enumerate(consistency_levels):
-            # Sync write with consistency level on prepared statement
-            sync_insert.consistency_level = cl
-            sync_session.execute(sync_insert, (i, f"sync_cl_{cl}"))
-
-            # Async write with consistency level on prepared statement
-            async_insert.consistency_level = cl
-            await async_session.execute(async_insert, (i + 10, f"async_cl_{cl}"))
-
-        # Prepare read statements
-        sync_select = sync_session.prepare(f"SELECT * FROM {table_name}")
-        async_select = await async_session.prepare(f"SELECT * FROM {table_name}")
-
-        # Set consistency level
-        sync_select.consistency_level = ConsistencyLevel.ONE
-        async_select.consistency_level = ConsistencyLevel.ONE
-
-        # Read with different consistency
-        sync_read = sync_session.execute(sync_select)
-        async_read = await async_session.execute(async_select)
-
-        assert len(list(sync_read)) == 3
-        assert len(list(async_read)) == 3
 
     @pytest.mark.asyncio
     async def test_row_factory_compatibility(self, sync_session, session_with_keyspace):

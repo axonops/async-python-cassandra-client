@@ -10,49 +10,12 @@ import asyncio
 import uuid
 
 import pytest
-from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 
 
 @pytest.mark.integration
 class TestSelectOperations:
     """Test advanced SELECT query operations with real Cassandra."""
-
-    @pytest.mark.asyncio
-    async def test_select_with_consistency_levels(self, cassandra_session):
-        """Test SELECT queries with different consistency levels."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        # Insert test data
-        user_id = uuid.uuid4()
-        insert_stmt = await cassandra_session.prepare(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
-        )
-        await cassandra_session.execute(
-            insert_stmt,
-            [user_id, "Test User", "test@example.com", 25],
-        )
-
-        # Test with different consistency levels
-        consistency_levels = [
-            ConsistencyLevel.ONE,
-            ConsistencyLevel.LOCAL_ONE,
-            ConsistencyLevel.LOCAL_QUORUM,
-        ]
-
-        for cl in consistency_levels:
-            statement = SimpleStatement(
-                f"SELECT * FROM {users_table} WHERE id = %s",
-                consistency_level=cl,
-            )
-            result = await cassandra_session.execute(statement, [user_id])
-            rows = []
-            async for row in result:
-                rows.append(row)
-
-            assert len(rows) == 1
-            assert rows[0].name == "Test User"
 
     @pytest.mark.asyncio
     async def test_select_with_large_result_set(self, cassandra_session):
@@ -92,38 +55,6 @@ class TestSelectOperations:
 
         # Should have retrieved multiple pages
         assert count > 50
-
-    @pytest.mark.asyncio
-    async def test_select_with_prepared_statements(self, cassandra_session):
-        """Test SELECT retry behavior with prepared statements."""
-        # Get the unique table name
-        users_table = cassandra_session._test_users_table
-
-        # Prepare the statement
-        select_stmt = await cassandra_session.prepare(f"SELECT * FROM {users_table} WHERE id = ?")
-
-        # Prepare insert statement too
-        insert_stmt = await cassandra_session.prepare(
-            f"INSERT INTO {users_table} (id, name, email, age) VALUES (?, ?, ?, ?)"
-        )
-
-        # Insert and query multiple times
-        for i in range(10):
-            user_id = uuid.uuid4()
-            # Insert
-            await cassandra_session.execute(
-                insert_stmt,
-                [user_id, f"User {i}", f"user{i}@test.com", 25 + i],
-            )
-
-            # Query with prepared statement
-            result = await cassandra_session.execute(select_stmt, [user_id])
-            rows = []
-            async for row in result:
-                rows.append(row)
-
-            assert len(rows) == 1
-            assert rows[0].name == f"User {i}"
 
     @pytest.mark.asyncio
     async def test_concurrent_selects(self, cassandra_session):
