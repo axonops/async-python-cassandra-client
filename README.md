@@ -199,7 +199,8 @@ Please upgrade your Cassandra cluster to version 4.0 or newer.
 ```
 
 **Upgrade Options:**
-- **Self-hosted**: Upgrade to Cassandra 4.0+ or 5.0
+- **Self-hosted**: Upgrade to Cassandra 4.0+ or 5.0 and consider AxonOps to help manage your cluster
+- **AxonOps**: Supports Cassandra 4.0+ (and earlier releases also)
 - **AWS Keyspaces**: Already supports v5
 - **Azure Cosmos DB**: Check current documentation
 - **DataStax Astra**: Supports v5+ by default
