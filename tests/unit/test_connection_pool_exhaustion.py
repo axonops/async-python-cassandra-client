@@ -111,7 +111,7 @@ class TestConnectionPoolExhaustion:
         ---------------
         1. Pool has finite connection limit
         2. Excess queries fail with NoConnectionsAvailable
-        3. Failures are wrapped in QueryError
+        3. Exceptions passed through directly
         4. Success/failure count matches pool size
 
         Why this matters:
@@ -121,8 +121,8 @@ class TestConnectionPoolExhaustion:
         - Database has connection limits
         - Pool size must be tuned
 
-        Applications must handle pool exhaustion
-        gracefully with retries or backoff.
+        Applications need direct access to
+        handle pool exhaustion with retries.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -152,14 +152,8 @@ class TestConnectionPoolExhaustion:
 
         # First pool_size queries should succeed
         successful = [r for r in results if not isinstance(r, Exception)]
-        # NoConnectionsAvailable is wrapped in QueryError
-        from async_cassandra.exceptions import QueryError
-
-        failed = [
-            r
-            for r in results
-            if isinstance(r, QueryError) and isinstance(r.cause, NoConnectionsAvailable)
-        ]
+        # NoConnectionsAvailable is now passed through directly
+        failed = [r for r in results if isinstance(r, NoConnectionsAvailable)]
 
         assert len(successful) == pool_size
         assert len(failed) == 3
@@ -240,12 +234,9 @@ class TestConnectionPoolExhaustion:
         mock_session.execute_async.side_effect = execute_async_side_effect
 
         # First attempts fail
-        from async_cassandra.exceptions import QueryError
-
         for i in range(3):
-            with pytest.raises(QueryError) as exc_info:
+            with pytest.raises(NoConnectionsAvailable):
                 await async_session.execute("SELECT * FROM test")
-            assert isinstance(exc_info.value.cause, NoConnectionsAvailable)
 
         # Wait a bit (simulating pool recovery)
         await asyncio.sleep(0.1)
@@ -301,7 +292,7 @@ class TestConnectionPoolExhaustion:
             try:
                 result = await async_session.execute(f"SELECT {i}")
                 results.append(result)
-            except Exception:  # QueryError wrapping NoConnectionsAvailable
+            except NoConnectionsAvailable:  # NoConnectionsAvailable is now passed through directly
                 results.append(None)
 
         # Should have 1 failure (3rd query)
@@ -381,14 +372,8 @@ class TestConnectionPoolExhaustion:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Should have mix of successes and failures
-        from async_cassandra.exceptions import QueryError
-
         successes = sum(1 for r in results if not isinstance(r, Exception))
-        failures = sum(
-            1
-            for r in results
-            if isinstance(r, QueryError) and isinstance(r.cause, NoConnectionsAvailable)
-        )
+        failures = sum(1 for r in results if isinstance(r, NoConnectionsAvailable))
 
         assert successes >= max_concurrent
         assert failures > 0
@@ -629,11 +614,8 @@ class TestConnectionPoolExhaustion:
         degradation_active = True
 
         # Non-critical query should fail
-        from async_cassandra.exceptions import QueryError
-
-        with pytest.raises(QueryError) as exc_info:
+        with pytest.raises(NoConnectionsAvailable):
             await async_session.execute("SELECT * FROM test")
-        assert isinstance(exc_info.value.cause, NoConnectionsAvailable)
 
         # Critical query should still work
         result = await async_session.execute("CRITICAL: SELECT * FROM system.local")

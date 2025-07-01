@@ -32,7 +32,7 @@ from cassandra.cluster import NoHostAvailable, Session
 from cassandra.connection import ProtocolError
 
 from async_cassandra import AsyncCassandraSession
-from async_cassandra.exceptions import ConnectionError, QueryError
+from async_cassandra.exceptions import ConnectionError
 
 
 class TestProtocolEdgeCases:
@@ -298,7 +298,7 @@ class TestProtocolEdgeCases:
         ---------------
         1. Protocol errors can be transient
         2. Recovery possible after errors
-        3. Multiple attempts tracked
+        3. Direct exception handling
         4. Eventually succeeds
 
         Why this matters:
@@ -308,8 +308,8 @@ class TestProtocolEdgeCases:
         - Temporary corruption
         - Race conditions
 
-        Retry with new connection often
-        resolves transient issues.
+        Users can implement retry logic
+        with new connections as needed.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -331,9 +331,8 @@ class TestProtocolEdgeCases:
 
         # First two attempts should fail
         for i in range(2):
-            with pytest.raises(QueryError) as exc_info:
+            with pytest.raises(ProtocolError):
                 await async_session.execute("SELECT * FROM test")
-            assert isinstance(exc_info.value.__cause__, ProtocolError)
 
         # Third attempt should succeed
         result = await async_session.execute("SELECT * FROM test")

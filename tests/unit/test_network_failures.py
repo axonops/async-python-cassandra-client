@@ -32,7 +32,6 @@ from cassandra import OperationTimedOut, ReadTimeout, WriteTimeout
 from cassandra.cluster import ConnectionException, Host, NoHostAvailable
 
 from async_cassandra import AsyncCassandraSession, AsyncCluster
-from async_cassandra.exceptions import QueryError
 
 
 class TestNetworkFailures:
@@ -107,8 +106,8 @@ class TestNetworkFailures:
         ---------------
         1. Connection established but queries fail
         2. ConnectionException during execution
-        3. Wrapped in QueryError for context
-        4. Original exception preserved
+        3. Exception passed through directly
+        4. Native error handling preserved
 
         Why this matters:
         ----------------
@@ -117,8 +116,8 @@ class TestNetworkFailures:
         - Network degradation after connect
         - Load balancer issues
 
-        Applications need to detect and handle
-        these "connected but broken" states.
+        Applications need direct access to
+        handle these "connected but broken" states.
         """
         async_session = AsyncCassandraSession(mock_session)
 
@@ -127,12 +126,11 @@ class TestNetworkFailures:
             ConnectionException("Connection closed by remote host")
         )
 
-        # ConnectionException is wrapped in QueryError
-        with pytest.raises(QueryError) as exc_info:
+        # ConnectionException is now passed through directly
+        with pytest.raises(ConnectionException) as exc_info:
             await async_session.execute("SELECT * FROM test")
 
         assert "Connection closed by remote host" in str(exc_info.value)
-        assert isinstance(exc_info.value.cause, ConnectionException)
 
     @pytest.mark.asyncio
     async def test_connection_timeout_during_query(self, mock_session):
@@ -323,9 +321,8 @@ class TestNetworkFailures:
             try:
                 result = await async_session.execute(f"SELECT {i}")
                 results.append(result.rows[0]["flap_count"])
-            except QueryError as e:
-                if isinstance(e.cause, ConnectionException):
-                    errors.append(str(e))
+            except ConnectionException as e:
+                errors.append(str(e))
 
         # Should have mix of successes and failures
         assert len(results) == 3  # Even numbered attempts succeed

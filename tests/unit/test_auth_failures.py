@@ -121,8 +121,8 @@ class TestAuthenticationFailures:
         ---------------
         1. Unauthorized error during query
         2. Permission failures on tables
-        3. Wrapped in QueryError
-        4. Original Unauthorized accessible
+        3. Passed through directly
+        4. Native exception handling
 
         Why this matters:
         ----------------
@@ -131,7 +131,7 @@ class TestAuthenticationFailures:
         - Role changes after connection
         - Fine-grained access control
 
-        Applications need to:
+        Applications need direct access to:
         - Handle permission errors gracefully
         - Potentially retry with different user
         - Log security violations
@@ -232,7 +232,7 @@ class TestAuthenticationFailures:
         1. Different permission types (SELECT, MODIFY, CREATE, etc.)
         2. Each permission failure handled correctly
         3. Error messages indicate specific permission
-        4. Consistent wrapping in QueryError
+        4. Exceptions passed through directly
 
         Why this matters:
         ----------------
