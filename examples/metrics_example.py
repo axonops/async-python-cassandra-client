@@ -6,239 +6,267 @@ This example demonstrates:
 - Setting up multiple metrics collectors
 - Monitoring query performance
 - Tracking connection health
-- Exporting metrics to Prometheus
-- Custom metrics analysis
+- Basic metrics analysis
+- Performance optimization patterns
 """
 
 import asyncio
+import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from async_cassandra import AsyncCluster
-from async_cassandra.metrics import create_metrics_system
+from async_cassandra.metrics import (
+    InMemoryMetricsCollector,
+    MetricsMiddleware,
+    PrometheusMetricsCollector,
+)
+
+
+async def run_workload(session, metrics: MetricsMiddleware):
+    """Run a workload and collect metrics."""
+    print("\n📊 Running queries with metrics collection...")
+
+    # Prepare statements for better performance
+    insert_stmt = await session.prepare(
+        "INSERT INTO users (id, name, email, created_at) VALUES (?, ?, ?, ?)"
+    )
+    select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+
+    # Insert users with metrics tracking
+    user_ids = []
+    print("Inserting users...")
+    for i in range(20):
+        user_id = uuid.uuid4()
+        user_ids.append(user_id)
+
+        start_time = time.time()
+        try:
+            await session.execute(
+                insert_stmt,
+                [user_id, f"User {i}", f"user{i}@example.com", datetime.now(timezone.utc)],
+            )
+            duration = time.time() - start_time
+            await metrics.record_query_metrics(
+                "INSERT INTO users", duration, success=True, parameters_count=4
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            await metrics.record_query_metrics(
+                "INSERT INTO users", duration, success=False, error_type=type(e).__name__
+            )
+            raise
+
+    # Select queries
+    print("Reading users...")
+    for user_id in user_ids[:10]:
+        start_time = time.time()
+        try:
+            result = await session.execute(select_stmt, [user_id])
+            duration = time.time() - start_time
+            await metrics.record_query_metrics(
+                "SELECT * FROM users WHERE id = ?",
+                duration,
+                success=True,
+                parameters_count=1,
+                result_size=1 if result.one() else 0,
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            await metrics.record_query_metrics(
+                "SELECT * FROM users WHERE id = ?",
+                duration,
+                success=False,
+                error_type=type(e).__name__,
+            )
+            raise
+
+    # Batch query simulation
+    print("Running batch query...")
+    start_time = time.time()
+    try:
+        result = await session.execute("SELECT * FROM users LIMIT 100")
+        rows = list(result)
+        duration = time.time() - start_time
+        await metrics.record_query_metrics(
+            "SELECT * FROM users LIMIT 100", duration, success=True, result_size=len(rows)
+        )
+    except Exception as e:
+        duration = time.time() - start_time
+        await metrics.record_query_metrics(
+            "SELECT * FROM users LIMIT 100", duration, success=False, error_type=type(e).__name__
+        )
+        raise
+
+    # Simulate an error
+    print("Testing error handling...")
+    try:
+        start_time = time.time()
+        await session.execute("SELECT * FROM non_existent_table")
+    except Exception as e:
+        duration = time.time() - start_time
+        await metrics.record_query_metrics(
+            "SELECT * FROM non_existent_table", duration, success=False, error_type=type(e).__name__
+        )
+        print(f"  ❌ Expected error caught: {type(e).__name__}")
+
+
+async def monitor_connections(cluster, metrics: MetricsMiddleware):
+    """Monitor connection health."""
+    print("\n🏥 Monitoring connection health...")
+
+    hosts = cluster._cluster.metadata.all_hosts()
+    for host in hosts:
+        start_time = time.time()
+        try:
+            # Quick health check
+            async with await cluster.connect() as temp_session:
+                await temp_session.execute("SELECT now() FROM system.local")
+            response_time = time.time() - start_time
+
+            await metrics.record_connection_metrics(
+                str(host.address),
+                is_healthy=True,
+                response_time=response_time,
+                total_queries=30,  # Example value
+            )
+            print(f"  ✅ {host.address}: Healthy (response: {response_time*1000:.1f}ms)")
+        except Exception:
+            response_time = time.time() - start_time
+            await metrics.record_connection_metrics(
+                str(host.address), is_healthy=False, response_time=response_time, error_count=1
+            )
+            print(f"  ❌ {host.address}: Unhealthy")
 
 
 async def main():
-    """Demonstrate metrics collection capabilities."""
+    """Demonstrate comprehensive metrics collection."""
+    print("🚀 Async-Cassandra Metrics Example")
+    print("=" * 60)
 
-    # 1. Set up metrics system
-    print("🔧 Setting up metrics system...")
-    metrics = create_metrics_system(
-        backend="memory", prometheus_enabled=False  # Set to True if prometheus_client is installed
-    )
+    # 1. Set up metrics collectors
+    print("\n🔧 Setting up metrics system...")
 
-    # 2. Create cluster and session with metrics
+    # In-memory collector for development
+    memory_collector = InMemoryMetricsCollector(max_entries=1000)
+    collectors = [memory_collector]
+
+    # Try to add Prometheus collector if available
+    try:
+        prometheus_collector = PrometheusMetricsCollector()
+        if prometheus_collector._available:
+            collectors.append(prometheus_collector)
+            print("  ✅ Prometheus metrics enabled")
+        else:
+            print("  ℹ️  Prometheus client not available")
+    except Exception:
+        print("  ℹ️  Prometheus client not available")
+
+    # Create metrics middleware
+    metrics = MetricsMiddleware(collectors)
+
+    # 2. Create cluster and run workload
     async with AsyncCluster(contact_points=["localhost"]) as cluster:
-        async with cluster.connect() as session:
-            # Inject metrics middleware into session
-            session._metrics = metrics
-        # 3. Set up test environment
-        await session.execute(
-            """
-            CREATE KEYSPACE IF NOT EXISTS metrics_demo
-            WITH REPLICATION = {
-                'class': 'SimpleStrategy',
-                'replication_factor': 1
-            }
-        """
-        )
-
-        await session.set_keyspace("metrics_demo")
-
-        await session.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY,
-                name TEXT,
-                email TEXT,
-                created_at TIMESTAMP
-            )
-        """
-        )
-
-        # 4. Demonstrate metrics collection
-        print("\n📊 Running queries with metrics collection...")
-
-        # Fast queries
-        for i in range(10):
-            user_id = uuid.uuid4()
+        async with await cluster.connect() as session:
+            # Set up test environment
+            print("\n📦 Setting up test database...")
             await session.execute(
-                "INSERT INTO users (id, name, email, created_at) VALUES (?, ?, ?, ?)",
-                [user_id, f"User {i}", f"user{i}@example.com", datetime.utcnow()],
+                """
+                CREATE KEYSPACE IF NOT EXISTS metrics_demo
+                WITH REPLICATION = {
+                    'class': 'SimpleStrategy',
+                    'replication_factor': 1
+                }
+                """
             )
 
-        # Some SELECT queries
-        for i in range(5):
-            await session.execute("SELECT * FROM users LIMIT 10")
+            await session.set_keyspace("metrics_demo")
 
-        # Simulate a slow query
-        print("⏱️  Simulating slow query...")
-        await asyncio.sleep(0.1)  # Simulate network delay
-        await session.execute("SELECT * FROM users")
+            await session.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id UUID PRIMARY KEY,
+                    name TEXT,
+                    email TEXT,
+                    created_at TIMESTAMP
+                )
+                """
+            )
 
-        # Simulate an error (this will be caught and recorded)
-        try:
-            await session.execute("SELECT * FROM non_existent_table")
-        except Exception:
-            print("❌ Expected error caught and recorded in metrics")
+            # Run workload
+            await run_workload(session, metrics)
 
-        # 5. Display collected metrics
-        print("\n📈 Metrics Summary:")
-        print("=" * 50)
+            # Monitor connections
+            await monitor_connections(cluster, metrics)
 
-        # Get stats from all collectors
-        for collector in metrics.collectors:
-            stats = await collector.get_stats()
+            # 3. Display collected metrics
+            print("\n📈 Metrics Summary")
+            print("=" * 60)
+
+            # Get stats from memory collector
+            stats = await memory_collector.get_stats()
 
             if "query_performance" in stats:
                 perf = stats["query_performance"]
-                print(f"Total Queries: {perf['total_queries']}")
-                print(f"Recent Queries (5min): {perf['recent_queries_5min']}")
-                print(f"Average Duration: {perf['avg_duration_ms']:.2f}ms")
-                print(f"Success Rate: {perf['success_rate']:.2%}")
-                print(f"Queries/Second: {perf['queries_per_second']:.2f}")
-
-                print("\nPerformance Breakdown:")
-                print(f"  Min Duration: {perf['min_duration_ms']:.2f}ms")
-                print(f"  Max Duration: {perf['max_duration_ms']:.2f}ms")
+                if isinstance(perf, dict) and "total_queries" in perf:
+                    print("\n📊 Query Performance:")
+                    print(f"  Total Queries: {perf['total_queries']}")
+                    print(f"  Recent Queries (5min): {perf.get('recent_queries_5min', 0)}")
+                    print(f"  Success Rate: {perf.get('success_rate', 0)*100:.1f}%")
+                    print(f"  Average Duration: {perf.get('avg_duration_ms', 0):.2f}ms")
+                    print(f"  Min Duration: {perf.get('min_duration_ms', 0):.2f}ms")
+                    print(f"  Max Duration: {perf.get('max_duration_ms', 0):.2f}ms")
+                    print(f"  Queries/Second: {perf.get('queries_per_second', 0):.2f}")
 
             if "error_summary" in stats and stats["error_summary"]:
-                print("\n❌ Errors:")
+                print("\n❌ Error Summary:")
                 for error_type, count in stats["error_summary"].items():
                     print(f"  {error_type}: {count}")
 
-            if "top_queries" in stats:
-                print("\n🔥 Top Queries:")
+            if "top_queries" in stats and stats["top_queries"]:
+                print("\n🔥 Top Queries by Frequency:")
                 for query_hash, count in list(stats["top_queries"].items())[:5]:
-                    print(f"  {query_hash}: {count} executions")
+                    print(f"  Query {query_hash}: {count} executions")
 
-        # 6. Demonstrate connection health monitoring
-        print("\n🏥 Connection Health Monitoring:")
-        print("=" * 50)
-
-        # Record connection health
-        await metrics.record_connection_metrics(
-            host="localhost:9042", is_healthy=True, response_time=0.005, total_queries=16  # 5ms
-        )
-
-        # Get updated stats
-        for collector in metrics.collectors:
-            stats = await collector.get_stats()
-            if "connection_health" in stats:
+            if "connection_health" in stats and stats["connection_health"]:
+                print("\n🔗 Connection Health:")
                 for host, health in stats["connection_health"].items():
-                    status = "✅ Healthy" if health["healthy"] else "❌ Unhealthy"
-                    print(f"Host {host}: {status}")
-                    print(f"  Response Time: {health['response_time_ms']:.2f}ms")
-                    print(f"  Total Queries: {health['total_queries']}")
-                    print(f"  Errors: {health['error_count']}")
+                    status = "UP" if health["healthy"] else "DOWN"
+                    print(f"  {host}: {status}")
+                    print(f"    Response Time: {health['response_time_ms']:.2f}ms")
+                    print(f"    Total Queries: {health.get('total_queries', 0)}")
+                    print(f"    Error Count: {health.get('error_count', 0)}")
 
+            # 4. Show optimization tips based on metrics
+            print("\n💡 Performance Insights:")
+            if "query_performance" in stats and isinstance(stats["query_performance"], dict):
+                perf = stats["query_performance"]
+                avg_duration = perf.get("avg_duration_ms", 0)
+                if avg_duration > 10:
+                    print("  ⚠️  Average query duration is high. Consider:")
+                    print("     - Using prepared statements")
+                    print("     - Adding appropriate indexes")
+                    print("     - Reviewing data model")
+                elif avg_duration < 1:
+                    print("  ✅ Excellent query performance!")
+                else:
+                    print("  ✅ Good query performance")
 
-async def prometheus_example():
-    """Example showing Prometheus integration."""
-    try:
-        from prometheus_client import generate_latest, start_http_server
+                success_rate = perf.get("success_rate", 1)
+                if success_rate < 0.95:
+                    print(f"  ⚠️  Success rate is {success_rate*100:.1f}%. Check error logs.")
 
-        print("🔧 Setting up Prometheus metrics...")
-        metrics = create_metrics_system(backend="memory", prometheus_enabled=True)
+            # Cleanup
+            print("\n🧹 Cleaning up...")
+            await session.execute("DROP KEYSPACE IF EXISTS metrics_demo")
 
-        # Start Prometheus HTTP server
-        start_http_server(8000)
-        print("📊 Prometheus metrics server started on http://localhost:8000")
-
-        # Run some queries with metrics
-        async with AsyncCluster(contact_points=["localhost"]) as cluster:
-            async with cluster.connect() as session:
-                session._metrics = metrics
-
-                # Prepare statement
-                stmt = await session.prepare("SELECT release_version FROM system.local")
-
-                # Execute some queries
-                for i in range(5):
-                    await session.execute(stmt, [])
-
-                print("📈 Metrics available at http://localhost:8000/metrics")
-                print("Sample metrics output:")
-                print(generate_latest().decode("utf-8")[:500] + "...")
-
-    except ImportError:
-        print("❌ prometheus_client not installed. Install with: pip install prometheus_client")
-
-
-def integration_with_fastapi():
-    """Example showing FastAPI integration with metrics."""
-    example_code = '''
-# FastAPI integration example
-from fastapi import FastAPI, Depends
-from async_cassandra import AsyncCluster
-from async_cassandra.metrics import create_metrics_system
-
-app = FastAPI()
-
-# Global metrics system
-metrics = create_metrics_system(
-    backend="memory",
-    prometheus_enabled=True
-)
-
-# Global cluster and session
-cluster: AsyncCluster = None
-session = None
-
-@app.on_event("startup")
-async def startup():
-    global cluster, session
-    cluster = AsyncCluster(contact_points=["localhost"])
-    session = await cluster.connect()
-    session._metrics = metrics  # Enable metrics
-
-@app.get("/metrics/stats")
-async def get_metrics():
-    """Get current metrics."""
-    stats = {}
-    for collector in metrics.collectors:
-        collector_stats = await collector.get_stats()
-        stats.update(collector_stats)
-    return stats
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: str):
-    # This query will automatically be tracked in metrics
-    result = await session.execute(
-        "SELECT * FROM users WHERE id = ?",
-        [uuid.UUID(user_id)]
-    )
-    return {"user": result.one()}
-
-# Metrics will be automatically collected for all queries!
-'''
-    print("🚀 FastAPI Integration Example:")
-    print("=" * 50)
-    print(example_code)
+    print("\n✅ Example complete!")
+    print("\nNext steps:")
+    print("- Install prometheus_client for production metrics")
+    print("- Integrate with your monitoring dashboard")
+    print("- Set up alerts based on thresholds")
+    print("- Use metrics to optimize slow queries")
 
 
 if __name__ == "__main__":
-    print("🎯 Async-Cassandra Metrics & Observability Demo")
-    print("=" * 60)
-
-    # Run basic metrics demo
     asyncio.run(main())
-
-    print("\n" + "=" * 60)
-    print("🔬 Advanced Examples:")
-
-    # Show Prometheus integration
-    asyncio.run(prometheus_example())
-
-    # Show FastAPI integration
-    integration_with_fastapi()
-
-    print("\n" + "=" * 60)
-    print("✅ Demo completed!")
-    print("\nKey Benefits of Metrics/Observability:")
-    print("• 📊 Real-time performance monitoring")
-    print("• 🚨 Automatic error detection and alerting")
-    print("• 🔍 Query performance analysis")
-    print("• 📈 Connection health tracking")
-    print("• 🎯 Production debugging capabilities")
-    print("• 📋 Compliance and audit trails")

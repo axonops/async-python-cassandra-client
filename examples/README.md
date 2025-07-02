@@ -107,21 +107,7 @@ Demonstrates proper context manager usage:
 python context_manager_safety_demo.py
 ```
 
-### 8. [Thread Pool Configuration](thread_pool_configuration.py)
-
-Shows how to configure thread pools for different workloads:
-- Web application configuration
-- Batch processing setup
-- Thread pool size comparison
-- Thread starvation demonstration
-- Thread pool monitoring
-
-**Run:**
-```bash
-python thread_pool_configuration.py
-```
-
-### 9. [Monitoring Configuration](monitoring/)
+### 8. [Monitoring Configuration](monitoring/)
 
 Production-ready monitoring configurations:
 - **alerts.yml** - Prometheus alerting rules for:

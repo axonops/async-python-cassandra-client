@@ -225,6 +225,7 @@ async def process_historical_data(session, processor: RealTimeProcessor):
         SELECT * FROM sensor_readings
         WHERE date = ?
         AND timestamp > ?
+        ALLOW FILTERING
     """
     )
 
@@ -282,6 +283,7 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
         AND sensor_id = ?
         AND timestamp > ?
         LIMIT 10
+        ALLOW FILTERING
     """
     )
 
@@ -335,7 +337,7 @@ async def main():
     """Run real-time processing example."""
     # Connect to Cassandra using context manager
     async with AsyncCluster(["localhost"]) as cluster:
-        async with cluster.connect() as session:
+        async with await cluster.connect() as session:
             # Setup test data
             await setup_sensor_data(session)
 

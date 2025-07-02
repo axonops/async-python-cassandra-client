@@ -139,29 +139,33 @@ async def filtered_streaming_example(session):
     logger.info("\n=== Filtered Streaming Example ===")
 
     # Prepare a filtered query
+    # Note: event_type is not part of primary key, so we need ALLOW FILTERING
     stmt = await session.prepare(
         """
         SELECT * FROM events
         WHERE partition_id = ?
-        AND event_type = ?
+        ALLOW FILTERING
     """
     )
 
-    # Stream events for specific partition and type
+    # Stream events for specific partition
     partition_id = 5
-    event_type = "type_2"
 
     config = StreamConfig(fetch_size=500)
 
     # Use context manager for proper cleanup
     async with await session.execute_stream(
-        stmt, parameters=[partition_id, event_type], stream_config=config
+        stmt, parameters=[partition_id], stream_config=config
     ) as result:
         count = 0
+        type_counts = {}
         async for row in result:
             count += 1
+            event_type = row.event_type
+            type_counts[event_type] = type_counts.get(event_type, 0) + 1
 
-    logger.info(f"Found {count} events in partition {partition_id} of type '{event_type}'")
+    logger.info(f"Found {count} events in partition {partition_id}")
+    logger.info(f"Event types in partition: {type_counts}")
 
 
 async def page_based_streaming_example(session):
@@ -193,7 +197,7 @@ async def main():
     """Run all streaming examples."""
     # Connect to Cassandra using context manager
     async with AsyncCluster(["localhost"]) as cluster:
-        async with cluster.connect() as session:
+        async with await cluster.connect() as session:
             # Setup test data
             await setup_test_data(session)
 

@@ -36,16 +36,18 @@ async def count_table_rows(session, keyspace: str, table_name: str) -> int:
     """Count total rows in a table (approximate for large tables)."""
     # Note: COUNT(*) can be slow on large tables
     # Consider using token ranges for very large tables
-    # Using system schema to validate table exists and avoid SQL injection
-    validation_query = await session.execute(
-        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
-        [keyspace, table_name],
+
+    # First validate that the table exists to prevent SQL injection
+    validation_stmt = await session.prepare(
+        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
     )
-    if not validation_query.one():
+    validation_result = await session.execute(validation_stmt, [keyspace, table_name])
+    if not validation_result.one():
         raise ValueError(f"Table {keyspace}.{table_name} does not exist")
 
-    # Safe to use table name after validation - but still use qualified name
-    # In production, consider using prepared statements even for COUNT queries
+    # For COUNT queries, we can't use prepared statements with dynamic table names
+    # Since we've validated the table exists, we can safely construct the query
+    # In production, consider implementing a token range count for large tables
     result = await session.execute(f"SELECT COUNT(*) FROM {keyspace}.{table_name}")
     return result.one()[0]
 
@@ -78,13 +80,15 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
 
     # CRITICAL: Use context manager for streaming to prevent memory leaks
     # Validate table exists before streaming
-    validation_query = await session.execute(
-        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
-        [keyspace, table_name],
+    validation_stmt = await session.prepare(
+        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
     )
-    if not validation_query.one():
+    validation_result = await session.execute(validation_stmt, [keyspace, table_name])
+    if not validation_result.one():
         raise ValueError(f"Table {keyspace}.{table_name} does not exist")
 
+    # For SELECT * with dynamic table names, we can't use prepared statements
+    # Since we've validated the table exists, we can safely construct the query
     async with await session.execute_stream(
         f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
     ) as result:
@@ -152,13 +156,15 @@ def export_table_sync(session, keyspace: str, table_name: str, output_file: str)
 
         # Use context manager for proper streaming cleanup
         # Validate table exists before streaming
-        validation_query = await session.execute(
-            "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?",
-            [keyspace, table_name],
+        validation_stmt = await session.prepare(
+            "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
         )
-        if not validation_query.one():
+        validation_result = await session.execute(validation_stmt, [keyspace, table_name])
+        if not validation_result.one():
             raise ValueError(f"Table {keyspace}.{table_name} does not exist")
 
+        # For SELECT * with dynamic table names, we can't use prepared statements
+        # Since we've validated the table exists, we can safely construct the query
         async with await session.execute_stream(
             f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
         ) as result:
@@ -285,7 +291,7 @@ async def main():
     """Run the export example."""
     # Connect to Cassandra using context manager
     async with AsyncCluster(["localhost"]) as cluster:
-        async with cluster.connect() as session:
+        async with await cluster.connect() as session:
             # Setup sample data
             await setup_sample_data(session)
 

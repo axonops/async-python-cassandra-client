@@ -10,8 +10,9 @@ import asyncio
 import logging
 import uuid
 
+from cassandra import InvalidRequest
+
 from async_cassandra import AsyncCluster
-from async_cassandra.exceptions import QueryError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -22,74 +23,69 @@ async def demonstrate_query_error_safety(cluster):
     """Show that query errors don't close the session."""
     logger.info("\n=== Demonstrating Query Error Safety ===")
 
-    session = await cluster.connect()
+    async with await cluster.connect() as session:
+        try:
+            # This will fail
+            await session.execute("SELECT * FROM non_existent_table")
+        except InvalidRequest as e:
+            logger.info(f"Query failed as expected: {e}")
 
-    try:
-        # This will fail
-        await session.execute("SELECT * FROM non_existent_table")
-    except QueryError as e:
-        logger.info(f"Query failed as expected: {e}")
-
-    # Session should still work
-    logger.info("Session still works after error:")
-    result = await session.execute("SELECT release_version FROM system.local")
-    logger.info(f"Cassandra version: {result.one().release_version}")
-
-    await session.close()
+        # Session should still work
+        logger.info("Session still works after error:")
+        result = await session.execute("SELECT release_version FROM system.local")
+        logger.info(f"Cassandra version: {result.one().release_version}")
 
 
 async def demonstrate_streaming_error_safety(cluster):
     """Show that streaming errors don't close the session."""
     logger.info("\n=== Demonstrating Streaming Error Safety ===")
 
-    session = await cluster.connect()
-
-    # Create test keyspace and data
-    await session.execute(
-        """
-        CREATE KEYSPACE IF NOT EXISTS context_demo
-        WITH REPLICATION = {
-            'class': 'SimpleStrategy',
-            'replication_factor': 1
-        }
-        """
-    )
-    await session.set_keyspace("context_demo")
-
-    await session.execute(
-        """
-        CREATE TABLE IF NOT EXISTS test_data (
-            id UUID PRIMARY KEY,
-            value TEXT
+    async with await cluster.connect() as session:
+        # Create test keyspace and data
+        await session.execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS context_demo
+            WITH REPLICATION = {
+                'class': 'SimpleStrategy',
+                'replication_factor': 1
+            }
+            """
         )
-        """
-    )
+        await session.set_keyspace("context_demo")
 
-    # Insert some data using prepared statement
-    insert_stmt = await session.prepare("INSERT INTO test_data (id, value) VALUES (?, ?)")
-    for i in range(10):
-        await session.execute(insert_stmt, [uuid.uuid4(), f"value_{i}"])
+        await session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_data (
+                id UUID PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
 
-    # Try streaming from non-existent table (will fail)
-    try:
-        async with await session.execute_stream("SELECT * FROM non_existent_table") as stream:
+        # Insert some data using prepared statement
+        insert_stmt = await session.prepare("INSERT INTO test_data (id, value) VALUES (?, ?)")
+        for i in range(10):
+            await session.execute(insert_stmt, [uuid.uuid4(), f"value_{i}"])
+
+        # Try streaming from non-existent table (will fail)
+        try:
+            async with await session.execute_stream("SELECT * FROM non_existent_table") as stream:
+                async for row in stream:
+                    pass
+        except Exception as e:
+            logger.info(f"Streaming failed as expected: {e}")
+
+        # Session should still work for new streaming
+        logger.info("Starting new streaming operation after error:")
+        count = 0
+        async with await session.execute_stream("SELECT * FROM test_data") as stream:
             async for row in stream:
-                pass
-    except Exception as e:
-        logger.info(f"Streaming failed as expected: {e}")
+                count += 1
 
-    # Session should still work for new streaming
-    logger.info("Starting new streaming operation after error:")
-    count = 0
-    async with await session.execute_stream("SELECT * FROM test_data") as stream:
-        async for row in stream:
-            count += 1
+        logger.info(f"Successfully streamed {count} rows after error")
 
-    logger.info(f"Successfully streamed {count} rows after error")
-
-    # Cleanup
-    await session.execute("DROP KEYSPACE context_demo")
-    await session.close()
+        # Cleanup
+        await session.execute("DROP KEYSPACE context_demo")
 
 
 async def demonstrate_context_manager_isolation(cluster):
@@ -108,29 +104,25 @@ async def demonstrate_context_manager_isolation(cluster):
 
     # Cluster should still work
     logger.info("Creating new session from same cluster:")
-    session2 = await cluster.connect()
-    result = await session2.execute("SELECT now() FROM system.local")
-    logger.info(f"New session works: {result.one()[0]}")
-    await session2.close()
+    async with await cluster.connect() as session2:
+        result = await session2.execute("SELECT now() FROM system.local")
+        logger.info(f"New session works: {result.one()[0]}")
 
     # Scenario 2: Streaming context doesn't affect session
     logger.info("\nScenario 2: Streaming context with early exit")
-    session3 = await cluster.connect()
+    async with await cluster.connect() as session3:
+        # Stream with early exit
+        count = 0
+        async with await session3.execute_stream("SELECT * FROM system.local") as stream:
+            async for row in stream:
+                count += 1
+                break  # Early exit
 
-    # Stream with early exit
-    count = 0
-    async with await session3.execute_stream("SELECT * FROM system.local") as stream:
-        async for row in stream:
-            count += 1
-            break  # Early exit
+        logger.info(f"Exited streaming early after {count} row")
 
-    logger.info(f"Exited streaming early after {count} row")
-
-    # Session should still work
-    result = await session3.execute("SELECT now() FROM system.local")
-    logger.info(f"Session still works: {result.one()[0]}")
-
-    await session3.close()
+        # Session should still work
+        result = await session3.execute("SELECT now() FROM system.local")
+        logger.info(f"Session still works: {result.one()[0]}")
 
 
 async def demonstrate_concurrent_safety(cluster):
@@ -138,39 +130,38 @@ async def demonstrate_concurrent_safety(cluster):
     logger.info("\n=== Demonstrating Concurrent Safety ===")
 
     # Create shared session
-    session = await cluster.connect()
+    async with await cluster.connect() as session:
 
-    async def worker(worker_id, query_count):
-        """Worker that executes queries."""
-        for i in range(query_count):
+        async def worker(worker_id, query_count):
+            """Worker that executes queries."""
+            for i in range(query_count):
+                try:
+                    result = await session.execute("SELECT now() FROM system.local")
+                    logger.info(f"Worker {worker_id} query {i+1}: {result.one()[0]}")
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    logger.error(f"Worker {worker_id} error: {e}")
+
+        async def streamer():
+            """Worker that uses streaming."""
             try:
-                result = await session.execute("SELECT now() FROM system.local")
-                logger.info(f"Worker {worker_id} query {i+1}: {result.one()[0]}")
-                await asyncio.sleep(0.1)
+                async with await session.execute_stream(
+                    "SELECT * FROM system_schema.keyspaces"
+                ) as stream:
+                    count = 0
+                    async for row in stream:
+                        count += 1
+                        if count % 5 == 0:
+                            logger.info(f"Streamer: Processed {count} keyspaces")
+                            await asyncio.sleep(0.1)
+                    logger.info(f"Streamer: Total {count} keyspaces")
             except Exception as e:
-                logger.error(f"Worker {worker_id} error: {e}")
+                logger.error(f"Streamer error: {e}")
 
-    async def streamer():
-        """Worker that uses streaming."""
-        try:
-            async with await session.execute_stream(
-                "SELECT * FROM system_schema.keyspaces"
-            ) as stream:
-                count = 0
-                async for row in stream:
-                    count += 1
-                    if count % 5 == 0:
-                        logger.info(f"Streamer: Processed {count} keyspaces")
-                        await asyncio.sleep(0.1)
-                logger.info(f"Streamer: Total {count} keyspaces")
-        except Exception as e:
-            logger.error(f"Streamer error: {e}")
+        # Run workers concurrently
+        await asyncio.gather(worker(1, 3), worker(2, 3), streamer(), return_exceptions=True)
 
-    # Run workers concurrently
-    await asyncio.gather(worker(1, 3), worker(2, 3), streamer(), return_exceptions=True)
-
-    logger.info("All concurrent operations completed")
-    await session.close()
+        logger.info("All concurrent operations completed")
 
 
 async def main():
