@@ -347,18 +347,26 @@ examples/bulk_operations/
 
 ## 🚦 Implementation Phases
 
-**Phase 1**: Basic token range operations ✅ COMPLETED
+**Phase 1**: Basic token range operations 🚧 IN PROGRESS
 - Token range discovery ✅
 - Query generation ✅
 - Parallel count implementation ✅
 - Unit tests with 94% coverage ✅
 - Docker Compose with Cassandra 5.0 ✅
+- **Integration Testing** 🚧 REQUIRED
+  - Validate token ranges against nodetool describering
+  - Test with vnodes (256 tokens per node)
+  - Verify full data coverage (no gaps/duplicates)
+  - Performance testing with real cluster
+  - Export streaming validation
 
 **Phase 2**: Export functionality
 - Streaming export (basic implementation done)
 - Progress tracking (implemented)
 - Error handling (implemented)
-- Integration tests needed
+- File format options (CSV, JSON, Parquet)
+- Compression support
+- Resume capability
 
 **Phase 3**: Iceberg integration
 - Schema mapping

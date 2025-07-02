@@ -252,10 +252,13 @@ class TestDiscoverTokenRanges:
         mock_metadata = Mock()
         mock_token_map = Mock()
 
-        # Setup token ranges
-        mock_token_range1 = Mock(start=-1000, end=0)
-        mock_token_range2 = Mock(start=0, end=1000)
-        mock_token_map.token_ranges = [mock_token_range1, mock_token_range2]
+        # Setup tokens in the ring
+        from .test_helpers import MockToken
+
+        mock_token1 = MockToken(-1000)
+        mock_token2 = MockToken(0)
+        mock_token3 = MockToken(1000)
+        mock_token_map.ring = [mock_token1, mock_token2, mock_token3]
 
         # Setup replicas
         mock_replica1 = Mock()
@@ -266,22 +269,27 @@ class TestDiscoverTokenRanges:
         mock_token_map.get_replicas.side_effect = [
             [mock_replica1, mock_replica2],
             [mock_replica2, mock_replica1],
+            [mock_replica1, mock_replica2],  # For the third token range
         ]
 
         mock_metadata.token_map = mock_token_map
         mock_cluster.metadata = mock_metadata
-        mock_session.cluster = mock_cluster
+        mock_session._session = Mock()
+        mock_session._session.cluster = mock_cluster
 
         # Test discovery
         ranges = await discover_token_ranges(mock_session, "test_ks")
 
-        assert len(ranges) == 2
+        assert len(ranges) == 3  # Three tokens create three ranges
         assert ranges[0].start == -1000
         assert ranges[0].end == 0
         assert ranges[0].replicas == ["192.168.1.1", "192.168.1.2"]
         assert ranges[1].start == 0
         assert ranges[1].end == 1000
         assert ranges[1].replicas == ["192.168.1.2", "192.168.1.1"]
+        assert ranges[2].start == 1000
+        assert ranges[2].end == -1000  # Wraparound range
+        assert ranges[2].replicas == ["192.168.1.1", "192.168.1.2"]
 
     @pytest.mark.unit
     async def test_discover_token_ranges_no_token_map(self):
@@ -291,7 +299,8 @@ class TestDiscoverTokenRanges:
         mock_metadata = Mock()
         mock_metadata.token_map = None
         mock_cluster.metadata = mock_metadata
-        mock_session.cluster = mock_cluster
+        mock_session._session = Mock()
+        mock_session._session.cluster = mock_cluster
 
         with pytest.raises(RuntimeError, match="Token map not available"):
             await discover_token_ranges(mock_session, "test_ks")

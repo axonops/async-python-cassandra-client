@@ -154,18 +154,58 @@ Example performance on a 3-node cluster:
 1. **Token Range Discovery**
    - Query cluster metadata for natural token ranges
    - Each range has start/end tokens and replica nodes
+   - With vnodes (256 per node), expect ~768 ranges in a 3-node cluster
 
 2. **Range Splitting**
    - Split ranges proportionally based on size
    - Larger ranges get more splits for balance
+   - Small vnode ranges may not split further
 
 3. **Parallel Execution**
    - Execute queries for each range concurrently
    - Use semaphore to limit parallelism
+   - Queries use `token()` function: `WHERE token(pk) > X AND token(pk) <= Y`
 
 4. **Result Aggregation**
    - Stream results as they arrive
    - Track progress and statistics
+   - No duplicates due to exclusive range boundaries
+
+## 🔍 Understanding Vnodes
+
+Our test cluster uses 256 virtual nodes (vnodes) per physical node. This means:
+
+- Each physical node owns 256 non-contiguous token ranges
+- Token ownership is distributed evenly across the ring
+- Smaller ranges mean better load distribution but more metadata
+
+To visualize token distribution:
+```bash
+python visualize_tokens.py
+```
+
+To validate vnodes configuration:
+```bash
+make validate-vnodes
+```
+
+## 🧪 Integration Testing
+
+The integration tests validate our token handling against a real Cassandra cluster:
+
+```bash
+# Run all integration tests with cluster management
+make test-integration
+
+# Run integration tests only (cluster must be running)
+make test-integration-only
+```
+
+Key integration tests:
+- **Token range discovery**: Validates all vnodes are discovered
+- **Nodetool comparison**: Compares with `nodetool describering` output
+- **Data coverage**: Ensures no rows are missed or duplicated
+- **Performance scaling**: Verifies parallel execution benefits
 
 ## 🚧 Roadmap
 

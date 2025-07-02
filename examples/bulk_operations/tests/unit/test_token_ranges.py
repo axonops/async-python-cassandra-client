@@ -198,39 +198,41 @@ class TestTokenRangeDiscovery:
         mock_token_map = Mock()
 
         # Set up mock relationships
-        mock_session.cluster = mock_cluster
+        mock_session._session = Mock()
+        mock_session._session.cluster = mock_cluster
         mock_cluster.metadata = mock_metadata
         mock_metadata.token_map = mock_token_map
 
-        # Mock token ranges
-        mock_range1 = Mock()
-        mock_range1.start = -9223372036854775808
-        mock_range1.end = 0
+        # Mock tokens in the ring
+        from .test_helpers import MockToken
 
-        mock_range2 = Mock()
-        mock_range2.start = 0
-        mock_range2.end = 9223372036854775807
-
-        mock_token_map.token_ranges = [mock_range1, mock_range2]
+        mock_token1 = MockToken(-9223372036854775808)
+        mock_token2 = MockToken(0)
+        mock_token3 = MockToken(9223372036854775807)
+        mock_token_map.ring = [mock_token1, mock_token2, mock_token3]
 
         # Mock replicas
         mock_token_map.get_replicas = MagicMock(
             side_effect=[
                 [Mock(address="127.0.0.1"), Mock(address="127.0.0.2")],
                 [Mock(address="127.0.0.2"), Mock(address="127.0.0.3")],
+                [Mock(address="127.0.0.3"), Mock(address="127.0.0.1")],  # For wraparound
             ]
         )
 
         # Discover ranges
         ranges = await discover_token_ranges(mock_session, "test_keyspace")
 
-        assert len(ranges) == 2
+        assert len(ranges) == 3  # Three tokens create three ranges
         assert ranges[0].start == -9223372036854775808
         assert ranges[0].end == 0
         assert ranges[0].replicas == ["127.0.0.1", "127.0.0.2"]
         assert ranges[1].start == 0
         assert ranges[1].end == 9223372036854775807
         assert ranges[1].replicas == ["127.0.0.2", "127.0.0.3"]
+        assert ranges[2].start == 9223372036854775807
+        assert ranges[2].end == -9223372036854775808  # Wraparound
+        assert ranges[2].replicas == ["127.0.0.3", "127.0.0.1"]
 
 
 class TestTokenRangeQueryGeneration:

@@ -20,6 +20,9 @@ test-unit: ## Run unit tests only
 	pytest -v -m unit
 
 test-integration: ## Run integration tests (requires Cassandra cluster)
+	./run_integration_tests.sh
+
+test-integration-only: ## Run integration tests without managing cluster
 	pytest -v -m integration
 
 test-slow: ## Run slow tests
@@ -105,3 +108,14 @@ demo: cassandra-up cassandra-wait example-count ## Run quick demo with count exa
 dev-setup: dev-install docker-up ## Complete development setup
 
 ci: lint type-check test-unit ## Run CI checks (no integration tests)
+
+# Vnode validation
+validate-vnodes: cassandra-up cassandra-wait ## Validate vnode token distribution
+	@echo "Checking vnode configuration..."
+	@$(CONTAINER_RUNTIME) exec bulk-cassandra-1 nodetool info | grep "Token"
+	@echo ""
+	@echo "Token ownership by node:"
+	@$(CONTAINER_RUNTIME) exec bulk-cassandra-1 nodetool ring | grep "^[0-9]" | awk '{print $$8}' | sort | uniq -c
+	@echo ""
+	@echo "Sample token ranges (first 10):"
+	@$(CONTAINER_RUNTIME) exec bulk-cassandra-1 nodetool describering test 2>/dev/null | grep "TokenRange" | head -10 || echo "Create test keyspace first"

@@ -47,9 +47,12 @@ class TestTokenAwareBulkOperator:
     def mock_session(self, mock_cluster):
         """Create a mock AsyncSession."""
         session = Mock()
-        session.cluster = mock_cluster
+        # Mock the underlying sync session that has cluster attribute
+        session._session = Mock()
+        session._session.cluster = mock_cluster
         session.execute = AsyncMock()
         session.execute_stream = AsyncMock()
+        session.prepare = AsyncMock(return_value=Mock())  # Mock prepare method
 
         # Mock metadata structure
         metadata = Mock()
@@ -138,7 +141,7 @@ class TestTokenAwareBulkOperator:
         # Track execution times
         execution_times = []
 
-        async def mock_execute_with_delay(query):
+        async def mock_execute_with_delay(stmt, params=None):
             start = asyncio.get_event_loop().time()
             await asyncio.sleep(0.1)  # Simulate query time
             execution_times.append(asyncio.get_event_loop().time() - start)

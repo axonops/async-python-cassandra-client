@@ -112,22 +112,41 @@ class TokenRangeSplitter:
 
 async def discover_token_ranges(session: AsyncCassandraSession, keyspace: str) -> list[TokenRange]:
     """Discover token ranges from cluster metadata."""
-    cluster = session.cluster  # type: ignore[attr-defined]
+    # Access cluster through the underlying sync session
+    cluster = session._session.cluster  # type: ignore[attr-defined]
     metadata = cluster.metadata
     token_map = metadata.token_map
 
     if not token_map:
         raise RuntimeError("Token map not available")
 
+    # Get all tokens from the ring
+    all_tokens = sorted(token_map.ring)
+    if not all_tokens:
+        raise RuntimeError("No tokens found in ring")
+
     ranges = []
-    for token_range in token_map.token_ranges:
-        # Get replicas for this range
-        replicas = token_map.get_replicas(keyspace, token_range)
+
+    # Create ranges from consecutive tokens
+    for i in range(len(all_tokens)):
+        start_token = all_tokens[i]
+        # Wrap around to first token for the last range
+        end_token = all_tokens[(i + 1) % len(all_tokens)]
+
+        # Handle wraparound - last range goes from last token to first token
+        if i == len(all_tokens) - 1:
+            # This is the wraparound range
+            start = start_token.value
+            end = all_tokens[0].value
+        else:
+            start = start_token.value
+            end = end_token.value
+
+        # Get replicas for this token
+        replicas = token_map.get_replicas(keyspace, start_token)
         replica_addresses = [str(r.address) for r in replicas]
 
-        ranges.append(
-            TokenRange(start=token_range.start, end=token_range.end, replicas=replica_addresses)
-        )
+        ranges.append(TokenRange(start=start, end=end, replicas=replica_addresses))
 
     return ranges
 
@@ -139,23 +158,28 @@ def generate_token_range_query(
     token_range: TokenRange,
     columns: list[str] | None = None,
 ) -> str:
-    """Generate a CQL query for a specific token range."""
+    """Generate a CQL query for a specific token range.
+
+    Note: This function assumes non-wraparound ranges. Wraparound ranges
+    (where end < start) should be handled by the caller by splitting them
+    into two separate queries.
+    """
     # Column selection
     column_list = ", ".join(columns) if columns else "*"
 
     # Partition key list for token function
     pk_list = ", ".join(partition_keys)
 
-    # Handle minimum token edge case
+    # Generate token condition
     if token_range.start == MIN_TOKEN:
         # First range uses >= to include minimum token
         token_condition = (
-            f"token({pk_list}) >= {token_range.start} " f"AND token({pk_list}) <= {token_range.end}"
+            f"token({pk_list}) >= {token_range.start} AND token({pk_list}) <= {token_range.end}"
         )
     else:
         # All other ranges use > to avoid duplicates
         token_condition = (
-            f"token({pk_list}) > {token_range.start} " f"AND token({pk_list}) <= {token_range.end}"
+            f"token({pk_list}) > {token_range.start} AND token({pk_list}) <= {token_range.end}"
         )
 
     return f"SELECT {column_list} FROM {keyspace}.{table} WHERE {token_condition}"

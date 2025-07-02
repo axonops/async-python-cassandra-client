@@ -10,12 +10,7 @@ from typing import Any
 
 from async_cassandra import AsyncCassandraSession
 
-from .token_utils import (
-    TokenRange,
-    TokenRangeSplitter,
-    discover_token_ranges,
-    generate_token_range_query,
-)
+from .token_utils import TokenRange, TokenRangeSplitter, discover_token_ranges
 
 
 @dataclass
@@ -69,11 +64,74 @@ class BulkOperationError(Exception):
 
 
 class TokenAwareBulkOperator:
-    """Performs bulk operations using token ranges for parallelism."""
+    """Performs bulk operations using token ranges for parallelism.
+
+    This class uses prepared statements for all token range queries to:
+    - Improve performance through query plan caching
+    - Provide protection against injection attacks
+    - Ensure type safety and validation
+    - Follow Cassandra best practices
+
+    Token range boundaries are passed as parameters to prepared statements,
+    not embedded in the query string.
+    """
 
     def __init__(self, session: AsyncCassandraSession):
         self.session = session
         self.splitter = TokenRangeSplitter()
+        self._prepared_statements: dict[str, dict[str, Any]] = {}
+
+    async def _get_prepared_statements(
+        self, keyspace: str, table: str, partition_keys: list[str]
+    ) -> dict[str, Any]:
+        """Get or prepare statements for token range queries."""
+        pk_list = ", ".join(partition_keys)
+        key = f"{keyspace}.{table}"
+
+        if key not in self._prepared_statements:
+            # Prepare all the statements we need for this table
+            self._prepared_statements[key] = {
+                "count_range": await self.session.prepare(
+                    f"""
+                    SELECT COUNT(*) FROM {keyspace}.{table}
+                    WHERE token({pk_list}) > ?
+                    AND token({pk_list}) <= ?
+                """
+                ),
+                "count_wraparound_gt": await self.session.prepare(
+                    f"""
+                    SELECT COUNT(*) FROM {keyspace}.{table}
+                    WHERE token({pk_list}) > ?
+                """
+                ),
+                "count_wraparound_lte": await self.session.prepare(
+                    f"""
+                    SELECT COUNT(*) FROM {keyspace}.{table}
+                    WHERE token({pk_list}) <= ?
+                """
+                ),
+                "select_range": await self.session.prepare(
+                    f"""
+                    SELECT * FROM {keyspace}.{table}
+                    WHERE token({pk_list}) > ?
+                    AND token({pk_list}) <= ?
+                """
+                ),
+                "select_wraparound_gt": await self.session.prepare(
+                    f"""
+                    SELECT * FROM {keyspace}.{table}
+                    WHERE token({pk_list}) > ?
+                """
+                ),
+                "select_wraparound_lte": await self.session.prepare(
+                    f"""
+                    SELECT * FROM {keyspace}.{table}
+                    WHERE token({pk_list}) <= ?
+                """
+                ),
+            }
+
+        return self._prepared_statements[key]
 
     async def count_by_token_ranges(
         self,
@@ -111,7 +169,7 @@ class TokenAwareBulkOperator:
 
         if split_count is None:
             # Default: 4 splits per node
-            split_count = len(self.session.cluster.contact_points) * 4  # type: ignore[attr-defined]
+            split_count = len(self.session._session.cluster.contact_points) * 4  # type: ignore[attr-defined]
 
         splits = self.splitter.split_proportionally(ranges, split_count)
 
@@ -120,7 +178,10 @@ class TokenAwareBulkOperator:
 
         # Determine parallelism
         if parallelism is None:
-            parallelism = min(len(splits), len(self.session.cluster.contact_points) * 2)  # type: ignore[attr-defined]
+            parallelism = min(len(splits), len(self.session._session.cluster.contact_points) * 2)  # type: ignore[attr-defined]
+
+        # Get prepared statements for this table
+        prepared_stmts = await self._get_prepared_statements(keyspace, table, partition_keys)
 
         # Create count tasks
         semaphore = asyncio.Semaphore(parallelism)
@@ -128,7 +189,14 @@ class TokenAwareBulkOperator:
 
         for split in splits:
             task = self._count_range(
-                keyspace, table, partition_keys, split, semaphore, stats, progress_callback
+                keyspace,
+                table,
+                partition_keys,
+                split,
+                semaphore,
+                stats,
+                progress_callback,
+                prepared_stmts,
             )
             tasks.append(task)
 
@@ -163,22 +231,33 @@ class TokenAwareBulkOperator:
         semaphore: asyncio.Semaphore,
         stats: BulkOperationStats,
         progress_callback: Callable[[BulkOperationStats], None] | None,
+        prepared_stmts: dict[str, Any],
     ) -> int:
         """Count rows in a single token range."""
         async with semaphore:
-            query = generate_token_range_query(
-                keyspace=keyspace,
-                table=table,
-                partition_keys=partition_keys,
-                token_range=token_range,
-            )
+            # Check if this is a wraparound range
+            if token_range.end < token_range.start:
+                # Wraparound range needs to be split into two queries
+                # First part: from start to MAX_TOKEN
+                result1 = await self.session.execute(
+                    prepared_stmts["count_wraparound_gt"], (token_range.start,)
+                )
+                count1 = result1.one().count if result1.one() else 0
 
-            # Add COUNT(*) to query
-            count_query = query.replace("SELECT *", "SELECT COUNT(*)")
+                # Second part: from MIN_TOKEN to end
+                result2 = await self.session.execute(
+                    prepared_stmts["count_wraparound_lte"], (token_range.end,)
+                )
+                count2 = result2.one().count if result2.one() else 0
 
-            result = await self.session.execute(count_query)
-            row = result.one()
-            count = row.count if row else 0
+                count = count1 + count2
+            else:
+                # Normal range - use prepared statement
+                result = await self.session.execute(
+                    prepared_stmts["count_range"], (token_range.start, token_range.end)
+                )
+                row = result.one()
+                count = row.count if row else 0
 
             # Update stats
             stats.rows_processed += count
@@ -207,24 +286,44 @@ class TokenAwareBulkOperator:
         ranges = await discover_token_ranges(self.session, keyspace)
 
         if split_count is None:
-            split_count = len(self.session.cluster.contact_points) * 4  # type: ignore[attr-defined]
+            split_count = len(self.session._session.cluster.contact_points) * 4  # type: ignore[attr-defined]
 
         splits = self.splitter.split_proportionally(ranges, split_count)
 
         # Initialize stats
         stats = BulkOperationStats(total_ranges=len(splits))
 
+        # Get prepared statements for this table
+        prepared_stmts = await self._get_prepared_statements(keyspace, table, partition_keys)
+
         # Stream results from each range
         for split in splits:
-            query = generate_token_range_query(
-                keyspace=keyspace, table=table, partition_keys=partition_keys, token_range=split
-            )
+            # Check if this is a wraparound range
+            if split.end < split.start:
+                # Wraparound range needs to be split into two queries
+                # First part: from start to MAX_TOKEN
+                async with await self.session.execute_stream(
+                    prepared_stmts["select_wraparound_gt"], (split.start,)
+                ) as result:
+                    async for row in result:
+                        stats.rows_processed += 1
+                        yield row
 
-            # Stream results from this range
-            async with await self.session.execute_stream(query) as result:
-                async for row in result:
-                    stats.rows_processed += 1
-                    yield row
+                # Second part: from MIN_TOKEN to end
+                async with await self.session.execute_stream(
+                    prepared_stmts["select_wraparound_lte"], (split.end,)
+                ) as result:
+                    async for row in result:
+                        stats.rows_processed += 1
+                        yield row
+            else:
+                # Normal range - use prepared statement
+                async with await self.session.execute_stream(
+                    prepared_stmts["select_range"], (split.start, split.end)
+                ) as result:
+                    async for row in result:
+                        stats.rows_processed += 1
+                        yield row
 
             stats.ranges_completed += 1
 
@@ -264,7 +363,7 @@ class TokenAwareBulkOperator:
 
     async def _get_table_metadata(self, keyspace: str, table: str) -> Any:
         """Get table metadata from cluster."""
-        metadata = self.session.cluster.metadata  # type: ignore[attr-defined]
+        metadata = self.session._session.cluster.metadata  # type: ignore[attr-defined]
 
         if keyspace not in metadata.keyspaces:
             raise ValueError(f"Keyspace '{keyspace}' not found")
