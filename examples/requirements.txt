@@ -1,0 +1,8 @@
+# Requirements for running the examples
+# Install with: pip install -r examples/requirements.txt
+
+# For Parquet export example
+pyarrow>=10.0.0
+
+# The main async-cassandra package (install from parent directory)
+# pip install -e ..

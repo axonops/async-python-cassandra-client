@@ -287,6 +287,50 @@ We welcome contributions! Please see:
 - [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example
 - [More Examples](examples/) - Additional usage patterns
 
+## 🎯 Running the Examples
+
+The project includes comprehensive examples demonstrating various features and use cases. Each example can be run using the provided Makefile, which automatically handles Cassandra setup if needed.
+
+### Available Examples
+
+Run any example with: `make example-<name>`
+
+- **`make example-basic`** - Basic connection and query execution
+- **`make example-streaming`** - Memory-efficient streaming of large result sets with True Async Paging
+- **`make example-context-safety`** - Demonstrates proper context manager usage and resource isolation
+- **`make example-export-large-table`** - Export large tables to CSV with progress tracking
+- **`make example-export-parquet`** - Export data to Parquet format with complex data types
+- **`make example-metrics`** - Comprehensive metrics collection and performance monitoring
+- **`make example-metrics-simple`** - Basic metrics collection example
+- **`make example-realtime`** - Real-time data processing with sliding window analytics
+- **`make example-streaming-demo`** - Visual demonstration that streaming doesn't block the event loop
+
+### Running with External Cassandra
+
+If you have Cassandra running elsewhere:
+
+```bash
+# Single node
+CASSANDRA_CONTACT_POINTS=10.0.0.1 make example-streaming
+
+# Multiple nodes
+CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2,10.0.0.3 make example-streaming
+
+# With custom port
+CASSANDRA_CONTACT_POINTS=cassandra.example.com CASSANDRA_PORT=9043 make example-basic
+```
+
+### Example Descriptions
+
+- **Basic Example**: Shows fundamental operations like connecting, executing queries, and using prepared statements
+- **Streaming Examples**: Demonstrate True Async Paging for processing millions of rows without memory issues
+- **Export Examples**: Show how to export Cassandra data to various formats (CSV, Parquet) with progress tracking
+- **Metrics Examples**: Illustrate performance monitoring, query tracking, and connection health checking
+- **Real-time Processing**: Demonstrates processing time-series IoT data with concurrent operations
+- **Context Safety Demo**: Proves that errors in one operation don't affect others when using context managers
+
+Each example includes detailed comments explaining the concepts and best practices. Start with `example-basic` if you're new to the library.
+
 ## ⚡ Performance
 
 async-cassandra enables your async Python application to work with Cassandra without blocking the event loop. While it doesn't eliminate the underlying driver's thread pool, it prevents those blocking operations from freezing your entire application. This is crucial for web servers where a blocked event loop means no requests can be processed.

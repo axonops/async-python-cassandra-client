@@ -7,6 +7,25 @@ This example demonstrates:
 - Progress tracking during export
 - Async file I/O with aiofiles
 - Proper error handling
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-export-large-table
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-export-large-table
+
+3. Direct Python execution:
+   python examples/export_large_table.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/export_large_table.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
+- EXAMPLE_OUTPUT_DIR: Directory for output files (default: examples/exampleoutput)
 """
 
 import asyncio
@@ -45,11 +64,15 @@ async def count_table_rows(session, keyspace: str, table_name: str) -> int:
 
 async def export_table_async(session, keyspace: str, table_name: str, output_file: str):
     """Export table using async file I/O (requires aiofiles)."""
-    logger.info(f"Starting async export of {keyspace}.{table_name} to {output_file}")
+    logger.info("\n" + "=" * 80)
+    logger.info("📤 CSV EXPORT WITH ASYNC FILE I/O")
+    logger.info("=" * 80)
+    logger.info(f"\n📊 Exporting: {keyspace}.{table_name}")
+    logger.info(f"💾 Output file: {output_file}")
 
     # Get approximate row count for progress tracking
     total_rows = await count_table_rows(session, keyspace, table_name)
-    logger.info(f"Table has approximately {total_rows:,} rows")
+    logger.info(f"📋 Table size: ~{total_rows:,} rows")
 
     # Configure streaming with progress callback
     rows_exported = 0
@@ -59,9 +82,12 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
         rows_exported = rows_so_far
         if total_rows > 0:
             progress = (rows_so_far / total_rows) * 100
+            bar_length = 40
+            filled = int(bar_length * progress / 100)
+            bar = "█" * filled + "░" * (bar_length - filled)
             logger.info(
-                f"Export progress: {rows_so_far:,}/{total_rows:,} rows "
-                f"({progress:.1f}%) - Page {page_num}"
+                f"📊 Progress: [{bar}] {progress:.1f}% "
+                f"({rows_so_far:,}/{total_rows:,} rows) - Page {page_num}"
             )
 
     config = StreamConfig(fetch_size=5000, page_callback=progress_callback)
@@ -85,6 +111,7 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
                     fieldnames = row._fields
                     header = ",".join(fieldnames) + "\n"
                     await f.write(header)
+                    writer = True  # Mark that header has been written
 
                 # Write row data
                 row_data = []
@@ -107,32 +134,45 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
                 row_count += 1
 
     elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info("\nExport completed:")
-    logger.info(f"- Rows exported: {row_count:,}")
-    logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
-    logger.info(f"- Export rate: {row_count/elapsed:.0f} rows/sec")
-    logger.info(f"- Output file: {output_file}")
-    logger.info(f"- File size: {os.path.getsize(output_file):,} bytes")
+    file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
+
+    logger.info("\n" + "─" * 80)
+    logger.info("✅ EXPORT COMPLETED SUCCESSFULLY!")
+    logger.info("─" * 80)
+    logger.info("\n📊 Export Statistics:")
+    logger.info(f"   • Rows exported: {row_count:,}")
+    logger.info(f"   • Time elapsed: {elapsed:.2f} seconds")
+    logger.info(f"   • Export rate: {row_count/elapsed:,.0f} rows/sec")
+    logger.info(f"   • File size: {file_size_mb:.2f} MB ({os.path.getsize(output_file):,} bytes)")
+    logger.info(f"   • Output path: {output_file}")
 
 
 def export_table_sync(session, keyspace: str, table_name: str, output_file: str):
     """Export table using synchronous file I/O."""
-    logger.info(f"Starting sync export of {keyspace}.{table_name} to {output_file}")
+    logger.info("\n" + "=" * 80)
+    logger.info("📤 CSV EXPORT WITH SYNC FILE I/O")
+    logger.info("=" * 80)
+    logger.info(f"\n📊 Exporting: {keyspace}.{table_name}")
+    logger.info(f"💾 Output file: {output_file}")
 
     async def _export():
         # Get approximate row count
         total_rows = await count_table_rows(session, keyspace, table_name)
-        logger.info(f"Table has approximately {total_rows:,} rows")
+        logger.info(f"📋 Table size: ~{total_rows:,} rows")
 
         # Configure streaming
-        config = StreamConfig(
-            fetch_size=5000,
-            page_callback=lambda p, t: (
-                logger.info(f"Exported {t:,}/{total_rows:,} rows ({100*t/total_rows:.1f}%)")
-                if total_rows > 0
-                else None
-            ),
-        )
+        def sync_progress(page_num: int, rows_so_far: int):
+            if total_rows > 0:
+                progress = (rows_so_far / total_rows) * 100
+                bar_length = 40
+                filled = int(bar_length * progress / 100)
+                bar = "█" * filled + "░" * (bar_length - filled)
+                logger.info(
+                    f"📊 Progress: [{bar}] {progress:.1f}% "
+                    f"({rows_so_far:,}/{total_rows:,} rows) - Page {page_num}"
+                )
+
+        config = StreamConfig(fetch_size=5000, page_callback=sync_progress)
 
         start_time = datetime.now()
 
@@ -169,12 +209,19 @@ def export_table_sync(session, keyspace: str, table_name: str, output_file: str)
                     row_count += 1
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        logger.info("\nExport completed:")
-        logger.info(f"- Rows exported: {row_count:,}")
-        logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
-        logger.info(f"- Export rate: {row_count/elapsed:.0f} rows/sec")
-        logger.info(f"- Output file: {output_file}")
-        logger.info(f"- File size: {os.path.getsize(output_file):,} bytes")
+        file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
+
+        logger.info("\n" + "─" * 80)
+        logger.info("✅ EXPORT COMPLETED SUCCESSFULLY!")
+        logger.info("─" * 80)
+        logger.info("\n📊 Export Statistics:")
+        logger.info(f"   • Rows exported: {row_count:,}")
+        logger.info(f"   • Time elapsed: {elapsed:.2f} seconds")
+        logger.info(f"   • Export rate: {row_count/elapsed:,.0f} rows/sec")
+        logger.info(
+            f"   • File size: {file_size_mb:.2f} MB ({os.path.getsize(output_file):,} bytes)"
+        )
+        logger.info(f"   • Output path: {output_file}")
 
     # Run the async export function
     return _export()
@@ -182,7 +229,7 @@ def export_table_sync(session, keyspace: str, table_name: str, output_file: str)
 
 async def setup_sample_data(session):
     """Create sample table with data for testing."""
-    logger.info("Setting up sample data...")
+    logger.info("\n🛠️  Setting up sample data...")
 
     # Create keyspace
     await session.execute(
@@ -195,12 +242,10 @@ async def setup_sample_data(session):
     """
     )
 
-    await session.set_keyspace("export_example")
-
     # Create table
     await session.execute(
         """
-        CREATE TABLE IF NOT EXISTS products (
+        CREATE TABLE IF NOT EXISTS export_example.products (
             category text,
             product_id int,
             name text,
@@ -217,7 +262,7 @@ async def setup_sample_data(session):
     # Insert sample data
     insert_stmt = await session.prepare(
         """
-        INSERT INTO products (
+        INSERT INTO export_example.products (
             category, product_id, name, price, in_stock,
             tags, attributes, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -257,20 +302,27 @@ async def setup_sample_data(session):
 
         await asyncio.gather(*tasks)
 
-    logger.info(f"Created {total_products} sample products")
+    logger.info(f"✅ Created {total_products:,} sample products in 'export_example.products' table")
 
 
 async def main():
     """Run the export example."""
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    logger.info(f"Connecting to Cassandra at {contact_points}:{port}")
+
     # Connect to Cassandra using context manager
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         async with await cluster.connect() as session:
             # Setup sample data
             await setup_sample_data(session)
 
             # Create output directory
-            output_dir = Path("exports")
-            output_dir.mkdir(exist_ok=True)
+            output_dir = Path(os.environ.get("EXAMPLE_OUTPUT_DIR", "examples/exampleoutput"))
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Output directory: {output_dir}")
 
             # Export using async I/O if available
             if ASYNC_FILE_IO:
@@ -283,8 +335,9 @@ async def main():
                 )
 
             # Cleanup (optional)
-            logger.info("\nCleaning up...")
+            logger.info("\n🧹 Cleaning up...")
             await session.execute("DROP KEYSPACE export_example")
+            logger.info("✅ Keyspace dropped")
 
 
 if __name__ == "__main__":

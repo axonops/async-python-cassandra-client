@@ -2,6 +2,48 @@
 
 This directory contains working examples demonstrating various features and use cases of async-cassandra.
 
+## Quick Start
+
+### Running Examples with Make
+
+The easiest way to run examples is using the provided Make targets:
+
+```bash
+# Run a specific example (automatically starts Cassandra if needed)
+make example-streaming
+make example-export-csv
+make example-export-parquet
+make example-realtime
+make example-metrics
+make example-non-blocking
+make example-context
+
+# Run all examples in sequence
+make examples-all
+
+# Use external Cassandra cluster
+CASSANDRA_CONTACT_POINTS=node1.example.com,node2.example.com make example-streaming
+```
+
+### Installing Example Dependencies
+
+Some examples require additional dependencies:
+
+```bash
+# Install all example dependencies (including pyarrow for Parquet export)
+make install-examples
+
+# Or manually
+pip install -r examples/requirements.txt
+```
+
+### Environment Variables
+
+All examples support these environment variables:
+- `CASSANDRA_CONTACT_POINTS`: Comma-separated list of contact points (default: localhost)
+- `CASSANDRA_PORT`: Port number (default: 9042)
+- `EXAMPLE_OUTPUT_DIR`: Directory for output files like CSV and Parquet exports (default: examples/exampleoutput)
+
 ## Available Examples
 
 ### 1. [FastAPI Integration](fastapi_app/)
@@ -50,10 +92,38 @@ Shows how to export large Cassandra tables to CSV:
 **Run:**
 ```bash
 python export_large_table.py
-# Exports will be saved in ./exports/ directory
+# Exports will be saved in examples/exampleoutput/ directory (default)
+
+# Or with custom output directory:
+EXAMPLE_OUTPUT_DIR=/tmp/my-exports python export_large_table.py
 ```
 
-### 4. [Real-time Data Processing](realtime_processing.py)
+### 4. [Export to Parquet Format](export_to_parquet.py)
+
+Advanced example of exporting large Cassandra tables to Parquet format:
+- Memory-efficient streaming with page-by-page processing
+- Automatic schema inference from Cassandra data types
+- Multiple compression options (snappy, gzip, lz4)
+- Progress tracking during export
+- Handles all Cassandra data types including collections
+- Configurable row group sizes for optimization
+- Export statistics and performance metrics
+
+**Run:**
+```bash
+python export_to_parquet.py
+# Exports will be saved in examples/exampleoutput/ directory (default)
+
+# Or with custom output directory:
+EXAMPLE_OUTPUT_DIR=/tmp/my-parquet-exports python export_to_parquet.py
+```
+
+**Note:** Requires PyArrow to be installed:
+```bash
+pip install pyarrow
+```
+
+### 5. [Real-time Data Processing](realtime_processing.py)
 
 Example of processing time-series data in real-time:
 - Sliding window analytics
@@ -67,7 +137,7 @@ Example of processing time-series data in real-time:
 python realtime_processing.py
 ```
 
-### 5. [Metrics Collection](metrics_simple.py)
+### 6. [Metrics Collection](metrics_simple.py)
 
 Simple example of metrics collection:
 - Query performance tracking
@@ -80,7 +150,7 @@ Simple example of metrics collection:
 python metrics_simple.py
 ```
 
-### 6. [Advanced Metrics](metrics_example.py)
+### 7. [Advanced Metrics](metrics_example.py)
 
 Comprehensive metrics and observability example:
 - Multiple metrics collectors setup
@@ -94,7 +164,21 @@ Comprehensive metrics and observability example:
 python metrics_example.py
 ```
 
-### 7. [Context Manager Safety](context_manager_safety_demo.py)
+### 8. [Non-Blocking Streaming Demo](streaming_non_blocking_demo.py)
+
+Visual demonstration that streaming doesn't block the event loop:
+- Heartbeat monitoring to detect event loop blocking
+- Concurrent queries during streaming
+- Visual feedback showing event loop responsiveness
+- Performance analysis of concurrent operations
+- Proves the async wrapper truly keeps the event loop free
+
+**Run:**
+```bash
+python streaming_non_blocking_demo.py
+```
+
+### 9. [Context Manager Safety](context_manager_safety_demo.py)
 
 Demonstrates proper context manager usage:
 - Context manager isolation
@@ -118,6 +202,19 @@ Production-ready monitoring configurations:
   - Query performance metrics
   - Connection health status
   - Error rates and trends
+
+## Output Files
+
+Examples that generate output files (CSV exports, Parquet exports, etc.) save them to a configurable directory:
+
+- **Default location**: `examples/exampleoutput/`
+- **Configure via environment variable**: `EXAMPLE_OUTPUT_DIR=/path/to/output`
+- **Git ignored**: All files in the default output directory are ignored by Git (except README.md and .gitignore)
+- **Cleanup**: Files are not automatically deleted; clean up manually when needed:
+  ```bash
+  rm -f examples/exampleoutput/*.csv
+  rm -f examples/exampleoutput/*.parquet
+  ```
 
 ## Prerequisites
 

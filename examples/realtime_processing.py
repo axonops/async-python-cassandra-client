@@ -7,10 +7,29 @@ This example demonstrates:
 - Aggregating data while streaming
 - Handling continuous data ingestion
 - Implementing sliding window analytics
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-realtime
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-realtime
+
+3. Direct Python execution:
+   python examples/realtime_processing.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/realtime_processing.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
 """
 
 import asyncio
 import logging
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -96,7 +115,7 @@ class RealTimeProcessor:
         if reading.temperature > 35.0 or reading.temperature < -10.0:
             self.alerts_triggered += 1
             logger.warning(
-                f"ALERT: Sensor {reading.sensor_id} temperature out of range: "
+                f"🚨 ALERT: Sensor {reading.sensor_id} temperature out of range: "
                 f"{reading.temperature}°C"
             )
 
@@ -104,7 +123,7 @@ class RealTimeProcessor:
         if reading.humidity > 90.0:
             self.alerts_triggered += 1
             logger.warning(
-                f"ALERT: Sensor {reading.sensor_id} high humidity: " f"{reading.humidity}%"
+                f"🚨 ALERT: Sensor {reading.sensor_id} high humidity: {reading.humidity}%"
             )
 
     def get_summary(self) -> Dict:
@@ -130,7 +149,7 @@ class RealTimeProcessor:
 
 async def setup_sensor_data(session):
     """Create sensor data table and insert sample data."""
-    logger.info("Setting up sensor data...")
+    logger.info("\n🛠️  Setting up IoT sensor data simulation...")
 
     # Create keyspace
     await session.execute(
@@ -143,12 +162,10 @@ async def setup_sensor_data(session):
     """
     )
 
-    await session.set_keyspace("iot_data")
-
     # Create time-series table
     await session.execute(
         """
-        CREATE TABLE IF NOT EXISTS sensor_readings (
+        CREATE TABLE IF NOT EXISTS iot_data.sensor_readings (
             date date,
             sensor_id text,
             timestamp timestamp,
@@ -163,7 +180,7 @@ async def setup_sensor_data(session):
     # Insert sample data for the last hour
     insert_stmt = await session.prepare(
         """
-        INSERT INTO sensor_readings (
+        INSERT INTO iot_data.sensor_readings (
             date, sensor_id, timestamp, temperature, humidity, pressure
         ) VALUES (?, ?, ?, ?, ?, ?)
     """
@@ -173,7 +190,8 @@ async def setup_sensor_data(session):
     sensors = [f"sensor_{i:03d}" for i in range(50)]
     base_time = datetime.now() - timedelta(hours=6)  # 6 hours of data
 
-    logger.info("Inserting sample sensor data...")
+    logger.info(f"📡 Generating data for {len(sensors)} sensors over 6 hours...")
+    logger.info("🌡️  Data includes temperature, humidity, and pressure readings")
     tasks = []
     total_readings = 0
 
@@ -209,18 +227,24 @@ async def setup_sensor_data(session):
             await asyncio.gather(*tasks)
             tasks = []
             if total_readings % 10000 == 0:
-                logger.info(f"Inserted {total_readings:,} readings...")
+                logger.info(f"   📊 Progress: {total_readings:,} readings inserted...")
 
     # Execute remaining tasks
     if tasks:
         await asyncio.gather(*tasks)
 
-    logger.info(f"Sample data inserted: {total_readings:,} total readings")
+    logger.info(f"✅ Sample data setup complete: {total_readings:,} sensor readings created")
+    logger.info(f"   • {len(sensors)} sensors")
+    logger.info("   • 6 hours of historical data")
+    logger.info("   • 10-second intervals")
+    logger.info("   • Includes simulated anomalies for alert testing")
 
 
 async def process_historical_data(session, processor: RealTimeProcessor):
     """Process historical data using streaming."""
-    logger.info("\n=== Processing Historical Data ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("📈 PROCESSING HISTORICAL DATA WITH STREAMING")
+    logger.info("=" * 80)
 
     # Query last 6 hours of data
     six_hours_ago = datetime.now() - timedelta(hours=6)
@@ -229,7 +253,7 @@ async def process_historical_data(session, processor: RealTimeProcessor):
     # Prepare query for specific date partition
     stmt = await session.prepare(
         """
-        SELECT * FROM sensor_readings
+        SELECT * FROM iot_data.sensor_readings
         WHERE date = ?
         AND timestamp > ?
         ALLOW FILTERING
@@ -239,7 +263,7 @@ async def process_historical_data(session, processor: RealTimeProcessor):
     # Configure streaming with appropriate page size for True Async Paging
     config = StreamConfig(
         fetch_size=5000,  # Process 5000 rows per page
-        page_callback=lambda p, t: logger.info(f"Processing page {p} ({t:,} readings)"),
+        page_callback=lambda p, t: logger.info(f"📄 Processing page {p} ({t:,} readings so far)"),
     )
 
     # Stream and process data
@@ -265,27 +289,34 @@ async def process_historical_data(session, processor: RealTimeProcessor):
             if readings_processed % 10000 == 0:
                 summary = processor.get_summary()
                 logger.info(
-                    f"Progress: {readings_processed:,} readings - "
-                    f"{summary['active_sensors']} sensors - "
-                    f"{summary['alerts_triggered']} alerts"
+                    f"📊 Progress: {readings_processed:,} readings • "
+                    f"{summary['active_sensors']} sensors • "
+                    f"{summary['alerts_triggered']} alerts triggered"
                 )
 
     elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info(f"\nProcessing completed in {elapsed:.2f} seconds")
-    logger.info(
-        f"Processed {readings_processed:,} readings "
-        f"({readings_processed/elapsed:,.0f} readings/sec)"
-    )
+
+    logger.info("\n" + "─" * 80)
+    logger.info("✅ HISTORICAL DATA PROCESSING COMPLETE")
+    logger.info("─" * 80)
+    logger.info("\n📊 Processing Statistics:")
+    logger.info(f"   • Total readings: {readings_processed:,}")
+    logger.info(f"   • Duration: {elapsed:.2f} seconds")
+    logger.info(f"   • Throughput: {readings_processed/elapsed:,.0f} readings/sec")
+    logger.info(f"   • Active sensors: {processor.get_summary()['active_sensors']}")
+    logger.info(f"   • Alerts triggered: {processor.alerts_triggered}")
 
 
 async def process_data_in_pages(session):
     """Demonstrate True Async Paging for batch processing."""
-    logger.info("\n=== True Async Paging Example ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("📦 TRUE ASYNC PAGING - BATCH PROCESSING DEMONSTRATION")
+    logger.info("=" * 80)
 
     # Query all data for batch processing
     stmt = await session.prepare(
         """
-        SELECT * FROM sensor_readings
+        SELECT * FROM iot_data.sensor_readings
         WHERE date = ?
         ALLOW FILTERING
     """
@@ -298,7 +329,8 @@ async def process_data_in_pages(session):
     total_readings = 0
     sensor_data = defaultdict(list)
 
-    logger.info("Processing sensor data in pages...")
+    logger.info("\n🔄 Processing sensor data in pages...")
+    logger.info("💡 Note: Each page is fetched ONLY when needed (True Async Paging)")
 
     # Use True Async Paging to process large dataset efficiently
     async with await session.execute_stream(
@@ -309,7 +341,7 @@ async def process_data_in_pages(session):
             readings_in_page = len(page)
             total_readings += readings_in_page
 
-            logger.info(f"Processing page {page_count} with {readings_in_page:,} readings")
+            logger.info(f"\n📄 Page {page_count}: {readings_in_page:,} readings")
 
             # Process each page (e.g., aggregate by sensor)
             for row in page:
@@ -328,24 +360,30 @@ async def process_data_in_pages(session):
             # Log memory-efficient processing
             if page_count % 5 == 0:
                 logger.info(
-                    f"  Processed {total_readings:,} total readings across {len(sensor_data)} sensors"
+                    f"   ✓ Progress: {total_readings:,} total readings • {len(sensor_data)} sensors"
                 )
 
-    logger.info("\nPage-based processing completed:")
-    logger.info(f"  - Total pages: {page_count}")
-    logger.info(f"  - Total readings: {total_readings:,}")
-    logger.info(f"  - Unique sensors: {len(sensor_data)}")
-    logger.info("  - Memory usage remains constant due to page-by-page processing!")
+    logger.info("\n" + "─" * 80)
+    logger.info("✅ PAGE-BASED PROCESSING COMPLETE")
+    logger.info("─" * 80)
+    logger.info("\n📊 Results:")
+    logger.info(f"   • Total pages: {page_count}")
+    logger.info(f"   • Total readings: {total_readings:,}")
+    logger.info(f"   • Unique sensors: {len(sensor_data)}")
+    logger.info("\n💡 Key benefit: Memory usage remains constant regardless of dataset size!")
+    logger.info("   Pages are fetched on-demand as you process them.")
 
 
 async def simulate_realtime_processing(session, processor: RealTimeProcessor):
     """Simulate real-time data processing."""
-    logger.info("\n=== Simulating Real-Time Processing ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("🔴 SIMULATING REAL-TIME PROCESSING")
+    logger.info("=" * 80)
 
     # Prepare query for recent data
     stmt = await session.prepare(
         """
-        SELECT * FROM sensor_readings
+        SELECT * FROM iot_data.sensor_readings
         WHERE date = ?
         AND sensor_id = ?
         AND timestamp > ?
@@ -358,7 +396,7 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
     iterations = 10
 
     for i in range(iterations):
-        logger.info(f"\nProcessing cycle {i+1}/{iterations}")
+        logger.info(f"\n🔄 Processing cycle {i+1}/{iterations}")
 
         # Query recent data for each sensor
         cutoff_time = datetime.now() - timedelta(minutes=processor.window_minutes)
@@ -383,7 +421,11 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
 
         # Show current statistics
         summary = processor.get_summary()
-        logger.info(f"Current state: {summary}")
+        logger.info(
+            f"📊 Current state: {summary['active_sensors']} sensors • "
+            f"{summary['total_readings']} readings • "
+            f"{summary['alerts_triggered']} alerts"
+        )
 
         # Show sensor details
         for sensor_id, stats in processor.sensor_stats.items():
@@ -402,8 +444,14 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
 
 async def main():
     """Run real-time processing example."""
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    logger.info(f"Connecting to Cassandra at {contact_points}:{port}")
+
     # Connect to Cassandra using context manager
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         async with await cluster.connect() as session:
             # Setup test data
             await setup_sensor_data(session)
@@ -419,19 +467,25 @@ async def main():
 
             # Show final summary
             summary = processor.get_summary()
-            logger.info("\nFinal Summary:")
-            logger.info(f"- Active sensors: {summary['active_sensors']}")
-            logger.info(f"- Total readings: {summary['total_readings']}")
-            logger.info(f"- Alerts triggered: {summary['alerts_triggered']}")
-            logger.info(f"- Avg temperature: {summary['avg_temperature']}°C")
-            logger.info(f"- Avg humidity: {summary['avg_humidity']}%")
+            logger.info("\n" + "=" * 80)
+            logger.info("📊 FINAL ANALYTICS SUMMARY")
+            logger.info("=" * 80)
+            logger.info("\n🌡️  Environmental Metrics:")
+            logger.info(f"   • Active sensors: {summary['active_sensors']}")
+            logger.info(f"   • Total readings processed: {summary['total_readings']:,}")
+            logger.info(f"   • Average temperature: {summary['avg_temperature']}°C")
+            logger.info(f"   • Average humidity: {summary['avg_humidity']}%")
+            logger.info("\n🚨 Alert Summary:")
+            logger.info(f"   • Total alerts triggered: {summary['alerts_triggered']}")
+            logger.info("   • Alert types: Temperature anomalies, High humidity")
 
             # Simulate real-time processing
             await simulate_realtime_processing(session, processor)
 
             # Cleanup
-            logger.info("\nCleaning up...")
+            logger.info("\n🧹 Cleaning up...")
             await session.execute("DROP KEYSPACE iot_data")
+            logger.info("✅ Keyspace dropped")
 
 
 if __name__ == "__main__":

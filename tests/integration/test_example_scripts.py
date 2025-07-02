@@ -28,6 +28,8 @@ Additional context:
 """
 
 import asyncio
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -105,7 +107,7 @@ class TestExampleScripts:
                 )
                 assert result.one() is None, "Keyspace was not cleaned up"
 
-    async def test_export_large_table_example(self, cassandra_cluster):
+    async def test_export_large_table_example(self, cassandra_cluster, tmp_path):
         """
         Test the table export example.
 
@@ -116,6 +118,7 @@ class TestExampleScripts:
         3. Handles different data types properly
         4. Shows progress during export
         5. Cleans up resources
+        6. Validates output file content
 
         Why this matters:
         ----------------
@@ -127,48 +130,75 @@ class TestExampleScripts:
         script_path = EXAMPLES_DIR / "export_large_table.py"
         assert script_path.exists(), f"Example script not found: {script_path}"
 
-        # Ensure export directory doesn't exist
-        export_dir = Path("exports")
-        if export_dir.exists():
-            for file in export_dir.glob("*.csv"):
-                file.unlink()
+        # Use temp directory for output
+        export_dir = tmp_path / "example_output"
+        export_dir.mkdir(exist_ok=True)
 
-        # Run the example script
-        result = subprocess.run(
-            [sys.executable, str(script_path)],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            # Run the example script with custom output directory
+            env = os.environ.copy()
+            env["EXAMPLE_OUTPUT_DIR"] = str(export_dir)
 
-        # Check execution succeeded
-        assert result.returncode == 0, f"Script failed with: {result.stderr}"
+            result = subprocess.run(
+                [sys.executable, str(script_path)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=env,
+            )
 
-        # Verify expected output (might be in stdout or stderr due to logging)
-        output = result.stdout + result.stderr
-        assert "Created 5000 sample products" in output
-        assert "Export completed:" in output
-        assert "Rows exported: 5,000" in output
+            # Check execution succeeded
+            assert result.returncode == 0, f"Script failed with: {result.stderr}"
 
-        # Verify CSV file was created
-        csv_files = list(export_dir.glob("*.csv"))
-        assert len(csv_files) > 0, "No CSV files were created"
+            # Verify expected output (might be in stdout or stderr due to logging)
+            output = result.stdout + result.stderr
+            assert "Created 5000 sample products" in output
+            assert "Export completed:" in output
+            assert "Rows exported: 5,000" in output
+            assert f"Output directory: {export_dir}" in output
 
-        # Verify CSV content
-        csv_file = csv_files[0]
-        assert csv_file.stat().st_size > 0, "CSV file is empty"
+            # Verify CSV file was created
+            csv_files = list(export_dir.glob("*.csv"))
+            assert len(csv_files) > 0, "No CSV files were created"
 
-        # Read first few lines to verify format
-        with open(csv_file, "r") as f:
-            header = f.readline().strip()
-            # Verify header contains expected columns
-            assert "product_id" in header
-            assert "category" in header
-            assert "price" in header
+            # Verify CSV content
+            csv_file = csv_files[0]
+            assert csv_file.stat().st_size > 0, "CSV file is empty"
 
-        # Cleanup
-        for file in export_dir.glob("*.csv"):
-            file.unlink()
+            # Read and validate CSV content
+            with open(csv_file, "r") as f:
+                header = f.readline().strip()
+                # Verify header contains expected columns
+                assert "product_id" in header
+                assert "category" in header
+                assert "price" in header
+                assert "in_stock" in header
+                assert "tags" in header
+                assert "attributes" in header
+                assert "created_at" in header
+
+                # Read a few data rows to verify content
+                row_count = 0
+                for line in f:
+                    row_count += 1
+                    if row_count > 10:  # Check first 10 rows
+                        break
+                    # Basic validation that row has content
+                    assert len(line.strip()) > 0
+                    assert "," in line  # CSV format
+
+                # Verify we have the expected number of rows (5000 + header)
+                f.seek(0)
+                total_lines = sum(1 for _ in f)
+                assert (
+                    total_lines == 5001
+                ), f"Expected 5001 lines (header + 5000 rows), got {total_lines}"
+
+        finally:
+            # Cleanup - always clean up even if test fails
+            # pytest's tmp_path fixture also cleans up automatically
+            if export_dir.exists():
+                shutil.rmtree(export_dir)
 
     async def test_context_manager_safety_demo(self, cassandra_cluster):
         """
@@ -354,6 +384,188 @@ class TestExampleScripts:
         assert "Metrics" in output or "metrics" in output
         assert "queries" in output.lower() or "Queries" in output
 
+    @pytest.mark.timeout(240)  # Override default timeout for this test
+    async def test_export_to_parquet_example(self, cassandra_cluster, tmp_path):
+        """
+        Test the Parquet export example.
+
+        What this tests:
+        ---------------
+        1. Creates test data with various types
+        2. Exports data to Parquet format
+        3. Handles different compression formats
+        4. Shows progress during export
+        5. Verifies exported files
+        6. Validates Parquet file content
+        7. Cleans up resources automatically
+
+        Why this matters:
+        ----------------
+        - Parquet is popular for analytics
+        - Memory-efficient export critical for large datasets
+        - Type handling must be correct
+        - Shows advanced streaming patterns
+        """
+        script_path = EXAMPLES_DIR / "export_to_parquet.py"
+        assert script_path.exists(), f"Example script not found: {script_path}"
+
+        # Use temp directory for output
+        export_dir = tmp_path / "parquet_output"
+        export_dir.mkdir(exist_ok=True)
+
+        try:
+            # Run the example script with custom output directory
+            env = os.environ.copy()
+            env["EXAMPLE_OUTPUT_DIR"] = str(export_dir)
+
+            result = subprocess.run(
+                [sys.executable, str(script_path)],
+                capture_output=True,
+                text=True,
+                timeout=180,  # Allow time for data generation and export
+                env=env,
+            )
+
+            # Check execution succeeded
+            if result.returncode != 0:
+                print(f"STDOUT:\n{result.stdout}")
+                print(f"STDERR:\n{result.stderr}")
+            assert result.returncode == 0, f"Script failed with return code {result.returncode}"
+
+            # Verify expected output
+            output = result.stderr if result.stderr else result.stdout
+            assert "Setting up test data" in output
+            assert "Test data setup complete" in output
+            assert "Example 1: Export Entire Table" in output
+            assert "Example 2: Export Filtered Data" in output
+            assert "Example 3: Export with Different Compression" in output
+            assert "Export completed successfully!" in output
+            assert "Verifying Exported Files" in output
+            assert f"Output directory: {export_dir}" in output
+
+            # Verify Parquet files were created (look recursively in subdirectories)
+            parquet_files = list(export_dir.rglob("*.parquet"))
+            assert (
+                len(parquet_files) >= 3
+            ), f"Expected at least 3 Parquet files, found {len(parquet_files)}"
+
+            # Verify files have content
+            for parquet_file in parquet_files:
+                assert parquet_file.stat().st_size > 0, f"Parquet file {parquet_file} is empty"
+
+            # Verify we can read and validate the Parquet files
+            try:
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+
+                # Track total rows across all files
+                total_rows = 0
+
+                for parquet_file in parquet_files:
+                    table = pq.read_table(parquet_file)
+                    assert table.num_rows > 0, f"Parquet file {parquet_file} has no rows"
+                    total_rows += table.num_rows
+
+                    # Verify expected columns exist
+                    column_names = [field.name for field in table.schema]
+                    assert "user_id" in column_names
+                    assert "event_time" in column_names
+                    assert "event_type" in column_names
+                    assert "device_type" in column_names
+                    assert "country_code" in column_names
+                    assert "city" in column_names
+                    assert "revenue" in column_names
+                    assert "duration_seconds" in column_names
+                    assert "is_premium" in column_names
+                    assert "metadata" in column_names
+                    assert "tags" in column_names
+
+                    # Verify data types are preserved
+                    schema = table.schema
+                    assert schema.field("is_premium").type == pa.bool_()
+                    assert (
+                        schema.field("duration_seconds").type == pa.int64()
+                    )  # We use int64 in our schema
+
+                    # Read first few rows to validate content
+                    df = table.to_pandas()
+                    assert len(df) > 0
+
+                    # Validate some data characteristics
+                    assert (
+                        df["event_type"]
+                        .isin(["view", "click", "purchase", "signup", "logout"])
+                        .all()
+                    )
+                    assert df["device_type"].isin(["mobile", "desktop", "tablet", "tv"]).all()
+                    assert df["duration_seconds"].between(10, 3600).all()
+
+                # Verify we generated substantial test data (should be > 10k rows)
+                assert total_rows > 10000, f"Expected > 10000 total rows, got {total_rows}"
+
+            except ImportError:
+                # PyArrow not available in test environment
+                pytest.skip("PyArrow not available for full validation")
+
+        finally:
+            # Cleanup - always clean up even if test fails
+            # pytest's tmp_path fixture also cleans up automatically
+            if export_dir.exists():
+                shutil.rmtree(export_dir)
+
+    async def test_streaming_non_blocking_demo(self, cassandra_cluster):
+        """
+        Test the non-blocking streaming demonstration.
+
+        What this tests:
+        ---------------
+        1. Creates test data for streaming
+        2. Demonstrates event loop responsiveness
+        3. Shows concurrent operations during streaming
+        4. Provides visual feedback of non-blocking behavior
+        5. Cleans up resources
+
+        Why this matters:
+        ----------------
+        - Proves async wrapper doesn't block
+        - Critical for understanding async benefits
+        - Shows real concurrent execution
+        - Validates our architecture claims
+        """
+        script_path = EXAMPLES_DIR / "streaming_non_blocking_demo.py"
+        assert script_path.exists(), f"Example script not found: {script_path}"
+
+        # Run the example script
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Allow time for demonstrations
+        )
+
+        # Check execution succeeded
+        if result.returncode != 0:
+            print(f"STDOUT:\n{result.stdout}")
+            print(f"STDERR:\n{result.stderr}")
+        assert result.returncode == 0, f"Script failed with return code {result.returncode}"
+
+        # Verify expected output
+        output = result.stdout + result.stderr
+        assert "Starting non-blocking streaming demonstration" in output
+        assert "Heartbeat still running!" in output
+        assert "Event Loop Analysis:" in output
+        assert "Event loop remained responsive!" in output
+        assert "Demonstrating concurrent operations" in output
+        assert "Demonstration complete!" in output
+
+        # Verify keyspace was cleaned up
+        async with AsyncCluster(["localhost"]) as cluster:
+            async with await cluster.connect() as session:
+                result = await session.execute(
+                    "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name = 'streaming_demo'"
+                )
+                assert result.one() is None, "Keyspace was not cleaned up"
+
     @pytest.mark.parametrize(
         "script_name",
         [
@@ -361,6 +573,8 @@ class TestExampleScripts:
             "export_large_table.py",
             "context_manager_safety_demo.py",
             "metrics_simple.py",
+            "export_to_parquet.py",
+            "streaming_non_blocking_demo.py",
         ],
     )
     async def test_example_uses_context_managers(self, script_name):
@@ -406,6 +620,8 @@ class TestExampleScripts:
             "export_large_table.py",
             "context_manager_safety_demo.py",
             "metrics_simple.py",
+            "export_to_parquet.py",
+            "streaming_non_blocking_demo.py",
         ],
     )
     async def test_example_uses_prepared_statements(self, script_name):
