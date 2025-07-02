@@ -242,7 +242,29 @@ class TestInMemoryMetricsCollector:
 
     @pytest.mark.asyncio
     async def test_get_stats_no_data(self):
-        """Test get_stats with no data."""
+        """
+        Test get_stats with no data.
+
+        What this tests:
+        ---------------
+        1. Empty stats dictionary structure
+        2. No errors with zero metrics
+        3. Consistent stat categories
+        4. Safe empty state handling
+
+        Why this matters:
+        ----------------
+        - Graceful startup behavior
+        - No NPEs in monitoring code
+        - Consistent API responses
+        - Clean initial state
+
+        Additional context:
+        ---------------------------------
+        - Returns valid structure even if empty
+        - All stat categories present
+        - Zero values, not null/missing
+        """
         collector = InMemoryMetricsCollector()
         stats = await collector.get_stats()
 
