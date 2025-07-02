@@ -52,20 +52,40 @@ sequenceDiagram
 
 ## The Memory Problem
 
-When using ANY Cassandra driver (sync or async), the `execute()` method automatically fetches ALL pages into memory:
+When you iterate over a result set from `execute()`, the driver fetches pages transparently as you iterate. However, if you materialize the entire result (using `.all()` or `list()`), ALL pages are fetched into memory:
 
 ```python
 # With the standard cassandra-driver (sync):
 result = session.execute("SELECT * FROM billion_row_table")
-# The driver fetches ALL pages automatically behind the scenes
-# This could use gigabytes of memory!
-all_rows = result.all()  # Now you have a billion rows in memory 💥
+# Iteration fetches pages on-demand (good for memory)
+for row in result:
+    process(row)  # Pages fetched as needed
+
+# BUT if you materialize the result:
+all_rows = result.all()  # Driver fetches ALL pages! 💥
+# or
+all_rows = list(result)  # Same problem! 💥
 
 # With async-cassandra (async):
 result = await session.execute("SELECT * FROM billion_row_table")
-# SAME PROBLEM - driver fetches ALL pages automatically
-all_rows = result.all()  # Still have a billion rows in memory 💥
+# SAME BEHAVIOR - materialization fetches all pages
+all_rows = result.all()  # Still fetches all pages into memory 💥
 ```
+
+According to the [DataStax documentation](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.ResultSet), "Whenever there are no more rows in the current page, the next page will be fetched transparently."
+
+**Important: The driver does NOT prefetch pages.** Based on our analysis of the [driver source code](https://github.com/datastax/python-driver/blob/3.29.2/cassandra/cluster.py#L5194-L5215), pages are fetched on-demand only when:
+1. You've consumed all rows in the current page
+2. You attempt to get the next row (causing a StopIteration exception internally)
+3. Only then does the driver synchronously fetch the next page
+
+This means there's no background prefetching or read-ahead behavior - each page is fetched exactly when needed, blocking the iteration until the page arrives.
+
+**Performance Implications:**
+- There's a network round-trip delay between finishing one page and starting the next
+- No wasted bandwidth fetching pages that might not be needed
+- Memory usage is predictable - only one page at a time
+- For async applications, this blocking fetch is why we need streaming wrappers
 
 Here's what happens behind the scenes:
 
@@ -75,21 +95,22 @@ sequenceDiagram
     participant Driver as Driver Memory
     participant Cassandra
 
-    App->>Driver: execute() or await execute()
+    App->>Driver: result.all() or list(result)
+    Note over Driver: Starts iterating internally
 
-    loop Until all pages fetched
-        Driver->>Cassandra: Get page (5000 rows)
+    loop Automatically fetches ALL pages
+        Driver->>Cassandra: Get next page (5000 rows)
         Cassandra-->>Driver: Page data
-        Note over Driver: Stores in memory<br/>(accumulating!)
+        Note over Driver: Accumulates in memory<br/>(not releasing previous pages!)
     end
 
-    Driver-->>App: ResultSet with ALL rows in memory
+    Driver-->>App: List with ALL rows in memory
     Note over App: 💥 Out of Memory!
 ```
 
 ## Manual Paging with the Driver
 
-The cassandra-driver does provide manual paging control:
+The cassandra-driver does provide manual paging control. Note that even with manual control, there's no prefetching:
 
 ```python
 # Using the driver's manual paging (WITHOUT async-cassandra)
@@ -108,8 +129,15 @@ page1 = list(result.current_rows)  # First 1000 rows
 
 # Manually fetch next page
 if result.has_more_pages:
-    result.fetch_next_page()
+    result.fetch_next_page()  # Blocks until page arrives
     page2 = list(result.current_rows)  # Next 1000 rows
+
+# Alternative: start_fetching_next_page() - but still not true prefetch
+if result.has_more_pages:
+    result.response_future.start_fetching_next_page()  # "Async" start
+    # But you still must wait for it to complete:
+    result.response_future.result()  # Blocks here
+    page2 = list(result.current_rows)
 ```
 
 This works, but has limitations:
@@ -222,35 +250,49 @@ async for row in result:
     # Old rows are garbage collected
 ```
 
-Here's the streaming flow:
+Here's the streaming flow (showing how async-cassandra bridges sync to async):
 
 ```mermaid
 sequenceDiagram
     participant App as Your App
-    participant Stream as Streaming Iterator
+    participant Stream as Async Streaming
+    participant ThreadPool as Thread Pool
     participant Driver as Cassandra Driver
     participant Cassandra
 
     App->>Stream: execute_stream()
-    Stream->>Driver: Prepare query
+    Stream->>ThreadPool: Run execute() in thread
+    ThreadPool->>Driver: execute() with fetch_size
     Driver->>Cassandra: Request first page (1000 rows)
     Cassandra-->>Driver: Page 1
-    Driver-->>Stream: Page 1 data
+    Driver-->>ThreadPool: ResultSet
+    ThreadPool-->>Stream: ResultSet (wrapped)
 
     loop For each row in page
-        App->>Stream: Get next row
+        App->>Stream: async: Get next row
+        Stream->>ThreadPool: Get row from ResultSet
+        ThreadPool-->>Stream: Row data
         Stream-->>App: Return row
         Note over App: Process single row
     end
 
     Note over Stream: Page 1 exhausted
-    App->>Stream: Get next row
-    Stream->>Driver: Request next page
+    App->>Stream: async: Get next row
+    Stream->>ThreadPool: Continue iteration
+    Note over ThreadPool: ResultSet.__next__() called
+    ThreadPool->>Driver: fetch_next_page() (blocking)
     Driver->>Cassandra: Request page 2
     Cassandra-->>Driver: Page 2
-    Driver-->>Stream: Page 2 data
-    Stream-->>App: First row of page 2
+    Driver-->>ThreadPool: Page 2 ready
+    ThreadPool-->>Stream: First row of page 2
+    Stream-->>App: Return row
 ```
+
+**Key Points About This Flow:**
+- async-cassandra runs the synchronous driver operations in a thread pool
+- The thread pool prevents blocking the event loop
+- Page fetching still happens synchronously within the thread
+- But from the app's perspective, it's all async/await
 
 ## ⚠️ CRITICAL: Resource Cleanup
 
