@@ -9,6 +9,35 @@
 
 > 📢 **Early Release**: This is an early release of async-cassandra. While it has been tested extensively, you may encounter edge cases. We welcome your feedback and contributions! Please report any issues on our [GitHub Issues](https://github.com/axonops/async-python-cassandra-client/issues) page.
 
+## 📑 Table of Contents
+
+- [✨ Overview](#-overview)
+- [🏗️ Why create this framework?](#️-why-create-this-framework)
+  - [Understanding Async vs Sync](#understanding-async-vs-sync)
+  - [The Benefits](#the-benefits)
+  - [🔄 True Async Paging](#-true-async-paging)
+- [⚠️ Important Limitations](#️-important-limitations)
+- [🚀 Key Features](#-key-features)
+- [🔀 Alternative Libraries](#-alternative-libraries)
+- [📋 Requirements](#-requirements)
+  - [🔌 CQL Protocol Version Requirement](#-cql-protocol-version-requirement)
+- [🔧 Installation](#-installation)
+- [📚 Quick Start](#-quick-start)
+- [🤝 Contributing](#-contributing)
+- [📞 Support](#-support)
+- [📖 Documentation](#-documentation)
+  - [Getting Started](#getting-started)
+  - [Advanced Topics](#advanced-topics)
+  - [Examples](#examples)
+- [🎯 Running the Examples](#-running-the-examples)
+  - [Available Examples](#available-examples)
+  - [Running with External Cassandra](#running-with-external-cassandra)
+  - [Example Descriptions](#example-descriptions)
+- [⚡ Performance](#-performance)
+- [📝 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [⚖️ Legal Notices](#️-legal-notices)
+
 ## ✨ Overview
 
 A Python library that enables the Cassandra driver to work seamlessly with async frameworks like FastAPI, aiohttp, and Quart. It provides an async/await interface that prevents blocking your application's event loop while maintaining full compatibility with the DataStax Python driver.
