@@ -8,9 +8,28 @@ This example demonstrates:
 - Tracking connection health
 - Basic metrics analysis
 - Performance optimization patterns
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-metrics
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-metrics
+
+3. Direct Python execution:
+   python examples/metrics_example.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/metrics_example.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
 """
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -144,6 +163,12 @@ async def main():
     print("🚀 Async-Cassandra Metrics Example")
     print("=" * 60)
 
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    print(f"\nConnecting to Cassandra at {contact_points}:{port}")
+
     # 1. Set up metrics collectors
     print("\n🔧 Setting up metrics system...")
 
@@ -166,7 +191,7 @@ async def main():
     metrics = MetricsMiddleware(collectors)
 
     # 2. Create cluster and run workload
-    async with AsyncCluster(contact_points=["localhost"]) as cluster:
+    async with AsyncCluster(contact_points=contact_points, port=port) as cluster:
         async with await cluster.connect() as session:
             # Set up test environment
             print("\n📦 Setting up test database...")

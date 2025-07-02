@@ -7,6 +7,25 @@ This example demonstrates:
 - Progress tracking during export
 - Async file I/O with aiofiles
 - Proper error handling
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-export-large-table
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-export-large-table
+
+3. Direct Python execution:
+   python examples/export_large_table.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/export_large_table.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
+- EXAMPLE_OUTPUT_DIR: Directory for output files (default: examples/exampleoutput)
 """
 
 import asyncio
@@ -85,6 +104,7 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
                     fieldnames = row._fields
                     header = ",".join(fieldnames) + "\n"
                     await f.write(header)
+                    writer = True  # Mark that header has been written
 
                 # Write row data
                 row_data = []
@@ -262,15 +282,22 @@ async def setup_sample_data(session):
 
 async def main():
     """Run the export example."""
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    logger.info(f"Connecting to Cassandra at {contact_points}:{port}")
+
     # Connect to Cassandra using context manager
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         async with await cluster.connect() as session:
             # Setup sample data
             await setup_sample_data(session)
 
             # Create output directory
-            output_dir = Path("exports")
-            output_dir.mkdir(exist_ok=True)
+            output_dir = Path(os.environ.get("EXAMPLE_OUTPUT_DIR", "examples/exampleoutput"))
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Output directory: {output_dir}")
 
             # Export using async I/O if available
             if ASYNC_FILE_IO:

@@ -7,10 +7,29 @@ This example demonstrates:
 - Aggregating data while streaming
 - Handling continuous data ingestion
 - Implementing sliding window analytics
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-realtime
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-realtime
+
+3. Direct Python execution:
+   python examples/realtime_processing.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/realtime_processing.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
 """
 
 import asyncio
 import logging
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -402,8 +421,14 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
 
 async def main():
     """Run real-time processing example."""
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    logger.info(f"Connecting to Cassandra at {contact_points}:{port}")
+
     # Connect to Cassandra using context manager
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         async with await cluster.connect() as session:
             # Setup test data
             await setup_sensor_data(session)

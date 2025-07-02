@@ -3,9 +3,28 @@
 Simple metrics collection example with async-cassandra.
 
 This example shows basic metrics collection and monitoring.
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-metrics-simple
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-metrics-simple
+
+3. Direct Python execution:
+   python examples/metrics_simple.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/metrics_simple.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
 """
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime
@@ -18,6 +37,12 @@ async def main():
     """Run basic metrics example."""
     print("🚀 async-cassandra Metrics Example\n")
 
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    print(f"Connecting to Cassandra at {contact_points}:{port}\n")
+
     # Create metrics collector
     collector = InMemoryMetricsCollector(max_entries=1000)
 
@@ -25,7 +50,7 @@ async def main():
     metrics_middleware = MetricsMiddleware([collector])
 
     # Create cluster using context manager
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         # Create session using context manager
         async with await cluster.connect() as session:
 

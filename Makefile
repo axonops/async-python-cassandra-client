@@ -6,6 +6,7 @@ help:
 	@echo "Installation:"
 	@echo "  install        Install the package"
 	@echo "  install-dev    Install with development dependencies"
+	@echo "  install-examples Install example dependencies (e.g., pyarrow)"
 	@echo ""
 	@echo "Quick Test Commands:"
 	@echo "  test-quick     Run quick validation tests (~30s)"
@@ -43,6 +44,17 @@ help:
 	@echo "  build          Build distribution packages"
 	@echo "  clean          Clean build artifacts"
 	@echo ""
+	@echo "Examples:"
+	@echo "  example-streaming      Run streaming basic example"
+	@echo "  example-export-csv     Run CSV export example"
+	@echo "  example-export-parquet Run Parquet export example"
+	@echo "  example-realtime       Run real-time processing example"
+	@echo "  example-metrics        Run metrics collection example"
+	@echo "  example-non-blocking   Run non-blocking demo"
+	@echo "  example-context        Run context manager safety demo"
+	@echo "  example-fastapi        Run FastAPI example app"
+	@echo "  examples-all           Run all examples sequentially"
+	@echo ""
 	@echo "Environment variables:"
 	@echo "  CASSANDRA_CONTACT_POINTS  Cassandra contact points (default: localhost)"
 	@echo "  SKIP_INTEGRATION_TESTS=1  Skip integration tests"
@@ -55,6 +67,10 @@ install-dev:
 	pip install -e ".[dev,test]"
 	pip install -r requirements-lint.txt
 	pre-commit install
+
+install-examples:
+	@echo "Installing example dependencies..."
+	pip install -r examples/requirements.txt
 
 # Environment setup
 CONTAINER_RUNTIME ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
@@ -322,3 +338,89 @@ clean:
 
 clean-all: clean cassandra-stop
 	@echo "All cleaned up"
+
+# Example targets
+.PHONY: example-streaming example-export-csv example-export-parquet example-realtime example-metrics example-non-blocking example-context example-fastapi examples-all
+
+# Ensure examples can connect to Cassandra
+EXAMPLES_ENV = CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS)
+
+example-streaming: cassandra-wait
+	@echo "=== Running Streaming Basic Example ==="
+	@echo "This example demonstrates memory-efficient streaming of large result sets"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@$(EXAMPLES_ENV) python examples/streaming_basic.py
+
+example-export-csv: cassandra-wait
+	@echo "=== Running CSV Export Example ==="
+	@echo "This example exports a large Cassandra table to CSV format"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@echo "Output will be saved to ./exports/ directory"
+	@$(EXAMPLES_ENV) python examples/export_large_table.py
+
+example-export-parquet: cassandra-wait
+	@echo "=== Running Parquet Export Example ==="
+	@echo "This example exports Cassandra tables to Parquet format with streaming"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@echo "Output will be saved to ./parquet_exports/ directory"
+	@echo "Installing pyarrow if needed..."
+	@pip install pyarrow >/dev/null 2>&1 || echo "PyArrow already installed"
+	@$(EXAMPLES_ENV) python examples/export_to_parquet.py
+
+example-realtime: cassandra-wait
+	@echo "=== Running Real-time Processing Example ==="
+	@echo "This example demonstrates real-time streaming analytics on sensor data"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@$(EXAMPLES_ENV) python examples/realtime_processing.py
+
+example-metrics: cassandra-wait
+	@echo "=== Running Metrics Collection Examples ==="
+	@echo "Running simple metrics example..."
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@$(EXAMPLES_ENV) python examples/metrics_simple.py
+	@echo ""
+	@echo "Running advanced metrics example..."
+	@$(EXAMPLES_ENV) python examples/metrics_example.py
+
+example-non-blocking: cassandra-wait
+	@echo "=== Running Non-Blocking Streaming Demo ==="
+	@echo "This demonstrates that streaming doesn't block the event loop"
+	@echo "Watch for heartbeat indicators showing continuous operation!"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@$(EXAMPLES_ENV) python examples/streaming_non_blocking_demo.py
+
+example-context: cassandra-wait
+	@echo "=== Running Context Manager Safety Demo ==="
+	@echo "This demonstrates proper resource management with context managers"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@$(EXAMPLES_ENV) python examples/context_manager_safety_demo.py
+
+example-fastapi:
+	@echo "=== Running FastAPI Example App ==="
+	@echo "This starts a full REST API with async Cassandra integration"
+	@echo "The app includes Docker Compose for easy setup"
+	@echo "See examples/fastapi_app/README.md for details"
+	@cd examples/fastapi_app && $(MAKE) run
+
+examples-all: cassandra-wait
+	@echo "=== Running All Examples ==="
+	@echo "This will run each example in sequence"
+	@echo "Contact points: $(CASSANDRA_CONTACT_POINTS)"
+	@echo ""
+	@$(MAKE) example-streaming
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-export-csv
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-export-parquet
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-realtime
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-metrics
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-non-blocking
+	@echo "\n----------------------------------------\n"
+	@$(MAKE) example-context
+	@echo "\n✅ All examples completed!"
+	@echo ""
+	@echo "Note: FastAPI example not included as it starts a server"
+	@echo "Run 'make example-fastapi' separately to start the FastAPI app"

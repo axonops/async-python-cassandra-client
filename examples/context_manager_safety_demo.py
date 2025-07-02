@@ -4,10 +4,29 @@ Demonstration of context manager safety in async-cassandra.
 
 This example shows how context managers properly isolate resource cleanup,
 ensuring that errors in one operation don't close shared resources.
+
+How to run:
+-----------
+1. Using Make (automatically starts Cassandra if needed):
+   make example-context-safety
+
+2. With external Cassandra cluster:
+   CASSANDRA_CONTACT_POINTS=10.0.0.1,10.0.0.2 make example-context-safety
+
+3. Direct Python execution:
+   python examples/context_manager_safety_demo.py
+
+4. With custom contact points:
+   CASSANDRA_CONTACT_POINTS=cassandra.example.com python examples/context_manager_safety_demo.py
+
+Environment variables:
+- CASSANDRA_CONTACT_POINTS: Comma-separated list of contact points (default: localhost)
+- CASSANDRA_PORT: Port number (default: 9042)
 """
 
 import asyncio
 import logging
+import os
 import uuid
 
 from cassandra import InvalidRequest
@@ -168,8 +187,14 @@ async def main():
     """Run all demonstrations."""
     logger.info("Starting Context Manager Safety Demonstration")
 
+    # Get contact points from environment or use localhost
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "localhost").split(",")
+    port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+
+    logger.info(f"Connecting to Cassandra at {contact_points}:{port}")
+
     # Use cluster in context manager for automatic cleanup
-    async with AsyncCluster(["localhost"]) as cluster:
+    async with AsyncCluster(contact_points, port=port) as cluster:
         await demonstrate_query_error_safety(cluster)
         await demonstrate_streaming_error_safety(cluster)
         await demonstrate_context_manager_isolation(cluster)
