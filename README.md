@@ -109,7 +109,7 @@ async for row in result:
     await process_row(row)  # Non-blocking, other requests keep flowing
 ```
 
-This is critical for web applications where blocking the event loop means all other requests stop being processed. For a detailed explanation of this issue, see our [streaming documentation](docs/streaming.md#the-async-problem-with-manual-paging).
+This is critical for web applications where blocking the event loop means all other requests stop being processed. For a detailed explanation of this issue, see our [streaming documentation](docs/streaming.md).
 
 ## ⚠️ Important Limitations
 

@@ -49,6 +49,7 @@ class TestExampleScripts:
         # Cassandra is guaranteed to be available via cassandra_cluster fixture
         pass
 
+    @pytest.mark.timeout(180)  # Override default timeout for this test
     async def test_streaming_basic_example(self, cassandra_cluster):
         """
         Test the basic streaming example.
@@ -76,7 +77,7 @@ class TestExampleScripts:
             [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
-            timeout=60,  # Allow time for data generation
+            timeout=120,  # Allow time for 100k events generation
         )
 
         # Check execution succeeded
@@ -264,6 +265,7 @@ class TestExampleScripts:
         assert "Success rate:" in output or "Success Rate:" in output
         assert "Average latency:" in output or "Average Duration:" in output
 
+    @pytest.mark.timeout(240)  # Override default timeout for this test (lots of data)
     async def test_realtime_processing_example(self, cassandra_cluster):
         """
         Test the real-time processing example.
@@ -291,7 +293,7 @@ class TestExampleScripts:
             [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
-            timeout=90,  # Allow more time for data processing
+            timeout=180,  # Allow more time for 108k readings (50 sensors × 2160 time points)
         )
 
         # Check execution succeeded
