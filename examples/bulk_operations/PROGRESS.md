@@ -29,7 +29,7 @@ This document tracks the implementation progress of the token-aware bulk operati
 - **Special Case**: MIN_TOKEN uses >= instead of > to avoid missing data
 - **Wraparound**: Properly handle ranges that cross the ring boundary
 - **Implementation**: See `token_utils.py` for size calculations
-- **Vnode Support**: Correctly discovers 256 ranges per node
+- **Vnode Support**: Dynamically discovers all vnodes (tested with 256 per node)
 
 #### 3. Import Structure Fix
 - **Issue**: Conflict between ruff and isort on import ordering
@@ -233,8 +233,9 @@ examples/bulk_operations/
 ```
 
 ### Key Insights About Vnodes
-- Each node's 256 vnodes are scattered across the token ring
-- With single node: exactly 256 token ranges discovered
+- Each node's vnodes are scattered across the token ring
+- Number of vnodes is configurable (default 256 in Cassandra 4.0+)
+- Code dynamically discovers actual vnode count from cluster
 - Token ranges don't start at MIN_TOKEN due to random distribution
 - Last range wraps around (positive to negative values)
 - Wraparound ranges require special handling (split queries)
