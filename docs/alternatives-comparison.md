@@ -8,10 +8,10 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 
 ### 1. async-python-cassandra-client (This Library)
 
-**Project**: [https://github.com/axonops/async-python-cassandra-client](https://github.com/axonops/async-python-cassandra-client)
-**Architecture**: Pure Python wrapper around the DataStax Python driver
-**Language**: Python
-**Dependencies**: cassandra-driver
+- **Project**: [https://github.com/axonops/async-python-cassandra-client](https://github.com/axonops/async-python-cassandra-client)
+- **Architecture**: Pure Python wrapper around the DataStax Python driver
+- **Language**: Python
+- **Dependencies**: cassandra-driver
 
 **Key Characteristics:**
 - Zero additional system dependencies
@@ -27,10 +27,10 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 
 ### 2. ScyllaPy
 
-**Project**: [https://github.com/Intreecom/scyllapy](https://github.com/Intreecom/scyllapy)
-**Architecture**: Rust-based driver with Python bindings
-**Language**: Rust core with Python interface
-**Dependencies**: Pre-compiled wheels or Rust toolchain for source builds
+- **Project**: [https://github.com/Intreecom/scyllapy](https://github.com/Intreecom/scyllapy)
+- **Architecture**: Rust-based driver with Python bindings
+- **Language**: Rust core with Python interface
+- **Dependencies**: Pre-compiled wheels or Rust toolchain for source builds
 
 **Key Characteristics:**
 - Native async implementation
@@ -45,10 +45,10 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 
 ### 3. Acsylla
 
-**Project**: [https://github.com/acsylla/acsylla](https://github.com/acsylla/acsylla)
-**Architecture**: C++ driver (cpp-driver) with Python bindings
-**Language**: C++ core with Cython wrapper
-**Dependencies**: Requires cassandra-cpp-driver
+- **Project**: [https://github.com/acsylla/acsylla](https://github.com/acsylla/acsylla)
+- **Architecture**: C++ driver (cpp-driver) with Python bindings
+- **Language**: C++ core with Cython wrapper
+- **Dependencies**: Requires cassandra-cpp-driver
 
 **Key Characteristics:**
 - Based on DataStax C++ driver
@@ -63,10 +63,10 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 
 ### 4. DataStax AsyncioReactor (Experimental)
 
-**Project**: Part of [python-driver](https://github.com/datastax/python-driver)
-**Architecture**: Experimental asyncio integration in official driver
-**Language**: Python
-**Dependencies**: cassandra-driver
+- **Project**: Part of [python-driver](https://github.com/datastax/python-driver)
+- **Architecture**: Experimental asyncio integration in official driver
+- **Language**: Python
+- **Dependencies**: cassandra-driver
 
 **Key Characteristics:**
 - Integrated into official DataStax Python driver
