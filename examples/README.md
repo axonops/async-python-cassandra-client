@@ -144,10 +144,15 @@ All examples follow the required pattern:
 ```python
 # ALWAYS use context managers for resource management
 async with AsyncCluster(["localhost"]) as cluster:
-    async with cluster.connect() as session:
-        # Your code here
-        pass
+    async with await cluster.connect() as session:
+        # For streaming, ALWAYS use context manager:
+        async with await session.execute_stream("SELECT * FROM table") as result:
+            async for row in result:
+                # Process row
+                pass
 ```
+
+**⚠️ CRITICAL**: See [True Async Paging](../docs/true-async-paging.md) for important details about streaming patterns and common mistakes.
 
 ### MANDATORY: Always Use PreparedStatements
 For any query with parameters:

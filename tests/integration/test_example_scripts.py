@@ -89,11 +89,12 @@ class TestExampleScripts:
         # The examples use logging which outputs to stderr
         output = result.stderr if result.stderr else result.stdout
         assert "Basic Streaming Example" in output
-        assert "Inserted 10000 test events" in output
+        assert "Inserted 100000 test events" in output or "Inserted 100,000 test events" in output
         assert "Streaming completed:" in output
-        assert "Total events: 10000" in output
+        assert "Total events: 100,000" in output or "Total events: 100000" in output
         assert "Filtered Streaming Example" in output
-        assert "Page-Based Streaming Example" in output
+        assert "Page-Based Streaming Example (True Async Paging)" in output
+        assert "Pages are fetched asynchronously" in output
 
         # Verify keyspace was cleaned up
         async with AsyncCluster(["localhost"]) as cluster:

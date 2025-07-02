@@ -169,54 +169,61 @@ async def setup_sensor_data(session):
     """
     )
 
-    # Generate data for 10 sensors
-    sensors = [f"sensor_{i:03d}" for i in range(10)]
-    base_time = datetime.now() - timedelta(hours=1)
+    # Generate data for 50 sensors for more realistic volume
+    sensors = [f"sensor_{i:03d}" for i in range(50)]
+    base_time = datetime.now() - timedelta(hours=6)  # 6 hours of data
 
     logger.info("Inserting sample sensor data...")
     tasks = []
+    total_readings = 0
 
-    for i in range(3600):  # One reading per second for an hour
+    # Insert data at 10-second intervals (more realistic for IoT)
+    for i in range(0, 21600, 10):  # 6 hours * 3600 seconds / 10 = 2160 time points
         timestamp = base_time + timedelta(seconds=i)
         date = timestamp.date()
 
         for sensor_id in sensors:
             # Generate realistic sensor data with some variation
             base_temp = 20.0 + (hash(sensor_id) % 10)
-            temperature = base_temp + (i % 60) * 0.1
-            humidity = 40.0 + (i % 120) * 0.2
-            pressure = 1013.25 + (i % 30) * 0.5
+            temperature = base_temp + (i % 600) * 0.01 + (hash(f"{sensor_id}{i}") % 100) * 0.01
+            humidity = 40.0 + (i % 1200) * 0.02 + (hash(f"{sensor_id}{i}h") % 100) * 0.01
+            pressure = 1013.25 + (i % 300) * 0.05 + (hash(f"{sensor_id}{i}p") % 100) * 0.01
 
             # Add some anomalies
-            if i % 500 == 0 and sensor_id == "sensor_005":
+            if i % 5000 == 0 and sensor_id == "sensor_005":
                 temperature = 40.0  # High temperature alert
-            if i % 700 == 0 and sensor_id == "sensor_007":
+            if i % 7000 == 0 and sensor_id == "sensor_007":
                 humidity = 95.0  # High humidity alert
+            if i % 9000 == 0 and sensor_id == "sensor_015":
+                temperature = -5.0  # Low temperature alert
 
             tasks.append(
                 session.execute(
                     insert_stmt, [date, sensor_id, timestamp, temperature, humidity, pressure]
                 )
             )
+            total_readings += 1
 
         # Execute in batches
-        if len(tasks) >= 100:
+        if len(tasks) >= 500:
             await asyncio.gather(*tasks)
             tasks = []
+            if total_readings % 10000 == 0:
+                logger.info(f"Inserted {total_readings:,} readings...")
 
     # Execute remaining tasks
     if tasks:
         await asyncio.gather(*tasks)
 
-    logger.info("Sample data inserted")
+    logger.info(f"Sample data inserted: {total_readings:,} total readings")
 
 
 async def process_historical_data(session, processor: RealTimeProcessor):
     """Process historical data using streaming."""
     logger.info("\n=== Processing Historical Data ===")
 
-    # Query last hour of data
-    one_hour_ago = datetime.now() - timedelta(hours=1)
+    # Query last 6 hours of data
+    six_hours_ago = datetime.now() - timedelta(hours=6)
     today = datetime.now().date()
 
     # Prepare query for specific date partition
@@ -229,10 +236,10 @@ async def process_historical_data(session, processor: RealTimeProcessor):
     """
     )
 
-    # Configure streaming
+    # Configure streaming with appropriate page size for True Async Paging
     config = StreamConfig(
-        fetch_size=1000,
-        page_callback=lambda p, t: logger.info(f"Processing page {p} ({t} readings)"),
+        fetch_size=5000,  # Process 5000 rows per page
+        page_callback=lambda p, t: logger.info(f"Processing page {p} ({t:,} readings)"),
     )
 
     # Stream and process data
@@ -240,7 +247,7 @@ async def process_historical_data(session, processor: RealTimeProcessor):
 
     # Use context manager for proper resource cleanup
     async with await session.execute_stream(
-        stmt, parameters=[today, one_hour_ago], stream_config=config
+        stmt, parameters=[today, six_hours_ago], stream_config=config
     ) as result:
         readings_processed = 0
         async for row in result:
@@ -255,10 +262,10 @@ async def process_historical_data(session, processor: RealTimeProcessor):
             readings_processed += 1
 
             # Log progress periodically
-            if readings_processed % 5000 == 0:
+            if readings_processed % 10000 == 0:
                 summary = processor.get_summary()
                 logger.info(
-                    f"Progress: {readings_processed} readings - "
+                    f"Progress: {readings_processed:,} readings - "
                     f"{summary['active_sensors']} sensors - "
                     f"{summary['alerts_triggered']} alerts"
                 )
@@ -266,9 +273,69 @@ async def process_historical_data(session, processor: RealTimeProcessor):
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info(f"\nProcessing completed in {elapsed:.2f} seconds")
     logger.info(
-        f"Processed {readings_processed} readings "
-        f"({readings_processed/elapsed:.0f} readings/sec)"
+        f"Processed {readings_processed:,} readings "
+        f"({readings_processed/elapsed:,.0f} readings/sec)"
     )
+
+
+async def process_data_in_pages(session):
+    """Demonstrate True Async Paging for batch processing."""
+    logger.info("\n=== True Async Paging Example ===")
+
+    # Query all data for batch processing
+    stmt = await session.prepare(
+        """
+        SELECT * FROM sensor_readings
+        WHERE date = ?
+        ALLOW FILTERING
+    """
+    )
+
+    today = datetime.now().date()
+    config = StreamConfig(fetch_size=10000)  # 10k rows per page
+
+    page_count = 0
+    total_readings = 0
+    sensor_data = defaultdict(list)
+
+    logger.info("Processing sensor data in pages...")
+
+    # Use True Async Paging to process large dataset efficiently
+    async with await session.execute_stream(
+        stmt, parameters=[today], stream_config=config
+    ) as result:
+        async for page in result.pages():
+            page_count += 1
+            readings_in_page = len(page)
+            total_readings += readings_in_page
+
+            logger.info(f"Processing page {page_count} with {readings_in_page:,} readings")
+
+            # Process each page (e.g., aggregate by sensor)
+            for row in page:
+                sensor_data[row.sensor_id].append(
+                    {
+                        "timestamp": row.timestamp,
+                        "temperature": row.temperature,
+                        "humidity": row.humidity,
+                        "pressure": row.pressure,
+                    }
+                )
+
+            # Simulate page processing time (e.g., writing to data warehouse)
+            await asyncio.sleep(0.1)
+
+            # Log memory-efficient processing
+            if page_count % 5 == 0:
+                logger.info(
+                    f"  Processed {total_readings:,} total readings across {len(sensor_data)} sensors"
+                )
+
+    logger.info("\nPage-based processing completed:")
+    logger.info(f"  - Total pages: {page_count}")
+    logger.info(f"  - Total readings: {total_readings:,}")
+    logger.info(f"  - Unique sensors: {len(sensor_data)}")
+    logger.info("  - Memory usage remains constant due to page-by-page processing!")
 
 
 async def simulate_realtime_processing(session, processor: RealTimeProcessor):
@@ -346,6 +413,9 @@ async def main():
 
             # Process historical data
             await process_historical_data(session, processor)
+
+            # Demonstrate True Async Paging
+            await process_data_in_pages(session)
 
             # Show final summary
             summary = processor.get_summary()

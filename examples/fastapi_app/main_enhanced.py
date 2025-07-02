@@ -309,17 +309,16 @@ async def stream_users_advanced(
         stream_config.page_callback = page_callback
 
         # Execute streaming query with prepared statement
-        stmt = await session.session.prepare("SELECT * FROM users LIMIT ?")
-        result = await session.session.execute_stream(
-            stmt,
-            [limit],
-            stream_config=stream_config,
-        )
+        # Note: LIMIT is not needed with paging - fetch_size controls data flow
+        stmt = await session.session.prepare("SELECT * FROM users")
 
         users = []
 
-        # Use context manager for proper cleanup
-        async with result as stream:
+        # CRITICAL: Always use context manager to prevent resource leaks
+        async with await session.session.execute_stream(
+            stmt,
+            stream_config=stream_config,
+        ) as stream:
             async for row in stream:
                 users.append(
                     {
@@ -329,7 +328,8 @@ async def stream_users_advanced(
                     }
                 )
 
-                # Check if we've reached the limit
+                # Note: If you need to limit results, track count manually
+                # The fetch_size in StreamConfig controls page size efficiently
                 if limit and len(users) >= limit:
                     break
 

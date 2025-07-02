@@ -15,6 +15,7 @@ When you query Cassandra for potentially large result sets, you need to understa
 - [Advanced Patterns](#advanced-patterns)
 - [Performance Guidelines](#performance-guidelines)
 - [Common Pitfalls](#common-pitfalls)
+- [True Async Paging](#true-async-paging)
 
 ## How Cassandra Paging Works
 
@@ -847,6 +848,17 @@ async def load_batch(prepared_stmt, batch):
         )
     )
 ```
+
+## True Async Paging
+
+For detailed information about True Async Paging behavior, common misconceptions, and best practices, see our dedicated guide: [True Async Paging](true-async-paging.md).
+
+Key points covered:
+- Critical importance of context managers
+- How paging actually works (on-demand, not pre-fetched)
+- When LIMIT is needed (hint: rarely with paging!)
+- Page size recommendations for different use cases
+- Common patterns and anti-patterns
 
 ## Conclusion
 

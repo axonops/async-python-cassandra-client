@@ -337,10 +337,9 @@ async def stream_users(
         stream_config = StreamConfig(fetch_size=fetch_size)
 
         # Use context manager for proper resource cleanup
-        stmt = await session.prepare("SELECT * FROM users LIMIT ?")
-        async with await session.execute_stream(
-            stmt, [limit], stream_config=stream_config
-        ) as result:
+        # Note: LIMIT not needed - fetch_size controls data flow
+        stmt = await session.prepare("SELECT * FROM users")
+        async with await session.execute_stream(stmt, stream_config=stream_config) as result:
             users = []
             async for row in result:
                 # Handle both dict-like and object-like row access
@@ -420,10 +419,9 @@ async def stream_users_by_pages(
         stream_config = StreamConfig(fetch_size=fetch_size, max_pages=max_pages)
 
         # Use context manager for automatic cleanup
-        stmt = await session.prepare("SELECT * FROM users LIMIT ?")
-        async with await session.execute_stream(
-            stmt, [limit], stream_config=stream_config
-        ) as result:
+        # Note: LIMIT not needed - fetch_size controls data flow
+        stmt = await session.prepare("SELECT * FROM users")
+        async with await session.execute_stream(stmt, stream_config=stream_config) as result:
             pages_info = []
             total_processed = 0
 
