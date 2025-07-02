@@ -10,6 +10,39 @@
 - Efficient data movement to/from Iceberg
 - Could become a standalone PyPI package
 
+## 📈 Implementation Phases
+
+### Phase 1: Basic Token Range Operations ✅ COMPLETED
+- Token range discovery and splitting
+- Parallel count operations
+- Basic streaming export
+- Comprehensive testing framework
+
+### Phase 2: Export Functionality (Foundation)
+- CSV export with streaming
+- JSON export (line-delimited)
+- **Parquet export** (critical for Iceberg)
+- Compression support
+- Resume capability
+
+### Phase 3: Apache Iceberg Integration 🎯 PRIMARY GOAL
+- **THE SEXY PART** - Modern lakehouse format!
+- Export Cassandra tables to Iceberg format
+- Schema mapping and evolution
+- Partition strategy support
+- Time travel capabilities
+- ACID transactions on data lake
+
+### Phase 4: Import from Iceberg
+- Read Iceberg tables back to Cassandra
+- Batch import with parallelism
+- Schema validation
+
+### Phase 5: Production Features
+- CLI tool
+- Performance optimizations
+- Monitoring integration
+
 ## 📊 Architecture Overview
 
 ```
@@ -202,7 +235,15 @@ total_count = await bulk_operator.count_by_token_ranges(
 )
 print(f"Total rows: {total_count:,}")
 
-# 2. Export to Iceberg (filesystem)
+# 2. Export to CSV/JSON/Parquet (Phase 2)
+await bulk_operator.export_to_parquet(
+    source_keyspace="store",
+    source_table="orders",
+    output_path="./exports/orders.parquet",
+    split_count=24
+)
+
+# 3. Export to Apache Iceberg (Phase 3 - THE GOAL!)
 export_stats = await bulk_operator.export_to_iceberg(
     source_keyspace="store",
     source_table="orders",
@@ -211,9 +252,9 @@ export_stats = await bulk_operator.export_to_iceberg(
     partition_by=["order_date"],
     split_count=24
 )
-print(f"Exported {export_stats.row_count:,} rows in {export_stats.duration}s")
+print(f"Exported {export_stats.row_count:,} rows to Iceberg in {export_stats.duration}s")
 
-# 3. Import from Iceberg
+# 4. Import from Iceberg (Phase 4)
 import_stats = await bulk_operator.import_from_iceberg(
     iceberg_warehouse_path="./iceberg_warehouse",
     iceberg_table="orders_snapshot",

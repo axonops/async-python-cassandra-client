@@ -256,19 +256,30 @@ examples/bulk_operations/
 
 ## Next Phase Planning
 
-### Phase 2: Export Functionality
+### Phase 2: Export Functionality (Foundation for Iceberg)
 - Streaming export already has basic implementation
 - Need to add:
   - File format options (CSV, JSON, Parquet)
   - Compression support
   - Resume capability
   - Better error recovery
+- **Note**: Parquet export is critical as it's the underlying format for Iceberg
 
-### Phase 3: Apache Iceberg Integration
-- Use filesystem-based catalog (no S3/MinIO needed)
+### Phase 3: Apache Iceberg Integration (PRIMARY GOAL)
+- **This is the key deliverable** - Apache Iceberg is the modern, sexy data lakehouse format
+- Build on Phase 2's Parquet export capability
+- Use filesystem-based catalog (no S3/MinIO needed initially)
 - PyIceberg with PyArrow backend
 - Schema mapping from Cassandra to Iceberg types
 - Partition strategy configuration
+- Table evolution support
+- Time travel capabilities
+- **Why Iceberg?**
+  - Production-ready table format used by Netflix, Apple, Adobe
+  - ACID transactions on data lakes
+  - Schema evolution without rewriting data
+  - Hidden partitioning for better performance
+  - Time travel and rollback capabilities
 
 ### Phase 4: Import from Iceberg
 - Read Iceberg tables
