@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Iceberg
+iceberg_warehouse/
+*.db
+*.db-journal
+
+# Data
+*.csv
+*.parquet
+*.avro
+export_output/
+
+# Docker
+cassandra1-data/
+cassandra2-data/
+cassandra3-data/
+
+# OS
+.DS_Store
+Thumbs.db

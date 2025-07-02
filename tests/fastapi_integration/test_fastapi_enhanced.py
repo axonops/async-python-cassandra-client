@@ -7,9 +7,8 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from examples.fastapi_app.main_enhanced import app
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

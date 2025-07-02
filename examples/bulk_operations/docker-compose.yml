@@ -1,0 +1,165 @@
+version: '3.8'
+
+# Bulk Operations Example - 3-node Cassandra cluster
+# Optimized for token-aware bulk operations testing
+
+services:
+  # First Cassandra node (seed)
+  cassandra-1:
+    image: cassandra:5.0
+    container_name: bulk-cassandra-1
+    hostname: cassandra-1
+    environment:
+      # Cluster configuration
+      - CASSANDRA_CLUSTER_NAME=BulkOpsCluster
+      - CASSANDRA_SEEDS=cassandra-1
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+
+      # Memory settings (optimized for bulk operations)
+      - HEAP_NEWSIZE=2G
+      - MAX_HEAP_SIZE=8G
+      - JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300
+
+    ports:
+      - "9042:9042"
+      - "7000:7000"  # Storage port
+      - "7001:7001"  # SSL storage port
+      - "9160:9160"  # Thrift port
+    volumes:
+      - cassandra1-data:/var/lib/cassandra
+
+    # Resource limits for stability
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+        reservations:
+          memory: 10G
+
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool info | grep -q 'Native Transport active: true' && cqlsh -e 'SELECT now() FROM system.local'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+    networks:
+      - cassandra-net
+
+  # Second Cassandra node
+  cassandra-2:
+    image: cassandra:5.0
+    container_name: bulk-cassandra-2
+    hostname: cassandra-2
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BulkOpsCluster
+      - CASSANDRA_SEEDS=cassandra-1
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - HEAP_NEWSIZE=2G
+      - MAX_HEAP_SIZE=8G
+      - JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300
+
+    ports:
+      - "9043:9042"
+    volumes:
+      - cassandra2-data:/var/lib/cassandra
+    depends_on:
+      cassandra-1:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+        reservations:
+          memory: 10G
+
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool info | grep -q 'Native Transport active: true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+    networks:
+      - cassandra-net
+
+  # Third Cassandra node
+  cassandra-3:
+    image: cassandra:5.0
+    container_name: bulk-cassandra-3
+    hostname: cassandra-3
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BulkOpsCluster
+      - CASSANDRA_SEEDS=cassandra-1
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - HEAP_NEWSIZE=2G
+      - MAX_HEAP_SIZE=8G
+      - JVM_OPTS=-XX:+UseG1GC -XX:G1RSetUpdatingPauseTimePercent=5 -XX:MaxGCPauseMillis=300
+
+    ports:
+      - "9044:9042"
+    volumes:
+      - cassandra3-data:/var/lib/cassandra
+    depends_on:
+      cassandra-1:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+        reservations:
+          memory: 10G
+
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool info | grep -q 'Native Transport active: true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+    networks:
+      - cassandra-net
+
+  # Initialization container - creates keyspace and tables
+  init-cassandra:
+    image: cassandra:5.0
+    container_name: bulk-init
+    depends_on:
+      cassandra-1:
+        condition: service_healthy
+      cassandra-2:
+        condition: service_healthy
+      cassandra-3:
+        condition: service_healthy
+    volumes:
+      - ./scripts/init.cql:/init.cql:ro
+    command: >
+      bash -c "
+        echo 'Waiting for cluster to be ready...';
+        sleep 10;
+        echo 'Creating keyspace and tables...';
+        cqlsh cassandra-1 -f /init.cql;
+        echo 'Initialization complete!';
+      "
+    networks:
+      - cassandra-net
+
+networks:
+  cassandra-net:
+    driver: bridge
+
+volumes:
+  cassandra1-data:
+    driver: local
+  cassandra2-data:
+    driver: local
+  cassandra3-data:
+    driver: local
