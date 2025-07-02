@@ -359,17 +359,24 @@ class TestBulkExport:
             assert exported.bool_col == expected[4]
 
             # Collections need special handling
-            if expected[5] is not None:
+            # Note: Cassandra treats empty collections as NULL
+            if expected[5] is not None and expected[5] != []:
+                assert exported.list_col is not None, f"list_col is None for row {exported.id}"
                 assert list(exported.list_col) == expected[5]
             else:
+                # Empty list or None in Cassandra returns as None
                 assert exported.list_col is None
 
-            if expected[6] is not None:
+            if expected[6] is not None and expected[6] != set():
+                assert exported.set_col is not None, f"set_col is None for row {exported.id}"
                 assert set(exported.set_col) == expected[6]
             else:
+                # Empty set or None in Cassandra returns as None
                 assert exported.set_col is None
 
-            if expected[7] is not None:
+            if expected[7] is not None and expected[7] != {}:
+                assert exported.map_col is not None, f"map_col is None for row {exported.id}"
                 assert dict(exported.map_col) == expected[7]
             else:
+                # Empty map or None in Cassandra returns as None
                 assert exported.map_col is None
