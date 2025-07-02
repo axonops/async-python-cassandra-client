@@ -4,37 +4,110 @@ Integration tests comparing async wrapper behavior with raw driver.
 This ensures our wrapper maintains compatibility and doesn't break any functionality.
 """
 
+import os
 import uuid
+import warnings
 
 import pytest
 from cassandra.cluster import Cluster as SyncCluster
+from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import BatchStatement, BatchType, dict_factory
 
 
 @pytest.mark.integration
+@pytest.mark.sync_driver  # Allow filtering these tests: pytest -m "not sync_driver"
 class TestDriverCompatibility:
     """Test async wrapper compatibility with raw driver features."""
 
     @pytest.fixture
     def sync_cluster(self):
-        """Create a synchronous cluster for comparison."""
-        cluster = SyncCluster(["127.0.0.1"])
-        yield cluster
-        cluster.shutdown()
+        """Create a synchronous cluster for comparison with stability improvements."""
+        is_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
+
+        # Strategy 1: Increase connection timeout for CI environments
+        connect_timeout = 30.0 if is_ci else 10.0
+
+        # Strategy 2: Explicit configuration to reduce startup delays
+        cluster = SyncCluster(
+            contact_points=["127.0.0.1"],
+            port=9042,
+            connect_timeout=connect_timeout,
+            # Always use default connection class
+            load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
+            protocol_version=5,  # We support protocol version 5
+            idle_heartbeat_interval=30,  # Keep connections alive in CI
+            schema_event_refresh_window=10,  # Reduce schema refresh overhead
+        )
+
+        # Strategy 3: Adjust settings for CI stability
+        if is_ci:
+            # Reduce executor threads to minimize resource usage
+            cluster.executor_threads = 1
+            # Increase control connection timeout
+            cluster.control_connection_timeout = 30.0
+            # Suppress known warnings
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        try:
+            yield cluster
+        finally:
+            cluster.shutdown()
 
     @pytest.fixture
     def sync_session(self, sync_cluster, unique_keyspace):
-        """Create a synchronous session."""
-        session = sync_cluster.connect()
-        session.execute(
-            f"""
-            CREATE KEYSPACE IF NOT EXISTS {unique_keyspace}
-            WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
-        """
-        )
-        session.set_keyspace(unique_keyspace)
-        yield session
-        session.shutdown()
+        """Create a synchronous session with retry logic for CI stability."""
+        is_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
+
+        # Add retry logic for connection in CI
+        max_retries = 3 if is_ci else 1
+        retry_delay = 2.0
+
+        session = None
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                session = sync_cluster.connect()
+                # Verify connection is working
+                session.execute("SELECT release_version FROM system.local")
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    import time
+
+                    if is_ci:
+                        print(f"Connection attempt {attempt + 1} failed: {e}, retrying...")
+                    time.sleep(retry_delay)
+                    continue
+                raise e
+
+        if session is None:
+            raise last_error or Exception("Failed to connect")
+
+        # Create keyspace with retry for schema agreement
+        for attempt in range(max_retries):
+            try:
+                session.execute(
+                    f"""
+                    CREATE KEYSPACE IF NOT EXISTS {unique_keyspace}
+                    WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
+                """
+                )
+                session.set_keyspace(unique_keyspace)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1 and is_ci:
+                    import time
+
+                    time.sleep(1)
+                    continue
+                raise e
+
+        try:
+            yield session
+        finally:
+            session.shutdown()
 
     @pytest.mark.asyncio
     async def test_basic_query_compatibility(self, sync_session, session_with_keyspace):

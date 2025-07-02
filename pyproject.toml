@@ -116,6 +116,7 @@ markers = [
     # Special markers
     "flaky: Known flaky tests (quarantined)",
     "wip: Work in progress tests",
+    "sync_driver: Tests that use synchronous cassandra driver (may be unstable in CI)",
 
     # Legacy markers (kept for compatibility)
     "stress: marks tests as stress tests for high load scenarios",
