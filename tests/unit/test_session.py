@@ -265,7 +265,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_prepare_statement(self, async_session, mock_session):
-        """Test preparing a statement."""
+        """
+        Test preparing a statement.
+
+        What this tests:
+        ---------------
+        1. Basic prepared statement creation
+        2. Query string is passed correctly to driver
+        3. Prepared statement object is returned
+        4. Async wrapper handles synchronous prepare call
+
+        Why this matters:
+        ----------------
+        - Prepared statements are critical for performance
+        - Must work correctly for parameterized queries
+        - Foundation for safe query execution
+        - Used in almost every production application
+
+        Additional context:
+        ---------------------------------
+        - Prepared statements use ? placeholders
+        - Driver handles actual preparation
+        - Wrapper provides async interface
+        """
         mock_prepared = Mock(spec=PreparedStatement)
         mock_session.prepare.return_value = mock_prepared
 
@@ -277,7 +299,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_prepare_with_custom_payload(self, async_session, mock_session):
-        """Test preparing statement with custom payload."""
+        """
+        Test preparing statement with custom payload.
+
+        What this tests:
+        ---------------
+        1. Custom payload support in prepare method
+        2. Payload is correctly passed to driver
+        3. Advanced prepare options are preserved
+        4. API compatibility with driver features
+
+        Why this matters:
+        ----------------
+        - Custom payloads enable advanced features
+        - Required for certain driver extensions
+        - Ensures full driver API coverage
+        - Used in specialized deployments
+
+        Additional context:
+        ---------------------------------
+        - Payloads can contain metadata or hints
+        - Driver-specific feature passthrough
+        - Maintains wrapper transparency
+        """
         mock_prepared = Mock(spec=PreparedStatement)
         mock_session.prepare.return_value = mock_prepared
 
@@ -290,7 +334,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_prepare_error(self, async_session, mock_session):
-        """Test handling prepare statement error."""
+        """
+        Test handling prepare statement error.
+
+        What this tests:
+        ---------------
+        1. Error handling during statement preparation
+        2. Exceptions are wrapped in QueryError
+        3. Error messages are informative
+        4. No resource leaks on preparation failure
+
+        Why this matters:
+        ----------------
+        - Invalid queries must fail gracefully
+        - Clear errors help debugging
+        - Prevents silent failures
+        - Common during development
+
+        Additional context:
+        ---------------------------------
+        - Syntax errors caught at prepare time
+        - Better than runtime query failures
+        - Helps catch bugs early
+        """
         mock_session.prepare.side_effect = Exception("Invalid query")
 
         with pytest.raises(QueryError) as exc_info:
@@ -300,7 +366,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_prepare_on_closed_session(self, async_session):
-        """Test preparing statement on closed session."""
+        """
+        Test preparing statement on closed session.
+
+        What this tests:
+        ---------------
+        1. Closed session prevents prepare operations
+        2. ConnectionError is raised appropriately
+        3. Session state is checked before operations
+        4. No operations on closed resources
+
+        Why this matters:
+        ----------------
+        - Prevents use-after-close bugs
+        - Clear error for invalid operations
+        - Resource safety in async contexts
+        - Common error in connection pooling
+
+        Additional context:
+        ---------------------------------
+        - Sessions may be closed by timeouts
+        - Error handling must be predictable
+        - Helps identify lifecycle issues
+        """
         await async_session.close()
 
         with pytest.raises(ConnectionError):
@@ -308,7 +396,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_close_session(self, async_session, mock_session):
-        """Test closing the session."""
+        """
+        Test closing the session.
+
+        What this tests:
+        ---------------
+        1. Session close sets is_closed flag
+        2. Underlying driver shutdown is called
+        3. Clean resource cleanup
+        4. State transition is correct
+
+        Why this matters:
+        ----------------
+        - Proper cleanup prevents resource leaks
+        - Connection pools need clean shutdown
+        - Memory leaks in production are critical
+        - Graceful shutdown is required
+
+        Additional context:
+        ---------------------------------
+        - Driver shutdown releases connections
+        - Must work in async contexts
+        - Part of session lifecycle management
+        """
         await async_session.close()
 
         assert async_session.is_closed
@@ -316,7 +426,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_close_idempotent(self, async_session, mock_session):
-        """Test that close is idempotent."""
+        """
+        Test that close is idempotent.
+
+        What this tests:
+        ---------------
+        1. Multiple close calls are safe
+        2. Driver shutdown called only once
+        3. No errors on repeated close
+        4. Idempotent operation guarantee
+
+        Why this matters:
+        ----------------
+        - Defensive programming principle
+        - Simplifies error handling code
+        - Prevents double-free issues
+        - Common in cleanup handlers
+
+        Additional context:
+        ---------------------------------
+        - May be called from multiple paths
+        - Exception handlers often close twice
+        - Standard pattern in resource management
+        """
         await async_session.close()
         await async_session.close()
 
@@ -325,7 +457,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_context_manager(self, mock_session):
-        """Test using session as async context manager."""
+        """
+        Test using session as async context manager.
+
+        What this tests:
+        ---------------
+        1. Async context manager protocol support
+        2. Session is open within context
+        3. Automatic cleanup on context exit
+        4. Exception safety in context manager
+
+        Why this matters:
+        ----------------
+        - Pythonic resource management
+        - Guarantees cleanup even with exceptions
+        - Prevents resource leaks
+        - Best practice for session usage
+
+        Additional context:
+        ---------------------------------
+        - async with syntax is preferred
+        - Handles all cleanup paths
+        - Standard Python pattern
+        """
         async with AsyncCassandraSession(mock_session) as session:
             assert isinstance(session, AsyncCassandraSession)
             assert not session.is_closed
@@ -335,7 +489,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_set_keyspace(self, async_session):
-        """Test setting keyspace."""
+        """
+        Test setting keyspace.
+
+        What this tests:
+        ---------------
+        1. Keyspace change via USE statement
+        2. Execute method called with correct query
+        3. Async execution of keyspace change
+        4. No errors on valid keyspace
+
+        Why this matters:
+        ----------------
+        - Multi-tenant applications switch keyspaces
+        - Session reuse across keyspaces
+        - Avoids creating multiple sessions
+        - Common operational requirement
+
+        Additional context:
+        ---------------------------------
+        - USE statement changes active keyspace
+        - Affects all subsequent queries
+        - Alternative to connection-time keyspace
+        """
         with patch.object(async_session, "execute") as mock_execute:
             mock_execute.return_value = AsyncResultSet([])
 
@@ -345,7 +521,29 @@ class TestAsyncCassandraSession:
 
     @pytest.mark.asyncio
     async def test_set_keyspace_invalid_name(self, async_session):
-        """Test setting keyspace with invalid name."""
+        """
+        Test setting keyspace with invalid name.
+
+        What this tests:
+        ---------------
+        1. Validation of keyspace names
+        2. Rejection of invalid characters
+        3. SQL injection prevention
+        4. Clear error messages
+
+        Why this matters:
+        ----------------
+        - Security against injection attacks
+        - Prevents malformed CQL execution
+        - Data integrity protection
+        - User input validation
+
+        Additional context:
+        ---------------------------------
+        - Tests spaces, dashes, semicolons
+        - CQL identifier rules enforced
+        - First line of defense
+        """
         # Test various invalid keyspace names
         invalid_names = ["", "keyspace with spaces", "keyspace-with-dash", "keyspace;drop"]
 
@@ -356,12 +554,56 @@ class TestAsyncCassandraSession:
             assert "Invalid keyspace name" in str(exc_info.value)
 
     def test_keyspace_property(self, async_session, mock_session):
-        """Test keyspace property."""
+        """
+        Test keyspace property.
+
+        What this tests:
+        ---------------
+        1. Keyspace property delegates to driver
+        2. Read-only access to current keyspace
+        3. Property reflects driver state
+        4. No caching or staleness
+
+        Why this matters:
+        ----------------
+        - Applications need current keyspace info
+        - Debugging multi-keyspace operations
+        - State transparency
+        - API compatibility with driver
+
+        Additional context:
+        ---------------------------------
+        - Property is read-only
+        - Always reflects driver state
+        - Used for logging and debugging
+        """
         mock_session.keyspace = "test_keyspace"
         assert async_session.keyspace == "test_keyspace"
 
     def test_is_closed_property(self, async_session):
-        """Test is_closed property."""
+        """
+        Test is_closed property.
+
+        What this tests:
+        ---------------
+        1. Initial state is not closed
+        2. Property reflects internal state
+        3. Boolean property access
+        4. State tracking accuracy
+
+        Why this matters:
+        ----------------
+        - Applications check before operations
+        - Lifecycle state visibility
+        - Defensive programming support
+        - Connection pool management
+
+        Additional context:
+        ---------------------------------
+        - Used to prevent use-after-close
+        - Simple boolean check
+        - Thread-safe property access
+        """
         assert not async_session.is_closed
         async_session._closed = True
         assert async_session.is_closed

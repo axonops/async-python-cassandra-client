@@ -591,8 +591,25 @@ class TestAsyncCluster:
         """
         Test that protocol version 2 is rejected.
 
-        Protocol v2 was used in Cassandra 2.0.
-        Too old for async operations.
+        What this tests:
+        ---------------
+        1. Protocol version 2 validation and rejection
+        2. Clear error message for unsupported version
+        3. Guidance on minimum required version
+        4. Early validation before cluster creation
+
+        Why this matters:
+        ----------------
+        - Protocol v2 lacks async-friendly features
+        - Prevents runtime failures from missing capabilities
+        - Helps users upgrade to supported Cassandra versions
+        - Clear error messages reduce debugging time
+
+        Additional context:
+        ---------------------------------
+        - Protocol v2 was used in Cassandra 2.0
+        - Lacks continuous paging and other v5+ features
+        - Common when migrating from old clusters
         """
         with pytest.raises(ConfigurationError) as exc_info:
             AsyncCluster(protocol_version=2)
@@ -604,8 +621,25 @@ class TestAsyncCluster:
         """
         Test that protocol version 3 is rejected.
 
-        Protocol v3 was used in Cassandra 2.1-2.2.
-        Still lacks features needed for optimal async.
+        What this tests:
+        ---------------
+        1. Protocol version 3 validation and rejection
+        2. Proper error handling for intermediate versions
+        3. Consistent error messaging across versions
+        4. Configuration validation at initialization
+
+        Why this matters:
+        ----------------
+        - Protocol v3 still lacks critical async features
+        - Common version in legacy deployments
+        - Users need clear upgrade path guidance
+        - Prevents subtle bugs from missing features
+
+        Additional context:
+        ---------------------------------
+        - Protocol v3 was used in Cassandra 2.1-2.2
+        - Added some features but not enough for async
+        - Many production clusters still use this
         """
         with pytest.raises(ConfigurationError) as exc_info:
             AsyncCluster(protocol_version=3)
@@ -617,9 +651,25 @@ class TestAsyncCluster:
         """
         Test that protocol version 4 is rejected.
 
-        Protocol v4 was used in Cassandra 3.x.
-        Close but still missing v5 improvements.
-        Most common version users might try.
+        What this tests:
+        ---------------
+        1. Protocol version 4 validation and rejection
+        2. Handling of most common incompatible version
+        3. Clear upgrade guidance in error message
+        4. Protection against near-miss configurations
+
+        Why this matters:
+        ----------------
+        - Protocol v4 is extremely common (Cassandra 3.x)
+        - Users often assume v4 is "good enough"
+        - Missing v5 features cause subtle async issues
+        - Most frequent configuration error
+
+        Additional context:
+        ---------------------------------
+        - Protocol v4 was standard in Cassandra 3.x
+        - Very close to v5 but missing key improvements
+        - Requires Cassandra 4.0+ upgrade for v5
         """
         with pytest.raises(ConfigurationError) as exc_info:
             AsyncCluster(protocol_version=4)
@@ -631,8 +681,25 @@ class TestAsyncCluster:
         """
         Test that protocol version 5 is accepted.
 
-        Protocol v5 (Cassandra 4.0+) is our minimum.
-        This is the first version we fully support.
+        What this tests:
+        ---------------
+        1. Protocol version 5 is accepted without error
+        2. Minimum supported version works correctly
+        3. Version is properly passed to underlying driver
+        4. No warnings for supported versions
+
+        Why this matters:
+        ----------------
+        - Protocol v5 is our minimum requirement
+        - First version with all async-friendly features
+        - Baseline for production deployments
+        - Must work flawlessly as the default
+
+        Additional context:
+        ---------------------------------
+        - Protocol v5 introduced in Cassandra 4.0
+        - Adds continuous paging and duration type
+        - Required for optimal async performance
         """
         # Should not raise
         AsyncCluster(protocol_version=5)
@@ -646,8 +713,25 @@ class TestAsyncCluster:
         """
         Test that protocol version 6 is accepted.
 
-        Protocol v6 (Cassandra 4.1+) adds more features.
-        We support it for future compatibility.
+        What this tests:
+        ---------------
+        1. Protocol version 6 is accepted without error
+        2. Future protocol versions are supported
+        3. Version is correctly propagated to driver
+        4. Forward compatibility is maintained
+
+        Why this matters:
+        ----------------
+        - Users on latest Cassandra need v6 support
+        - Future-proofing for new deployments
+        - Enables access to latest features
+        - Prevents forced downgrades
+
+        Additional context:
+        ---------------------------------
+        - Protocol v6 introduced in Cassandra 4.1
+        - Adds vector types and other improvements
+        - Backward compatible with v5 features
         """
         # Should not raise
         AsyncCluster(protocol_version=6)
