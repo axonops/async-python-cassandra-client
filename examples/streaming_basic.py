@@ -52,12 +52,10 @@ async def setup_test_data(session):
     """
     )
 
-    await session.set_keyspace("streaming_example")
-
     # Create table
     await session.execute(
         """
-        CREATE TABLE IF NOT EXISTS events (
+        CREATE TABLE IF NOT EXISTS streaming_example.events (
             partition_id int,
             event_id int,
             event_time timestamp,
@@ -72,7 +70,7 @@ async def setup_test_data(session):
     logger.info("Inserting test data...")
     insert_stmt = await session.prepare(
         """
-        INSERT INTO events (partition_id, event_id, event_time, event_type, data)
+        INSERT INTO streaming_example.events (partition_id, event_id, event_time, event_type, data)
         VALUES (?, ?, ?, ?, ?)
     """
     )
@@ -112,7 +110,9 @@ async def setup_test_data(session):
 
 async def basic_streaming_example(session):
     """Demonstrate basic streaming."""
-    logger.info("\n=== Basic Streaming Example ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("BASIC STREAMING EXAMPLE")
+    logger.info("=" * 80)
 
     # Configure streaming with smaller page size to demonstrate True Async Paging
     # IMPORTANT: The driver fetches pages on-demand, not all at once
@@ -131,7 +131,9 @@ async def basic_streaming_example(session):
     start_time = datetime.now()
 
     # CRITICAL: Always use context manager to prevent memory leaks
-    async with await session.execute_stream("SELECT * FROM events", stream_config=config) as result:
+    async with await session.execute_stream(
+        "SELECT * FROM streaming_example.events", stream_config=config
+    ) as result:
         # Process rows one at a time
         event_count = 0
         event_types = {}
@@ -150,22 +152,25 @@ async def basic_streaming_example(session):
                 logger.info(f"Processed {event_count:,} events ({rate:,.0f} events/sec)")
 
     elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info("\nStreaming completed:")
-    logger.info(f"- Total events: {event_count:,}")
-    logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
-    logger.info(f"- Rate: {event_count/elapsed:,.0f} events/sec")
-    logger.info(f"- Event types: {event_types}")
+    logger.info("\n✅ Streaming completed!")
+    logger.info("📊 Statistics:")
+    logger.info(f"   • Total events: {event_count:,}")
+    logger.info(f"   • Time elapsed: {elapsed:.2f} seconds")
+    logger.info(f"   • Processing rate: {event_count/elapsed:,.0f} events/sec")
+    logger.info(f"   • Event types distribution: {event_types}")
 
 
 async def filtered_streaming_example(session):
     """Demonstrate streaming with WHERE clause."""
-    logger.info("\n=== Filtered Streaming Example ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("FILTERED STREAMING EXAMPLE")
+    logger.info("=" * 80)
 
     # Prepare a filtered query
     # Note: event_type is not part of primary key, so we need ALLOW FILTERING
     stmt = await session.prepare(
         """
-        SELECT * FROM events
+        SELECT * FROM streaming_example.events
         WHERE partition_id = ?
         ALLOW FILTERING
     """
@@ -187,13 +192,19 @@ async def filtered_streaming_example(session):
             event_type = row.event_type
             type_counts[event_type] = type_counts.get(event_type, 0) + 1
 
-    logger.info(f"Found {count} events in partition {partition_id}")
-    logger.info(f"Event types in partition: {type_counts}")
+    logger.info("\n✅ Filtered streaming completed!")
+    logger.info(f"📊 Results for partition {partition_id}:")
+    logger.info(f"   • Total events: {count}")
+    logger.info(f"   • Event type breakdown: {type_counts}")
 
 
 async def page_based_streaming_example(session):
     """Demonstrate True Async Paging with page-by-page processing."""
-    logger.info("\n=== Page-Based Streaming Example (True Async Paging) ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("PAGE-BASED STREAMING EXAMPLE (True Async Paging)")
+    logger.info("=" * 80)
+    logger.info("\n💡 Key Insight: Pages are fetched ON-DEMAND as you process them!")
+    logger.info("   The driver fetches the next page WHILE you process the current one.\n")
 
     # Page Size Recommendations:
     # - Smaller pages (1000-5000): Better for memory, responsiveness, real-time processing
@@ -204,7 +215,9 @@ async def page_based_streaming_example(session):
     config = StreamConfig(fetch_size=7500)  # Will result in ~13-14 pages
 
     # Use context manager for automatic resource cleanup
-    async with await session.execute_stream("SELECT * FROM events", stream_config=config) as result:
+    async with await session.execute_stream(
+        "SELECT * FROM streaming_example.events", stream_config=config
+    ) as result:
         # Process data page by page using True Async Paging
         page_count = 0
         total_events = 0
@@ -217,7 +230,7 @@ async def page_based_streaming_example(session):
             events_in_page = len(page)
             total_events += events_in_page
 
-            logger.info(f"Processing page {page_count} with {events_in_page:,} events")
+            logger.info(f"📄 Processing page {page_count} ({events_in_page:,} events)...")
 
             # Simulate batch processing (e.g., writing to another system)
             # In real scenarios, this could be bulk writes to S3, another DB, etc.
@@ -231,16 +244,16 @@ async def page_based_streaming_example(session):
 
             page_time = (datetime.now() - page_start).total_seconds()
             processing_times.append(page_time)
-            logger.info(
-                f"  Page {page_count} processed in {page_time:.3f}s - Event types: {event_types}"
-            )
+            logger.info(f"   ✓ Page {page_count} done in {page_time:.3f}s | Types: {event_types}")
 
     avg_page_time = sum(processing_times) / len(processing_times) if processing_times else 0
-    logger.info("\nCompleted True Async Paging:")
-    logger.info(f"  - Total pages: {page_count}")
-    logger.info(f"  - Total events: {total_events:,}")
-    logger.info(f"  - Average page processing time: {avg_page_time:.3f}s")
-    logger.info("  - Pages are fetched asynchronously while previous pages are being processed!")
+    logger.info("\n✅ Page-based streaming completed!")
+    logger.info("📊 Statistics:")
+    logger.info(f"   • Total pages processed: {page_count}")
+    logger.info(f"   • Total events: {total_events:,}")
+    logger.info(f"   • Average page processing time: {avg_page_time:.3f}s")
+    logger.info("\n🚀 Performance Note: Pages were fetched asynchronously!")
+    logger.info("   While you processed each page, the driver was already fetching the next one.")
 
 
 async def main():

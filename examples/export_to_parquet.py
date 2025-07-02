@@ -132,7 +132,9 @@ class ParquetExporter:
         output_file = self.output_dir / f"{keyspace}.{table_name}.parquet"
         temp_file = self.output_dir / f"{keyspace}.{table_name}.parquet.tmp"
 
-        logger.info(f"Starting export of {keyspace}.{table_name} to {output_file}")
+        logger.info(f"\n🎯 Starting export of {keyspace}.{table_name}")
+        logger.info(f"📄 Output: {output_file}")
+        logger.info(f"🗜️  Compression: {compression}")
 
         # Build query
         query = f"SELECT * FROM {keyspace}.{table_name}"
@@ -149,7 +151,9 @@ class ParquetExporter:
             nonlocal total_pages
             total_pages = page_num
             if page_num % 10 == 0:
-                logger.info(f"Exported page {page_num} ({total_rows + rows_in_page:,} rows total)")
+                logger.info(
+                    f"📦 Processing page {page_num} ({total_rows + rows_in_page:,} rows exported so far)"
+                )
 
         # Configure streaming
         config = StreamConfig(
@@ -260,7 +264,9 @@ class ParquetExporter:
                             # Clear batch data
                             batch_data = {name: [] for name in column_names}
 
-                            logger.info(f"Written {total_rows:,} rows to Parquet")
+                            logger.info(
+                                f"💾 Written {total_rows:,} rows to Parquet (row group {total_rows // row_group_size})"
+                            )
 
                 # Write final partial batch
                 if any(batch_data.values()):
@@ -296,15 +302,27 @@ class ParquetExporter:
             "row_group_size": row_group_size,
         }
 
-        logger.info("\nExport completed successfully!")
-        logger.info(f"Statistics: {stats}")
+        logger.info("\n" + "─" * 80)
+        logger.info("✅ PARQUET EXPORT COMPLETED!")
+        logger.info("─" * 80)
+        logger.info("\n📊 Export Statistics:")
+        logger.info(f"   • Table: {stats['table']}")
+        logger.info(f"   • Rows: {stats['total_rows']:,}")
+        logger.info(f"   • Pages: {stats['total_pages']}")
+        logger.info(f"   • Size: {stats['total_mb']} MB")
+        logger.info(f"   • Duration: {stats['duration_seconds']}s")
+        logger.info(
+            f"   • Speed: {stats['rows_per_second']:,} rows/sec ({stats['mb_per_second']} MB/s)"
+        )
+        logger.info(f"   • Compression: {stats['compression']}")
+        logger.info(f"   • Row Group Size: {stats['row_group_size']:,}")
 
         return stats
 
 
 async def setup_test_data(session):
     """Create test data for export demonstration."""
-    logger.info("Setting up test data...")
+    logger.info("\n🛠️  Setting up test data for Parquet export demonstration...")
 
     # Create keyspace
     await session.execute(
@@ -317,12 +335,10 @@ async def setup_test_data(session):
     """
     )
 
-    await session.set_keyspace("analytics")
-
     # Create a table with various data types
     await session.execute(
         """
-        CREATE TABLE IF NOT EXISTS user_events (
+        CREATE TABLE IF NOT EXISTS analytics.user_events (
             user_id UUID,
             event_time TIMESTAMP,
             event_type TEXT,
@@ -342,7 +358,7 @@ async def setup_test_data(session):
     # Insert test data
     insert_stmt = await session.prepare(
         """
-        INSERT INTO user_events (
+        INSERT INTO analytics.user_events (
             user_id, event_time, event_type, device_type,
             country_code, city, revenue, duration_seconds,
             is_premium, metadata, tags
@@ -351,7 +367,7 @@ async def setup_test_data(session):
     )
 
     # Generate substantial test data
-    logger.info("Inserting test data...")
+    logger.info("📝 Inserting test data with complex types (maps, sets, decimals)...")
 
     import random
     import uuid
@@ -428,23 +444,27 @@ async def setup_test_data(session):
                 total_inserted += 100
 
                 if total_inserted % 5000 == 0:
-                    logger.info(f"Inserted {total_inserted:,} events...")
+                    logger.info(f"   📊 Progress: {total_inserted:,} events inserted...")
 
     # Execute remaining tasks
     if tasks:
         await asyncio.gather(*tasks)
         total_inserted += len(tasks)
 
-    logger.info(f"Test data setup complete: {total_inserted:,} events inserted")
+    logger.info(
+        f"✅ Test data setup complete: {total_inserted:,} events inserted into analytics.user_events"
+    )
 
 
 async def demonstrate_exports(session):
     """Demonstrate various export scenarios."""
     output_dir = os.environ.get("EXAMPLE_OUTPUT_DIR", "examples/exampleoutput")
-    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"\n📁 Output directory: {output_dir}")
 
     # Example 1: Export entire table
-    logger.info("\n=== Example 1: Export Entire Table ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("EXAMPLE 1: Export Entire Table with Snappy Compression")
+    logger.info("=" * 80)
     exporter1 = ParquetExporter(str(Path(output_dir) / "example1"))
     stats1 = await exporter1.export_table(
         session,
@@ -455,7 +475,9 @@ async def demonstrate_exports(session):
     )
 
     # Example 2: Export with filtering
-    logger.info("\n=== Example 2: Export Filtered Data ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("EXAMPLE 2: Export Filtered Data (Purchase Events Only)")
+    logger.info("=" * 80)
     exporter2 = ParquetExporter(str(Path(output_dir) / "example2"))
     stats2 = await exporter2.export_table(
         session,
@@ -468,7 +490,9 @@ async def demonstrate_exports(session):
     )
 
     # Example 3: Export with different compression
-    logger.info("\n=== Example 3: Export with Different Compression ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("EXAMPLE 3: Export with LZ4 Compression")
+    logger.info("=" * 80)
     exporter3 = ParquetExporter(str(Path(output_dir) / "example3"))
     stats3 = await exporter3.export_table(
         session,
@@ -484,36 +508,44 @@ async def demonstrate_exports(session):
 
 async def verify_parquet_files():
     """Verify the exported Parquet files."""
-    logger.info("\n=== Verifying Exported Files ===")
+    logger.info("\n" + "=" * 80)
+    logger.info("🔍 VERIFYING EXPORTED PARQUET FILES")
+    logger.info("=" * 80)
 
     export_dir = Path(os.environ.get("EXAMPLE_OUTPUT_DIR", "examples/exampleoutput"))
 
     # Look for Parquet files in subdirectories too
     for parquet_file in export_dir.rglob("*.parquet"):
-        logger.info(f"\nVerifying {parquet_file.name}:")
+        logger.info(f"\n📄 Verifying: {parquet_file.name}")
+        logger.info("─" * 60)
 
         # Read Parquet file metadata
         parquet_file_obj = pq.ParquetFile(parquet_file)
 
         # Display metadata
-        logger.info(f"  Schema: {parquet_file_obj.schema}")
-        logger.info(f"  Num row groups: {parquet_file_obj.num_row_groups}")
-        logger.info(f"  Total rows: {parquet_file_obj.metadata.num_rows}")
+        logger.info(f"   📋 Schema columns: {len(parquet_file_obj.schema)}")
+        logger.info(f"   📊 Row groups: {parquet_file_obj.num_row_groups}")
+        logger.info(f"   📈 Total rows: {parquet_file_obj.metadata.num_rows:,}")
         logger.info(
-            f"  Compression: {parquet_file_obj.metadata.row_group(0).column(0).compression}"
+            f"   🗜️  Compression: {parquet_file_obj.metadata.row_group(0).column(0).compression}"
         )
 
         # Read first few rows
         table = pq.read_table(parquet_file, columns=None)
         df = table.to_pandas()
 
-        logger.info(f"  Columns: {list(df.columns)}")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Memory usage: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        logger.info(f"   📐 Dimensions: {df.shape[0]:,} rows × {df.shape[1]} columns")
+        logger.info(f"   💾 Memory usage: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        logger.info(
+            f"   🏷️  Columns: {', '.join(list(df.columns)[:5])}{' ...' if len(df.columns) > 5 else ''}"
+        )
 
-        # Show sample data
-        logger.info("\n  First 5 rows:")
-        logger.info(df.head())
+        # Show data types
+        logger.info("\n   📊 Sample data (first 3 rows):")
+        for idx, row in df.head(3).iterrows():
+            logger.info(
+                f"      Row {idx}: event_type='{row['event_type']}', revenue={row['revenue']}, city='{row['city']}'"
+            )
 
 
 async def main():
@@ -537,17 +569,23 @@ async def main():
             await verify_parquet_files()
 
             # Summary
-            logger.info("\n=== Export Summary ===")
-            for stats in export_stats:
+            logger.info("\n" + "=" * 80)
+            logger.info("📊 EXPORT SUMMARY")
+            logger.info("=" * 80)
+            logger.info("\n🎯 Three exports completed:")
+            for i, stats in enumerate(export_stats, 1):
                 logger.info(
-                    f"- {stats['table']}: {stats['total_rows']:,} rows, "
-                    f"{stats['total_mb']} MB, {stats['duration_seconds']}s "
-                    f"({stats['rows_per_second']:,} rows/s)"
+                    f"\n   {i}. {stats['compression'].upper()} compression:"
+                    f"\n      • {stats['total_rows']:,} rows exported"
+                    f"\n      • {stats['total_mb']} MB file size"
+                    f"\n      • {stats['duration_seconds']}s duration"
+                    f"\n      • {stats['rows_per_second']:,} rows/sec throughput"
                 )
 
             # Cleanup
-            logger.info("\nCleaning up...")
+            logger.info("\n🧹 Cleaning up...")
             await session.execute("DROP KEYSPACE analytics")
+            logger.info("✅ Keyspace dropped")
 
 
 if __name__ == "__main__":

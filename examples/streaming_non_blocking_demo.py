@@ -94,11 +94,9 @@ async def setup_demo_data(session):
     """
     )
 
-    await session.set_keyspace("streaming_demo")
-
     await session.execute(
         """
-        CREATE TABLE IF NOT EXISTS sensor_data (
+        CREATE TABLE IF NOT EXISTS streaming_demo.sensor_data (
             sensor_id TEXT,
             reading_time TIMESTAMP,
             temperature DOUBLE,
@@ -112,7 +110,7 @@ async def setup_demo_data(session):
     # Insert data - enough for multiple pages
     insert_stmt = await session.prepare(
         """
-        INSERT INTO sensor_data (sensor_id, reading_time, temperature, humidity, location)
+        INSERT INTO streaming_demo.sensor_data (sensor_id, reading_time, temperature, humidity, location)
         VALUES (?, ?, ?, ?, ?)
     """
     )
@@ -177,7 +175,7 @@ async def demonstrate_non_blocking_streaming(session):
     print("🔄 Starting to stream sensor data...\n")
 
     async with await session.execute_stream(
-        "SELECT * FROM sensor_data", stream_config=config
+        "SELECT * FROM streaming_demo.sensor_data", stream_config=config
     ) as result:
         async for row in result:
             rows_processed += 1
@@ -213,7 +211,9 @@ async def demonstrate_concurrent_operations(session):
     print("\n\n🎯 Demonstrating concurrent operations during streaming...")
 
     # Prepare queries
-    count_stmt = await session.prepare("SELECT COUNT(*) FROM sensor_data WHERE sensor_id = ?")
+    count_stmt = await session.prepare(
+        "SELECT COUNT(*) FROM streaming_demo.sensor_data WHERE sensor_id = ?"
+    )
 
     concurrent_results = []
 
@@ -236,7 +236,7 @@ async def demonstrate_concurrent_operations(session):
         rows = 0
 
         async with await session.execute_stream(
-            "SELECT * FROM sensor_data", stream_config=config
+            "SELECT * FROM streaming_demo.sensor_data", stream_config=config
         ) as result:
             async for row in result:
                 rows += 1
