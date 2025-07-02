@@ -77,6 +77,9 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 - Replaces default reactor with asyncio-based implementation
 - Still uses thread-based architecture internally
 
+**Note on Usage:**
+During our evaluation, we encountered difficulties getting AsyncioReactor to establish connections successfully. This could be due to its experimental status, our specific test environment, or missing configuration requirements. Additionally, AsyncioReactor runs its event loop in a separate thread and still uses threads for I/O operations internally, which doesn't provide any performance or architectural advantages over our approach of using a thread pool executor to bridge synchronous operations to asyncio. Given its experimental designation and our connection challenges, we focused our efforts on the stable, production-ready alternatives.
+
 ## Technical Comparison
 
 ### Architecture Comparison
