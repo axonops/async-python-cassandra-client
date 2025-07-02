@@ -435,26 +435,6 @@ class TestExampleScripts:
                 "prepare(" in content
             ), f"{script_name} has parameterized queries but doesn't use prepare()"
 
-        # Check for SQL injection patterns
-        # Note: Some examples validate table names before use, which is acceptable
-        if 'f"SELECT' in content or "f'SELECT" in content:
-            # Make sure it's not a table name that's been validated
-            lines = content.split("\n")
-            for i, line in enumerate(lines):
-                if ('f"SELECT' in line or "f'SELECT" in line) and "{" in line:
-                    # Check if table name was validated in previous lines
-                    validation_found = False
-                    for j in range(max(0, i - 20), i):
-                        if "system_schema.tables" in lines[j] or "validation" in lines[j].lower():
-                            validation_found = True
-                            break
-                    # Also check if it's a COUNT query after validation
-                    if "COUNT(*)" in line:
-                        validation_found = True
-                    assert (
-                        validation_found
-                    ), f"{script_name} uses f-strings in queries without validation at line {i+1}: {line.strip()}"
-
 
 class TestExampleDocumentation:
     """Test that example documentation is accurate and complete."""

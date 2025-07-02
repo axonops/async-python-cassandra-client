@@ -37,16 +37,7 @@ async def count_table_rows(session, keyspace: str, table_name: str) -> int:
     # Note: COUNT(*) can be slow on large tables
     # Consider using token ranges for very large tables
 
-    # First validate that the table exists to prevent SQL injection
-    validation_stmt = await session.prepare(
-        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
-    )
-    validation_result = await session.execute(validation_stmt, [keyspace, table_name])
-    if not validation_result.one():
-        raise ValueError(f"Table {keyspace}.{table_name} does not exist")
-
     # For COUNT queries, we can't use prepared statements with dynamic table names
-    # Since we've validated the table exists, we can safely construct the query
     # In production, consider implementing a token range count for large tables
     result = await session.execute(f"SELECT COUNT(*) FROM {keyspace}.{table_name}")
     return result.one()[0]
@@ -79,16 +70,7 @@ async def export_table_async(session, keyspace: str, table_name: str, output_fil
     start_time = datetime.now()
 
     # CRITICAL: Use context manager for streaming to prevent memory leaks
-    # Validate table exists before streaming
-    validation_stmt = await session.prepare(
-        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
-    )
-    validation_result = await session.execute(validation_stmt, [keyspace, table_name])
-    if not validation_result.one():
-        raise ValueError(f"Table {keyspace}.{table_name} does not exist")
-
     # For SELECT * with dynamic table names, we can't use prepared statements
-    # Since we've validated the table exists, we can safely construct the query
     async with await session.execute_stream(
         f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
     ) as result:
@@ -155,16 +137,7 @@ def export_table_sync(session, keyspace: str, table_name: str, output_file: str)
         start_time = datetime.now()
 
         # Use context manager for proper streaming cleanup
-        # Validate table exists before streaming
-        validation_stmt = await session.prepare(
-            "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?"
-        )
-        validation_result = await session.execute(validation_stmt, [keyspace, table_name])
-        if not validation_result.one():
-            raise ValueError(f"Table {keyspace}.{table_name} does not exist")
-
         # For SELECT * with dynamic table names, we can't use prepared statements
-        # Since we've validated the table exists, we can safely construct the query
         async with await session.execute_stream(
             f"SELECT * FROM {keyspace}.{table_name}", stream_config=config
         ) as result:
