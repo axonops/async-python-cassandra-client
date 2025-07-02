@@ -47,9 +47,21 @@ iceberg_warehouse/
 
 # Data
 *.csv
+*.csv.gz
+*.csv.gzip
+*.csv.bz2
+*.csv.lz4
 *.parquet
 *.avro
+*.json
+*.jsonl
+*.jsonl.gz
+*.jsonl.gzip
+*.jsonl.bz2
+*.jsonl.lz4
+*.progress
 export_output/
+exports/
 
 # Docker
 cassandra1-data/

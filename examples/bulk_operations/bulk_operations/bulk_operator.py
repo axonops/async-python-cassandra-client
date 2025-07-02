@@ -6,6 +6,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from async_cassandra import AsyncCassandraSession
@@ -374,3 +375,147 @@ class TokenAwareBulkOperator:
             raise ValueError(f"Table '{table}' not found in keyspace '{keyspace}'")
 
         return keyspace_meta.tables[table]
+
+    async def export_to_csv(
+        self,
+        keyspace: str,
+        table: str,
+        output_path: str | Path,
+        columns: list[str] | None = None,
+        delimiter: str = ",",
+        null_string: str = "",
+        compression: str | None = None,
+        split_count: int | None = None,
+        parallelism: int | None = None,
+        progress_callback: Callable[[Any], Any] | None = None,
+    ) -> Any:
+        """Export table to CSV format.
+
+        Args:
+            keyspace: Keyspace name
+            table: Table name
+            output_path: Output file path
+            columns: Columns to export (None for all)
+            delimiter: CSV delimiter
+            null_string: String to represent NULL values
+            compression: Compression type (gzip, bz2, lz4)
+            split_count: Number of token range splits
+            parallelism: Max concurrent operations
+            progress_callback: Progress callback function
+
+        Returns:
+            ExportProgress object
+        """
+        from .exporters import CSVExporter
+
+        exporter = CSVExporter(
+            self,
+            delimiter=delimiter,
+            null_string=null_string,
+            compression=compression,
+        )
+
+        return await exporter.export(
+            keyspace=keyspace,
+            table=table,
+            output_path=Path(output_path),
+            columns=columns,
+            split_count=split_count,
+            parallelism=parallelism,
+            progress_callback=progress_callback,
+        )
+
+    async def export_to_json(
+        self,
+        keyspace: str,
+        table: str,
+        output_path: str | Path,
+        columns: list[str] | None = None,
+        format_mode: str = "jsonl",
+        indent: int | None = None,
+        compression: str | None = None,
+        split_count: int | None = None,
+        parallelism: int | None = None,
+        progress_callback: Callable[[Any], Any] | None = None,
+    ) -> Any:
+        """Export table to JSON format.
+
+        Args:
+            keyspace: Keyspace name
+            table: Table name
+            output_path: Output file path
+            columns: Columns to export (None for all)
+            format_mode: 'jsonl' (line-delimited) or 'array'
+            indent: JSON indentation
+            compression: Compression type (gzip, bz2, lz4)
+            split_count: Number of token range splits
+            parallelism: Max concurrent operations
+            progress_callback: Progress callback function
+
+        Returns:
+            ExportProgress object
+        """
+        from .exporters import JSONExporter
+
+        exporter = JSONExporter(
+            self,
+            format_mode=format_mode,
+            indent=indent,
+            compression=compression,
+        )
+
+        return await exporter.export(
+            keyspace=keyspace,
+            table=table,
+            output_path=Path(output_path),
+            columns=columns,
+            split_count=split_count,
+            parallelism=parallelism,
+            progress_callback=progress_callback,
+        )
+
+    async def export_to_parquet(
+        self,
+        keyspace: str,
+        table: str,
+        output_path: str | Path,
+        columns: list[str] | None = None,
+        compression: str = "snappy",
+        row_group_size: int = 50000,
+        split_count: int | None = None,
+        parallelism: int | None = None,
+        progress_callback: Callable[[Any], Any] | None = None,
+    ) -> Any:
+        """Export table to Parquet format.
+
+        Args:
+            keyspace: Keyspace name
+            table: Table name
+            output_path: Output file path
+            columns: Columns to export (None for all)
+            compression: Parquet compression (snappy, gzip, brotli, lz4, zstd)
+            row_group_size: Rows per row group
+            split_count: Number of token range splits
+            parallelism: Max concurrent operations
+            progress_callback: Progress callback function
+
+        Returns:
+            ExportProgress object
+        """
+        from .exporters import ParquetExporter
+
+        exporter = ParquetExporter(
+            self,
+            compression=compression,
+            row_group_size=row_group_size,
+        )
+
+        return await exporter.export(
+            keyspace=keyspace,
+            table=table,
+            output_path=Path(output_path),
+            columns=columns,
+            split_count=split_count,
+            parallelism=parallelism,
+            progress_callback=progress_callback,
+        )

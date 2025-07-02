@@ -8,8 +8,8 @@ This example demonstrates how to perform efficient bulk operations on Apache Cas
 - **Streaming exports**: Memory-efficient data export using async generators
 - **Progress tracking**: Real-time progress updates during operations
 - **Multi-node support**: Automatically distributes work across cluster nodes
+- **Multiple export formats**: CSV, JSON, and Parquet with compression support ✅
 - **Apache Iceberg integration**: Export Cassandra data to the modern lakehouse format (coming in Phase 3)
-- **Multiple export formats**: CSV, JSON, Parquet, and Iceberg table format (coming in Phase 2-3)
 
 ## 📋 Prerequisites
 

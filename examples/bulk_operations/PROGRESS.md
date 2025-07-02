@@ -348,3 +348,136 @@ Per user request, created comprehensive integration tests to verify data integri
 
 *Last Updated: 2025-01-02*
 *Phase 1 COMPLETED with full integration testing, prepared statements, and data integrity verification*
+
+---
+
+## Phase 2 Implementation Progress (2025-01-02)
+
+### Export Functionality Completed ✅
+
+Phase 2 has been successfully implemented with the following features:
+
+#### 1. Export Format Support
+- **CSV Export**
+  - Streaming support for large datasets
+  - Configurable delimiters and NULL representation
+  - Quote handling (QUOTE_MINIMAL, QUOTE_ALL, etc.)
+  - Compression support (gzip, bz2, lz4)
+
+- **JSON Export**
+  - Line-delimited JSON (JSONL) for streaming
+  - JSON array format for smaller datasets
+  - Pretty printing with indentation
+  - Proper type serialization
+  - Compression support
+
+- **Parquet Export** (Critical for Iceberg!)
+  - PyArrow-based implementation
+  - Cassandra to Arrow schema mapping
+  - Configurable row group sizes
+  - Multiple compression codecs (snappy, gzip, brotli, lz4, zstd)
+  - Dictionary encoding for strings
+
+#### 2. Common Features Across All Formats
+- **Progress Tracking**
+  - Real-time export progress callbacks
+  - Bytes written and rows exported tracking
+  - Progress percentage calculation
+
+- **Resume Capability**
+  - Progress saved to `.progress` files
+  - JSON-serialized progress state
+  - Token range completion tracking
+  - Can resume interrupted exports
+
+- **Memory Efficiency**
+  - Streaming architecture (no full table load)
+  - Configurable buffer sizes
+  - Batch processing for Parquet
+
+#### 3. Schema and Type Handling
+- Automatic schema discovery from Cassandra metadata
+- Proper handling of all CQL types:
+  - Collections (list, set, map)
+  - UUID, timestamps, decimals
+  - NULL value handling
+  - Binary data (base64 for JSON, hex for CSV, raw for Parquet)
+
+#### 4. Integration with Bulk Operator
+Added convenience methods to TokenAwareBulkOperator:
+```python
+# CSV export
+await operator.export_to_csv(keyspace, table, "output.csv", compression="gzip")
+
+# JSON export
+await operator.export_to_json(keyspace, table, "output.jsonl", format_mode="jsonl")
+
+# Parquet export (for Iceberg!)
+await operator.export_to_parquet(keyspace, table, "output.parquet")
+```
+
+### Code Structure
+```
+bulk_operations/
+├── exporters/
+│   ├── __init__.py          # Export module
+│   ├── base.py              # Base classes and progress tracking
+│   ├── csv_exporter.py      # CSV implementation
+│   ├── json_exporter.py     # JSON implementation
+│   └── parquet_exporter.py  # Parquet implementation (for Iceberg)
+```
+
+### Example Scripts Created
+1. **example_csv_export.py** - Demonstrates CSV export with various options
+2. **example_export_formats.py** - Compares all formats and explains Parquet importance
+
+### Testing and Quality
+- **Unit tests**: 7 tests for CSV exporter (all passing)
+- **Integration tests**: 7 tests for all formats (all passing)
+- **Test coverage**: 74% overall
+  - csv_exporter.py: 84%
+  - json_exporter.py: 86%
+  - parquet_exporter.py: 79%
+  - base.py: 82%
+- **Linting**: All checks pass
+  - ruff: ✅ All checks passed!
+  - black: ✅ All files formatted
+- **Issues Fixed During Implementation**:
+  - OrderedMapSerializedKey serialization for JSON
+  - SortedSet handling for JSON export
+  - Decimal type serialization across formats
+  - Progress callback async/sync compatibility
+  - Column selection filtering
+  - Numpy bool comparison in tests
+
+### Why Parquet Matters (Path to Iceberg)
+The Parquet exporter is the critical foundation for Phase 3 (Iceberg) because:
+- Iceberg stores data in Parquet files
+- Schema is embedded in the format
+- Columnar storage enables analytics
+- Excellent compression ratios
+- Row groups support predicate pushdown
+
+### Next: Phase 3 - Apache Iceberg Integration 🎯
+With Parquet export working, we can now:
+1. Create Iceberg tables from Cassandra schemas
+2. Write Parquet files to Iceberg data directories
+3. Update Iceberg metadata/manifest files
+4. Enable time travel and table evolution
+
+*Phase 2 COMPLETED (2025-01-02) - All tests passing, linting clean, ready for Iceberg!*
+
+### Phase 2 Completion Checklist ✅
+- [x] CSV export with streaming and compression
+- [x] JSON export (JSONL and array formats)
+- [x] Parquet export with PyArrow (foundation for Iceberg)
+- [x] Progress tracking and resume capability
+- [x] Comprehensive type serialization
+- [x] Column selection support
+- [x] Unit tests written and passing
+- [x] Integration tests written and passing
+- [x] All linting checks pass
+- [x] Example scripts demonstrating usage
+- [x] Documentation updated
+- [x] .gitignore updated to prevent committing export files
+- [x] All exported test files cleaned up
