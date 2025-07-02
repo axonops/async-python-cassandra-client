@@ -36,7 +36,29 @@ class TestRaceConditions:
     @pytest.mark.resilience
     @pytest.mark.critical
     async def test_toctou_event_loop_check(self):
-        """Test Time-of-Check-Time-of-Use race in event loop handling."""
+        """
+        Test Time-of-Check-Time-of-Use race in event loop handling.
+
+        What this tests:
+        ---------------
+        1. Thread-safe event loop access from multiple threads
+        2. Race conditions in get_or_create_event_loop utility
+        3. Concurrent thread access to event loop creation
+        4. Proper synchronization in event loop management
+
+        Why this matters:
+        ----------------
+        - Production systems often have multiple threads accessing async code
+        - TOCTOU bugs can cause crashes or incorrect behavior
+        - Event loop corruption can break entire applications
+        - Critical for mixed sync/async codebases
+
+        Additional context:
+        ---------------------------------
+        - Simulates 20 concurrent threads accessing event loop
+        - Common pattern in web servers with thread pools
+        - Tests defensive programming in utils module
+        """
         from async_cassandra.utils import get_or_create_event_loop
 
         # Simulate rapid concurrent access from multiple threads
@@ -72,7 +94,29 @@ class TestRaceConditions:
 
     @pytest.mark.resilience
     async def test_callback_registration_race(self):
-        """Test race condition in callback registration."""
+        """
+        Test race condition in callback registration.
+
+        What this tests:
+        ---------------
+        1. Thread-safe callback registration in AsyncResultHandler
+        2. Race between success and error callbacks
+        3. Proper result state management
+        4. Only one callback should win in a race
+
+        Why this matters:
+        ----------------
+        - Callbacks from driver happen on different threads
+        - Race conditions can cause undefined behavior
+        - Result state must be consistent
+        - Prevents duplicate result processing
+
+        Additional context:
+        ---------------------------------
+        - Driver callbacks are inherently multi-threaded
+        - Tests internal synchronization mechanisms
+        - Simulates real driver callback patterns
+        """
         # Create a mock ResponseFuture
         mock_future = Mock()
         mock_future.has_more_pages = False
@@ -114,7 +158,29 @@ class TestRaceConditions:
     @pytest.mark.critical
     @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_concurrent_session_operations(self):
-        """Test concurrent operations on same session."""
+        """
+        Test concurrent operations on same session.
+
+        What this tests:
+        ---------------
+        1. Thread-safe session operations under high concurrency
+        2. No lost updates or race conditions in query execution
+        3. Proper result isolation between concurrent queries
+        4. Sequential counter integrity across 50 concurrent operations
+
+        Why this matters:
+        ----------------
+        - Production apps execute many queries concurrently
+        - Session must handle concurrent access safely
+        - Lost queries can cause data inconsistency
+        - Common pattern in web applications
+
+        Additional context:
+        ---------------------------------
+        - Simulates 50 concurrent SELECT queries
+        - Verifies each query gets unique result
+        - Tests thread pool handling under load
+        """
         mock_session = Mock()
         call_count = 0
 
@@ -151,7 +217,29 @@ class TestRaceConditions:
     @pytest.mark.resilience
     @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_page_callback_deadlock_prevention(self):
-        """Test prevention of deadlock in paging callbacks."""
+        """
+        Test prevention of deadlock in paging callbacks.
+
+        What this tests:
+        ---------------
+        1. Independent iteration state for concurrent AsyncResultSet usage
+        2. No deadlock when multiple coroutines iterate same result
+        3. Sequential iteration works correctly
+        4. Each iterator maintains its own position
+
+        Why this matters:
+        ----------------
+        - Paging through large results is common
+        - Deadlocks can hang entire applications
+        - Multiple consumers may process same result set
+        - Critical for streaming large datasets
+
+        Additional context:
+        ---------------------------------
+        - Tests both concurrent and sequential iteration
+        - Each AsyncResultSet has independent state
+        - Simulates real paging scenarios
+        """
         from async_cassandra.result import AsyncResultSet
 
         # Test that each AsyncResultSet has its own iteration state
@@ -194,7 +282,29 @@ class TestRaceConditions:
     @pytest.mark.resilience
     @pytest.mark.timeout(15)  # Increase timeout to account for 5s shutdown delay
     async def test_session_close_during_query(self):
-        """Test closing session while queries are in flight."""
+        """
+        Test closing session while queries are in flight.
+
+        What this tests:
+        ---------------
+        1. Graceful session closure with active queries
+        2. Proper cleanup during 5-second shutdown delay
+        3. In-flight queries complete before final closure
+        4. No resource leaks or hanging queries
+
+        Why this matters:
+        ----------------
+        - Applications need graceful shutdown
+        - In-flight queries shouldn't be lost
+        - Resource cleanup is critical
+        - Prevents connection leaks in production
+
+        Additional context:
+        ---------------------------------
+        - Tests 5-second graceful shutdown period
+        - Simulates real shutdown scenarios
+        - Critical for container deployments
+        """
         mock_session = Mock()
         query_started = asyncio.Event()
         query_can_proceed = asyncio.Event()
@@ -254,7 +364,29 @@ class TestRaceConditions:
     @pytest.mark.critical
     @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_thread_pool_saturation(self):
-        """Test behavior when thread pool is saturated."""
+        """
+        Test behavior when thread pool is saturated.
+
+        What this tests:
+        ---------------
+        1. Behavior with more queries than thread pool size
+        2. No deadlock when thread pool is exhausted
+        3. All queries eventually complete
+        4. Async execution handles thread pool limits gracefully
+
+        Why this matters:
+        ----------------
+        - Production loads can exceed thread pool capacity
+        - Deadlocks under load are catastrophic
+        - Must handle burst traffic gracefully
+        - Common issue in high-traffic applications
+
+        Additional context:
+        ---------------------------------
+        - Uses 2-thread pool with 6 concurrent queries
+        - Tests 3x oversubscription scenario
+        - Verifies async model prevents blocking
+        """
         from async_cassandra.cluster import AsyncCluster
 
         # Create cluster with small thread pool
@@ -305,7 +437,29 @@ class TestRaceConditions:
     @pytest.mark.resilience
     @pytest.mark.timeout(5)  # Add timeout to prevent hanging
     async def test_event_loop_callback_ordering(self):
-        """Test that callbacks maintain order when scheduled."""
+        """
+        Test that callbacks maintain order when scheduled.
+
+        What this tests:
+        ---------------
+        1. Thread-safe callback scheduling to event loop
+        2. All callbacks execute despite concurrent scheduling
+        3. No lost callbacks under concurrent access
+        4. safe_call_soon_threadsafe utility correctness
+
+        Why this matters:
+        ----------------
+        - Driver callbacks come from multiple threads
+        - Lost callbacks mean lost query results
+        - Order preservation prevents race conditions
+        - Foundation of async-to-sync bridge
+
+        Additional context:
+        ---------------------------------
+        - Tests 10 concurrent threads scheduling callbacks
+        - Verifies thread-safe event loop integration
+        - Core to driver callback handling
+        """
         from async_cassandra.utils import safe_call_soon_threadsafe
 
         results = []
@@ -335,7 +489,29 @@ class TestRaceConditions:
     @pytest.mark.resilience
     @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_prepared_statement_concurrent_access(self):
-        """Test concurrent access to prepared statements."""
+        """
+        Test concurrent access to prepared statements.
+
+        What this tests:
+        ---------------
+        1. Thread-safe prepared statement creation
+        2. Multiple coroutines preparing same statement
+        3. No corruption during concurrent preparation
+        4. All coroutines receive valid prepared statement
+
+        Why this matters:
+        ----------------
+        - Prepared statements are performance critical
+        - Concurrent preparation is common at startup
+        - Statement corruption causes query failures
+        - Caching optimization opportunity identified
+
+        Additional context:
+        ---------------------------------
+        - Currently allows duplicate preparation
+        - Future optimization: statement caching
+        - Tests current thread-safe behavior
+        """
         mock_session = Mock()
         mock_prepared = Mock()
 
