@@ -333,21 +333,6 @@ class TokenAwareBulkOperator:
 
         stats.end_time = time.time()
 
-    async def export_to_iceberg(
-        self,
-        source_keyspace: str,
-        source_table: str,
-        iceberg_warehouse_path: str,
-        iceberg_table: str,
-        partition_by: list[str] | None = None,
-        split_count: int | None = None,
-        batch_size: int = 10000,
-        progress_callback: Callable[[BulkOperationStats], None] | None = None,
-    ) -> BulkOperationStats:
-        """Export Cassandra table to Iceberg format."""
-        # This will be implemented when we add Iceberg integration
-        raise NotImplementedError("Iceberg export will be implemented in next phase")
-
     async def import_from_iceberg(
         self,
         iceberg_warehouse_path: str,
@@ -514,6 +499,72 @@ class TokenAwareBulkOperator:
             keyspace=keyspace,
             table=table,
             output_path=Path(output_path),
+            columns=columns,
+            split_count=split_count,
+            parallelism=parallelism,
+            progress_callback=progress_callback,
+        )
+
+    async def export_to_iceberg(
+        self,
+        keyspace: str,
+        table: str,
+        namespace: str | None = None,
+        table_name: str | None = None,
+        catalog: Any | None = None,
+        catalog_config: dict[str, Any] | None = None,
+        warehouse_path: str | Path | None = None,
+        partition_spec: Any | None = None,
+        table_properties: dict[str, str] | None = None,
+        compression: str = "snappy",
+        row_group_size: int = 100000,
+        columns: list[str] | None = None,
+        split_count: int | None = None,
+        parallelism: int | None = None,
+        progress_callback: Any | None = None,
+    ) -> Any:
+        """Export table data to Apache Iceberg format.
+
+        This enables modern data lakehouse features like ACID transactions,
+        time travel, and schema evolution.
+
+        Args:
+            keyspace: Cassandra keyspace to export from
+            table: Cassandra table to export
+            namespace: Iceberg namespace (default: keyspace name)
+            table_name: Iceberg table name (default: Cassandra table name)
+            catalog: Pre-configured Iceberg catalog (optional)
+            catalog_config: Custom catalog configuration (optional)
+            warehouse_path: Path to Iceberg warehouse (for filesystem catalog)
+            partition_spec: Iceberg partition specification
+            table_properties: Additional Iceberg table properties
+            compression: Parquet compression (default: snappy)
+            row_group_size: Rows per Parquet file (default: 100000)
+            columns: Columns to export (default: all)
+            split_count: Number of token range splits
+            parallelism: Max concurrent operations
+            progress_callback: Progress callback function
+
+        Returns:
+            ExportProgress with Iceberg metadata
+        """
+        from .iceberg import IcebergExporter
+
+        exporter = IcebergExporter(
+            self,
+            catalog=catalog,
+            catalog_config=catalog_config,
+            warehouse_path=warehouse_path,
+            compression=compression,
+            row_group_size=row_group_size,
+        )
+        return await exporter.export(
+            keyspace=keyspace,
+            table=table,
+            namespace=namespace,
+            table_name=table_name,
+            partition_spec=partition_spec,
+            table_properties=table_properties,
             columns=columns,
             split_count=split_count,
             parallelism=parallelism,
