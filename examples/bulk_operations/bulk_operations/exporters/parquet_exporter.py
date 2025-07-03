@@ -57,6 +57,7 @@ class ParquetExporter(Exporter):
         parallelism: int | None = None,
         progress: ExportProgress | None = None,
         progress_callback: Any | None = None,
+        consistency_level: Any | None = None,
     ) -> ExportProgress:
         """Export table data to Parquet format.
 
@@ -123,6 +124,7 @@ class ParquetExporter(Exporter):
                 table=table,
                 split_count=split_count,
                 parallelism=parallelism,
+                consistency_level=consistency_level,
             ):
                 # Add row to batch
                 row_data = self._convert_row_to_dict(row, columns)

@@ -113,7 +113,7 @@ class TokenRangeSplitter:
 async def discover_token_ranges(session: AsyncCassandraSession, keyspace: str) -> list[TokenRange]:
     """Discover token ranges from cluster metadata."""
     # Access cluster through the underlying sync session
-    cluster = session._session.cluster  # type: ignore[attr-defined]
+    cluster = session._session.cluster
     metadata = cluster.metadata
     token_map = metadata.token_map
 

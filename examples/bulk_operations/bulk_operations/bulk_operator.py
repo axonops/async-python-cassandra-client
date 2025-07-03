@@ -5,52 +5,16 @@ Token-aware bulk operator for parallel Cassandra operations.
 import asyncio
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from cassandra import ConsistencyLevel
+
 from async_cassandra import AsyncCassandraSession
 
+from .parallel_export import export_by_token_ranges_parallel
+from .stats import BulkOperationStats
 from .token_utils import TokenRange, TokenRangeSplitter, discover_token_ranges
-
-
-@dataclass
-class BulkOperationStats:
-    """Statistics for bulk operations."""
-
-    rows_processed: int = 0
-    ranges_completed: int = 0
-    total_ranges: int = 0
-    start_time: float = field(default_factory=time.time)
-    end_time: float | None = None
-    errors: list[Exception] = field(default_factory=list)
-
-    @property
-    def duration_seconds(self) -> float:
-        """Calculate operation duration."""
-        if self.end_time:
-            return self.end_time - self.start_time
-        return time.time() - self.start_time
-
-    @property
-    def rows_per_second(self) -> float:
-        """Calculate processing rate."""
-        duration = self.duration_seconds
-        if duration > 0:
-            return self.rows_processed / duration
-        return 0
-
-    @property
-    def progress_percentage(self) -> float:
-        """Calculate progress as percentage."""
-        if self.total_ranges > 0:
-            return (self.ranges_completed / self.total_ranges) * 100
-        return 0
-
-    @property
-    def success(self) -> bool:
-        """Check if operation completed successfully."""
-        return len(self.errors) == 0 and self.ranges_completed == self.total_ranges
 
 
 class BulkOperationError(Exception):
@@ -141,14 +105,28 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[BulkOperationStats], None] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> int:
-        """Count all rows in a table using parallel token range queries."""
+        """Count all rows in a table using parallel token range queries.
+
+        Args:
+            keyspace: The keyspace name.
+            table: The table name.
+            split_count: Number of token range splits (default: 4 * number of nodes).
+            parallelism: Max concurrent operations (default: 2 * number of nodes).
+            progress_callback: Optional callback for progress updates.
+            consistency_level: Consistency level for queries (default: None, uses driver default).
+
+        Returns:
+            Total row count.
+        """
         count, _ = await self.count_by_token_ranges_with_stats(
             keyspace=keyspace,
             table=table,
             split_count=split_count,
             parallelism=parallelism,
             progress_callback=progress_callback,
+            consistency_level=consistency_level,
         )
         return count
 
@@ -159,6 +137,7 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[BulkOperationStats], None] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> tuple[int, BulkOperationStats]:
         """Count all rows and return statistics."""
         # Get table metadata
@@ -170,7 +149,7 @@ class TokenAwareBulkOperator:
 
         if split_count is None:
             # Default: 4 splits per node
-            split_count = len(self.session._session.cluster.contact_points) * 4  # type: ignore[attr-defined]
+            split_count = len(self.session._session.cluster.contact_points) * 4
 
         splits = self.splitter.split_proportionally(ranges, split_count)
 
@@ -179,7 +158,7 @@ class TokenAwareBulkOperator:
 
         # Determine parallelism
         if parallelism is None:
-            parallelism = min(len(splits), len(self.session._session.cluster.contact_points) * 2)  # type: ignore[attr-defined]
+            parallelism = min(len(splits), len(self.session._session.cluster.contact_points) * 2)
 
         # Get prepared statements for this table
         prepared_stmts = await self._get_prepared_statements(keyspace, table, partition_keys)
@@ -198,6 +177,7 @@ class TokenAwareBulkOperator:
                 stats,
                 progress_callback,
                 prepared_stmts,
+                consistency_level,
             )
             tasks.append(task)
 
@@ -210,7 +190,7 @@ class TokenAwareBulkOperator:
             if isinstance(result, Exception):
                 stats.errors.append(result)
             else:
-                total_count += result
+                total_count += int(result)
 
         stats.end_time = time.time()
 
@@ -233,6 +213,7 @@ class TokenAwareBulkOperator:
         stats: BulkOperationStats,
         progress_callback: Callable[[BulkOperationStats], None] | None,
         prepared_stmts: dict[str, Any],
+        consistency_level: ConsistencyLevel | None,
     ) -> int:
         """Count rows in a single token range."""
         async with semaphore:
@@ -240,23 +221,28 @@ class TokenAwareBulkOperator:
             if token_range.end < token_range.start:
                 # Wraparound range needs to be split into two queries
                 # First part: from start to MAX_TOKEN
-                result1 = await self.session.execute(
-                    prepared_stmts["count_wraparound_gt"], (token_range.start,)
-                )
-                count1 = result1.one().count if result1.one() else 0
+                stmt = prepared_stmts["count_wraparound_gt"]
+                if consistency_level is not None:
+                    stmt.consistency_level = consistency_level
+                result1 = await self.session.execute(stmt, (token_range.start,))
+                row1 = result1.one()
+                count1 = row1.count if row1 else 0
 
                 # Second part: from MIN_TOKEN to end
-                result2 = await self.session.execute(
-                    prepared_stmts["count_wraparound_lte"], (token_range.end,)
-                )
-                count2 = result2.one().count if result2.one() else 0
+                stmt = prepared_stmts["count_wraparound_lte"]
+                if consistency_level is not None:
+                    stmt.consistency_level = consistency_level
+                result2 = await self.session.execute(stmt, (token_range.end,))
+                row2 = result2.one()
+                count2 = row2.count if row2 else 0
 
                 count = count1 + count2
             else:
                 # Normal range - use prepared statement
-                result = await self.session.execute(
-                    prepared_stmts["count_range"], (token_range.start, token_range.end)
-                )
+                stmt = prepared_stmts["count_range"]
+                if consistency_level is not None:
+                    stmt.consistency_level = consistency_level
+                result = await self.session.execute(stmt, (token_range.start, token_range.end))
                 row = result.one()
                 count = row.count if row else 0
 
@@ -277,8 +263,24 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[BulkOperationStats], None] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> AsyncIterator[Any]:
-        """Export all rows from a table by streaming token ranges."""
+        """Export all rows from a table by streaming token ranges in parallel.
+
+        This method uses parallel queries to stream data from multiple token ranges
+        concurrently, providing high performance for large table exports.
+
+        Args:
+            keyspace: The keyspace name.
+            table: The table name.
+            split_count: Number of token range splits (default: 4 * number of nodes).
+            parallelism: Max concurrent queries (default: 2 * number of nodes).
+            progress_callback: Optional callback for progress updates.
+            consistency_level: Consistency level for queries (default: None, uses driver default).
+
+        Yields:
+            Row data from the table, streamed as results arrive from parallel queries.
+        """
         # Get table metadata
         table_meta = await self._get_table_metadata(keyspace, table)
         partition_keys = [col.name for col in table_meta.partition_key]
@@ -287,9 +289,13 @@ class TokenAwareBulkOperator:
         ranges = await discover_token_ranges(self.session, keyspace)
 
         if split_count is None:
-            split_count = len(self.session._session.cluster.contact_points) * 4  # type: ignore[attr-defined]
+            split_count = len(self.session._session.cluster.contact_points) * 4
 
         splits = self.splitter.split_proportionally(ranges, split_count)
+
+        # Determine parallelism
+        if parallelism is None:
+            parallelism = min(len(splits), len(self.session._session.cluster.contact_points) * 2)
 
         # Initialize stats
         stats = BulkOperationStats(total_ranges=len(splits))
@@ -297,39 +303,19 @@ class TokenAwareBulkOperator:
         # Get prepared statements for this table
         prepared_stmts = await self._get_prepared_statements(keyspace, table, partition_keys)
 
-        # Stream results from each range
-        for split in splits:
-            # Check if this is a wraparound range
-            if split.end < split.start:
-                # Wraparound range needs to be split into two queries
-                # First part: from start to MAX_TOKEN
-                async with await self.session.execute_stream(
-                    prepared_stmts["select_wraparound_gt"], (split.start,)
-                ) as result:
-                    async for row in result:
-                        stats.rows_processed += 1
-                        yield row
-
-                # Second part: from MIN_TOKEN to end
-                async with await self.session.execute_stream(
-                    prepared_stmts["select_wraparound_lte"], (split.end,)
-                ) as result:
-                    async for row in result:
-                        stats.rows_processed += 1
-                        yield row
-            else:
-                # Normal range - use prepared statement
-                async with await self.session.execute_stream(
-                    prepared_stmts["select_range"], (split.start, split.end)
-                ) as result:
-                    async for row in result:
-                        stats.rows_processed += 1
-                        yield row
-
-            stats.ranges_completed += 1
-
-            if progress_callback:
-                progress_callback(stats)
+        # Use parallel export
+        async for row in export_by_token_ranges_parallel(
+            operator=self,
+            keyspace=keyspace,
+            table=table,
+            splits=splits,
+            prepared_stmts=prepared_stmts,
+            parallelism=parallelism,
+            consistency_level=consistency_level,
+            stats=stats,
+            progress_callback=progress_callback,
+        ):
+            yield row
 
         stats.end_time = time.time()
 
@@ -349,7 +335,7 @@ class TokenAwareBulkOperator:
 
     async def _get_table_metadata(self, keyspace: str, table: str) -> Any:
         """Get table metadata from cluster."""
-        metadata = self.session._session.cluster.metadata  # type: ignore[attr-defined]
+        metadata = self.session._session.cluster.metadata
 
         if keyspace not in metadata.keyspaces:
             raise ValueError(f"Keyspace '{keyspace}' not found")
@@ -373,6 +359,7 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[Any], Any] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> Any:
         """Export table to CSV format.
 
@@ -387,6 +374,7 @@ class TokenAwareBulkOperator:
             split_count: Number of token range splits
             parallelism: Max concurrent operations
             progress_callback: Progress callback function
+            consistency_level: Consistency level for queries
 
         Returns:
             ExportProgress object
@@ -408,6 +396,7 @@ class TokenAwareBulkOperator:
             split_count=split_count,
             parallelism=parallelism,
             progress_callback=progress_callback,
+            consistency_level=consistency_level,
         )
 
     async def export_to_json(
@@ -422,6 +411,7 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[Any], Any] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> Any:
         """Export table to JSON format.
 
@@ -436,6 +426,7 @@ class TokenAwareBulkOperator:
             split_count: Number of token range splits
             parallelism: Max concurrent operations
             progress_callback: Progress callback function
+            consistency_level: Consistency level for queries
 
         Returns:
             ExportProgress object
@@ -457,6 +448,7 @@ class TokenAwareBulkOperator:
             split_count=split_count,
             parallelism=parallelism,
             progress_callback=progress_callback,
+            consistency_level=consistency_level,
         )
 
     async def export_to_parquet(
@@ -470,6 +462,7 @@ class TokenAwareBulkOperator:
         split_count: int | None = None,
         parallelism: int | None = None,
         progress_callback: Callable[[Any], Any] | None = None,
+        consistency_level: ConsistencyLevel | None = None,
     ) -> Any:
         """Export table to Parquet format.
 
@@ -503,6 +496,7 @@ class TokenAwareBulkOperator:
             split_count=split_count,
             parallelism=parallelism,
             progress_callback=progress_callback,
+            consistency_level=consistency_level,
         )
 
     async def export_to_iceberg(

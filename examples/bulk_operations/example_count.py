@@ -31,34 +31,32 @@ async def count_table_example():
     # Connect to cluster
     console.print("[cyan]Connecting to Cassandra cluster...[/cyan]")
 
-    async with (
-        AsyncCluster(contact_points=["localhost", "127.0.0.1"], port=9042) as cluster,
-        cluster.connect() as session,
-    ):
+    async with AsyncCluster(contact_points=["localhost", "127.0.0.1"], port=9042) as cluster:
+        session = await cluster.connect()
         # Create test data if needed
         console.print("[yellow]Setting up test keyspace and table...[/yellow]")
 
         # Create keyspace
         await session.execute(
             """
-            CREATE KEYSPACE IF NOT EXISTS bulk_demo
-            WITH replication = {
-                'class': 'SimpleStrategy',
-                'replication_factor': 3
-            }
+        CREATE KEYSPACE IF NOT EXISTS bulk_demo
+        WITH replication = {
+            'class': 'SimpleStrategy',
+            'replication_factor': 3
+        }
         """
         )
 
         # Create table
         await session.execute(
             """
-            CREATE TABLE IF NOT EXISTS bulk_demo.large_table (
-                partition_key INT,
-                clustering_key INT,
-                data TEXT,
-                value DOUBLE,
-                PRIMARY KEY (partition_key, clustering_key)
-            )
+        CREATE TABLE IF NOT EXISTS bulk_demo.large_table (
+            partition_key INT,
+            clustering_key INT,
+            data TEXT,
+            value DOUBLE,
+            PRIMARY KEY (partition_key, clustering_key)
+        )
         """
         )
 
@@ -74,10 +72,10 @@ async def count_table_example():
             # Insert some test data using prepared statement
             insert_stmt = await session.prepare(
                 """
-                INSERT INTO bulk_demo.large_table
-                (partition_key, clustering_key, data, value)
-                VALUES (?, ?, ?, ?)
-            """
+            INSERT INTO bulk_demo.large_table
+            (partition_key, clustering_key, data, value)
+            VALUES (?, ?, ?, ?)
+        """
             )
 
             with Progress(

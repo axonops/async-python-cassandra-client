@@ -149,6 +149,7 @@ class Exporter(ABC):
         parallelism: int | None = None,
         progress: ExportProgress | None = None,
         progress_callback: Any | None = None,
+        consistency_level: Any | None = None,
     ) -> ExportProgress:
         """Export table data to the specified format.
 

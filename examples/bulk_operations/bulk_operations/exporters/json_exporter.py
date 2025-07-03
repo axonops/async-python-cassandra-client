@@ -46,6 +46,7 @@ class JSONExporter(Exporter):
         parallelism: int | None = None,
         progress: ExportProgress | None = None,
         progress_callback: Any | None = None,
+        consistency_level: Any | None = None,
     ) -> ExportProgress:
         """Export table data to JSON format.
 
@@ -107,6 +108,7 @@ class JSONExporter(Exporter):
                 table=table,
                 split_count=split_count,
                 parallelism=parallelism,
+                consistency_level=consistency_level,
             ):
                 bytes_written = await self.write_row(file_handle, row)
                 progress.rows_exported += 1

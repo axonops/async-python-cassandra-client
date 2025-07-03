@@ -48,6 +48,7 @@ class CSVExporter(Exporter):
         parallelism: int | None = None,
         progress: ExportProgress | None = None,
         progress_callback: Any | None = None,
+        consistency_level: Any | None = None,
     ) -> ExportProgress:
         """Export table data to CSV format.
 
@@ -112,6 +113,7 @@ class CSVExporter(Exporter):
                 table=table,
                 split_count=split_count,
                 parallelism=parallelism,
+                consistency_level=consistency_level,
             ):
                 # Check if we need to track a new range
                 # (This is simplified - in real implementation we'd track actual ranges)
