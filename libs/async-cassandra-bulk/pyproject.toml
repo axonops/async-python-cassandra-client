@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "async-cassandra>=0.1.0",
+    "async-cassandra>=0.0.1",
 ]
 
 [project.optional-dependencies]
