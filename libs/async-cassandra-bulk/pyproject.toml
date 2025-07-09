@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=7.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "async-cassandra-bulk"
+dynamic = ["version"]
+description = "High-performance bulk operations for Apache Cassandra"
+readme = "README_PYPI.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+    {name = "AxonOps"},
+]
+maintainers = [
+    {name = "AxonOps"},
+]
+keywords = ["cassandra", "async", "asyncio", "bulk", "import", "export", "database", "nosql"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Database",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "async-cassandra>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/axonops/async-python-cassandra-client"
+"Bug Tracker" = "https://github.com/axonops/async-python-cassandra-client/issues"
+"Documentation" = "https://async-python-cassandra-client.readthedocs.io"
+"Source Code" = "https://github.com/axonops/async-python-cassandra-client"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["async_cassandra_bulk*"]
+
+[tool.setuptools.package-data]
+async_cassandra_bulk = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["async_cassandra_bulk"]
+omit = [
+    "tests/*",
+    "*/test_*.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "async_cassandra.*"
+ignore_missing_imports = true
+
+[tool.setuptools_scm]
+# Use git tags for versioning
+# This will create versions like:
+# - 0.1.0 (from tag async-cassandra-bulk-v0.1.0)
+# - 0.1.0rc7 (from tag async-cassandra-bulk-v0.1.0rc7)
+# - 0.1.0.dev1+g1234567 (from commits after tag)
+root = "../.."
+tag_regex = "^async-cassandra-bulk-v(?P<version>.+)$"
+fallback_version = "0.1.0.dev0"

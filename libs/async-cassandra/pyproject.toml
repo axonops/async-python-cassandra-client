@@ -1,0 +1,198 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=7.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "async-cassandra"
+dynamic = ["version"]
+description = "Async Python wrapper for the Cassandra Python driver"
+readme = "README_PYPI.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+    {name = "AxonOps"},
+]
+maintainers = [
+    {name = "AxonOps"},
+]
+keywords = ["cassandra", "async", "asyncio", "database", "nosql"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Database",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "cassandra-driver>=3.29.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-timeout>=2.2.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-timeout>=2.2.0",
+    "pytest-bdd>=7.0.0",
+    "fastapi>=0.100.0",
+    "httpx>=0.24.0",
+    "uvicorn>=0.23.0",
+    "psutil>=5.9.0",
+]
+docs = [
+    "sphinx>=6.0.0",
+    "sphinx-rtd-theme>=1.2.0",
+    "sphinx-autodoc-typehints>=1.22.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/axonops/async-python-cassandra-client"
+"Bug Tracker" = "https://github.com/axonops/async-python-cassandra-client/issues"
+"Documentation" = "https://async-python-cassandra-client.readthedocs.io"
+"Source Code" = "https://github.com/axonops/async-python-cassandra-client"
+"Company" = "https://axonops.com"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["async_cassandra*"]
+
+[tool.setuptools.package-data]
+async_cassandra = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+timeout = 60
+timeout_method = "thread"
+markers = [
+    # Test speed markers
+    "quick: Tests that run in <1 second (for smoke testing)",
+    "slow: Tests that take >10 seconds",
+
+    # Test categories
+    "core: Core functionality - must pass for any commit",
+    "resilience: Error handling and recovery",
+    "features: Advanced feature tests",
+    "integration: Tests requiring real Cassandra",
+    "fastapi: FastAPI integration tests",
+    "bdd: Business-driven development tests",
+    "performance: Performance and stress tests",
+
+    # Priority markers
+    "critical: Business-critical functionality",
+    "smoke: Minimal tests for PR validation",
+
+    # Special markers
+    "flaky: Known flaky tests (quarantined)",
+    "wip: Work in progress tests",
+    "sync_driver: Tests that use synchronous cassandra driver (may be unstable in CI)",
+
+    # Legacy markers (kept for compatibility)
+    "stress: marks tests as stress tests for high load scenarios",
+    "benchmark: marks tests as performance benchmarks with thresholds",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["async_cassandra"]
+omit = [
+    "tests/*",
+    "*/test_*.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "cassandra.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "testcontainers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "prometheus_client"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = "test_utils"
+ignore_missing_imports = true
+
+[tool.setuptools_scm]
+# Use git tags for versioning
+# This will create versions like:
+# - 0.1.0 (from tag async-cassandra-v0.1.0)
+# - 0.1.0rc7 (from tag async-cassandra-v0.1.0rc7)
+# - 0.1.0.dev1+g1234567 (from commits after tag)
+root = "../.."
+tag_regex = "^async-cassandra-v(?P<version>.+)$"
+fallback_version = "0.1.0.dev0"
