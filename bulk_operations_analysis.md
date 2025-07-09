@@ -27,18 +27,20 @@ The example in `examples/bulk_operations/` demonstrates:
 4. Incomplete error handling and retry logic
 5. No checkpointing/resume capability
 
-### DSBulk Feature Comparison
+### Current Implementation Gaps
 
-| Feature | DSBulk | Current Example | Gap |
-|---------|--------|-----------------|-----|
-| **Operations** | Load, Unload, Count | Count, Export | Missing Load |
-| **Formats** | CSV, JSON | CSV, JSON, Parquet | Parquet is extra |
-| **Sources** | Files, URLs, stdin, S3 | Local files only | Cloud storage missing |
-| **Data Types** | All Cassandra types | Limited subset | Major gap |
-| **Checkpointing** | Full support | Basic progress tracking | Resume capability missing |
-| **Performance** | 2-3x faster than COPY | Good parallelism | Not benchmarked |
-| **Vector Support** | Yes (v1.11+) | No | Missing modern features |
-| **Auth** | Kerberos, SSL, SCB | Basic | Enterprise features missing |
+The example application demonstrates core concepts but needs significant enhancement:
+
+| Area | Current State | Required for Production |
+|------|---------------|------------------------|
+| **Operations** | Count, Export only | Need Load/Import |
+| **Formats** | CSV, JSON, Parquet | Need Iceberg, cloud formats |
+| **Sources** | Local files only | Need S3, GCS, Azure, URLs |
+| **Data Types** | Limited subset | All Cassandra 5 types |
+| **Checkpointing** | Basic progress tracking | Full resume capability |
+| **Parallelization** | Fixed concurrency | Configurable, adaptive |
+| **Error Handling** | Basic | Comprehensive retry logic |
+| **Auth** | Basic | Kerberos, SSL, SCB for Astra |
 
 ## Architectural Considerations
 
@@ -1239,3 +1241,615 @@ class CollectionWritetimeHandler:
 4. **Precision**: Always use microseconds, convert from other formats
 5. **Null Handling**: Clear documentation on NULL writetime behavior
 6. **Schema Evolution**: Handle schema changes between export/import
+
+## Critical Design: Testing and Parallelization
+
+### Testing as a First-Class Requirement
+
+This is a **production database driver** - testing is not optional, it's fundamental. Every feature must be thoroughly tested before it can be considered complete.
+
+#### Testing Hierarchy
+
+1. **Unit Tests** (Fastest, Run Most Often)
+   - Mock Cassandra interactions
+   - Test type conversions in isolation
+   - Verify parallelization logic
+   - Test error handling paths
+   - Must run in <30 seconds total
+
+2. **Integration Tests** (Real Cassandra)
+   - Single-node Cassandra tests
+   - Multi-node cluster tests
+   - Test actual data operations
+   - Verify token range calculations
+   - Test failure scenarios
+
+3. **Performance Tests** (Benchmarks)
+   - Establish baseline performance metrics
+   - Test various parallelization levels
+   - Memory usage profiling
+   - CPU utilization monitoring
+   - Network saturation tests
+
+4. **Chaos Tests** (Production Scenarios)
+   - Node failures during operations
+   - Network partitions
+   - Disk full scenarios
+   - OOM conditions
+   - Concurrent operations
+
+#### Test Matrix for Each Feature
+
+```python
+# Every feature must be tested across this matrix
+TEST_MATRIX = {
+    "cluster_sizes": [1, 3, 5],  # Single and multi-node
+    "data_sizes": ["1K", "1M", "100M", "1B"],  # Rows
+    "parallelization": [1, 4, 16, 64, 256],  # Concurrent operations
+    "cassandra_versions": ["4.0", "4.1", "5.0"],
+    "consistency_levels": ["ONE", "QUORUM", "ALL"],
+    "failure_modes": ["node_down", "network_slow", "disk_full"],
+}
+```
+
+### Parallelization Configuration
+
+Parallelization is critical for performance but must be configurable to prevent overwhelming production clusters.
+
+#### Configuration Hierarchy
+
+```python
+@dataclass
+class ParallelizationConfig:
+    """Fine-grained control over parallelization"""
+
+    # Token range parallelism
+    max_concurrent_ranges: int = 16  # How many token ranges to process in parallel
+    ranges_per_node: int = 4  # Ranges to process per Cassandra node
+
+    # Query parallelism
+    max_concurrent_queries: int = 32  # Total concurrent queries
+    queries_per_range: int = 1  # Concurrent queries per token range
+
+    # Resource limits
+    max_memory_mb: int = 1024  # Memory limit for buffering
+    max_connections_per_node: int = 4  # Connection pool size per node
+
+    # Adaptive throttling
+    enable_adaptive_throttling: bool = True
+    target_coordinator_cpu: float = 0.7  # Target CPU on coordinator
+    target_node_cpu: float = 0.8  # Target CPU on data nodes
+
+    # Backpressure
+    buffer_size_per_range: int = 10000  # Rows to buffer per range
+    backpressure_threshold: float = 0.9  # Slow down at 90% buffer
+
+    # Retry configuration
+    max_retries_per_range: int = 3
+    retry_backoff_ms: int = 1000
+    retry_backoff_multiplier: float = 2.0
+
+    def validate(self):
+        """Validate configuration for safety"""
+        assert self.max_concurrent_ranges <= 256, "Too many concurrent ranges"
+        assert self.max_memory_mb <= 8192, "Memory limit too high"
+        assert self.queries_per_range <= 4, "Too many queries per range"
+```
+
+#### Parallelization Patterns
+
+```python
+class ParallelizationStrategy:
+    """Different strategies for different scenarios"""
+
+    @staticmethod
+    def conservative() -> ParallelizationConfig:
+        """For production clusters under load"""
+        return ParallelizationConfig(
+            max_concurrent_ranges=4,
+            max_concurrent_queries=8,
+            queries_per_range=1,
+            target_coordinator_cpu=0.5
+        )
+
+    @staticmethod
+    def balanced() -> ParallelizationConfig:
+        """Default for most use cases"""
+        return ParallelizationConfig(
+            max_concurrent_ranges=16,
+            max_concurrent_queries=32,
+            queries_per_range=1,
+            target_coordinator_cpu=0.7
+        )
+
+    @staticmethod
+    def aggressive() -> ParallelizationConfig:
+        """For dedicated clusters or off-hours"""
+        return ParallelizationConfig(
+            max_concurrent_ranges=64,
+            max_concurrent_queries=128,
+            queries_per_range=2,
+            target_coordinator_cpu=0.9
+        )
+
+    @staticmethod
+    def adaptive(cluster_metrics: ClusterMetrics) -> ParallelizationConfig:
+        """Dynamically adjust based on cluster health"""
+        # Start conservative
+        config = ParallelizationStrategy.conservative()
+
+        # Scale up based on available resources
+        if cluster_metrics.avg_cpu < 0.3:
+            config.max_concurrent_ranges *= 2
+        if cluster_metrics.pending_compactions < 10:
+            config.max_concurrent_queries *= 2
+
+        return config
+```
+
+### Testing Parallelization
+
+```python
+class ParallelizationTests:
+    """Critical tests for parallelization logic"""
+
+    async def test_token_range_coverage(self):
+        """Ensure no data is missed or duplicated"""
+        # Test with various split counts
+        for splits in [1, 8, 32, 128, 1024]:
+            await self._verify_complete_coverage(splits)
+
+    async def test_concurrent_range_limit(self):
+        """Verify concurrent range limits are respected"""
+        config = ParallelizationConfig(max_concurrent_ranges=4)
+        # Monitor actual concurrency during operation
+
+    async def test_backpressure(self):
+        """Test backpressure slows down producers"""
+        # Simulate slow consumer
+        # Verify production rate adapts
+
+    async def test_node_aware_parallelism(self):
+        """Test queries are distributed across nodes"""
+        # Verify no single node is overwhelmed
+        # Check replica-aware routing
+
+    async def test_adaptive_throttling(self):
+        """Test throttling based on cluster metrics"""
+        # Simulate high CPU
+        # Verify operation slows down
+        # Simulate recovery
+        # Verify operation speeds up
+```
+
+### Production Safety Features
+
+1. **Circuit Breakers**
+   ```python
+   class CircuitBreaker:
+       """Stop operations if cluster is unhealthy"""
+       def __init__(self,
+                    max_errors: int = 10,
+                    error_window_seconds: int = 60,
+                    cooldown_seconds: int = 300):
+           self.max_errors = max_errors
+           self.error_window = error_window_seconds
+           self.cooldown = cooldown_seconds
+   ```
+
+2. **Resource Monitoring**
+   ```python
+   class ResourceMonitor:
+       """Monitor and limit resource usage"""
+       async def check_limits(self):
+           if self.memory_usage > self.config.max_memory_mb:
+               await self.trigger_backpressure()
+           if self.open_connections > self.config.max_connections:
+               await self.pause_new_operations()
+   ```
+
+3. **Cluster Health Checks**
+   ```python
+   class ClusterHealthMonitor:
+       """Continuous cluster health monitoring"""
+       async def is_healthy_for_bulk_ops(self) -> bool:
+           metrics = await self.get_cluster_metrics()
+           return (
+               metrics.avg_cpu < 0.8 and
+               metrics.pending_compactions < 100 and
+               metrics.dropped_mutations == 0
+           )
+   ```
+
+### Testing Requirements by Phase
+
+#### Phase 1: Foundation
+- [ ] Monorepo test infrastructure works
+- [ ] Both packages have independent test suites
+- [ ] CI runs all tests on every commit
+
+#### Phase 2: CSV Implementation
+- [ ] 100% code coverage for type conversions
+- [ ] Parallelization tests with 1-256 concurrent operations
+- [ ] Memory leak tests over 1B+ rows
+- [ ] Crash recovery tests
+- [ ] Multi-node failure scenarios
+
+#### Phase 3: Additional Formats
+- [ ] Format-specific edge cases
+- [ ] Large file handling (>100GB)
+- [ ] Compression/decompression correctness
+- [ ] Format conversion accuracy
+
+#### Phase 4: Cloud Storage
+- [ ] Network failure handling
+- [ ] Partial upload recovery
+- [ ] Cost optimization validation
+- [ ] Multi-region testing
+
+### Performance Testing Approach
+
+1. **Establish Baselines**
+   - Measure performance in our test environment
+   - Document throughput, latency, and resource usage
+   - Create reproducible benchmark scenarios
+
+2. **Continuous Monitoring**
+   - Track performance across releases
+   - Identify regressions early
+   - Document performance characteristics
+
+3. **Real-World Scenarios**
+   - Test with actual production data patterns
+   - Various data types and sizes
+   - Different cluster configurations
+
+The focus is on building a reliable, well-tested bulk operations library with configurable parallelization suitable for production database clusters. Performance targets will be established through actual testing and user feedback.
+
+## Failure Handling, Retries, and Resume Capability
+
+### Core Principle: Bulk Operations Must Be Resumable
+
+In production, bulk operations processing billions of rows WILL encounter failures. The library must handle these gracefully and allow operations to resume from where they failed.
+
+### Failure Types and Handling
+
+```python
+class FailureType(Enum):
+    """Types of failures in bulk operations"""
+    TRANSIENT = "transient"  # Network blip, timeout
+    NODE_DOWN = "node_down"  # Cassandra node failure
+    RANGE_ERROR = "range_error"  # Specific token range issue
+    DATA_ERROR = "data_error"  # Bad data, type conversion
+    RESOURCE_LIMIT = "resource_limit"  # OOM, disk full
+    FATAL = "fatal"  # Unrecoverable error
+
+@dataclass
+class RangeFailure:
+    """Track failures at token range level"""
+    range: TokenRange
+    failure_type: FailureType
+    error: Exception
+    attempt_count: int
+    first_failure: datetime
+    last_failure: datetime
+    rows_processed_before_failure: int
+```
+
+### Retry Strategy
+
+```python
+@dataclass
+class RetryConfig:
+    """Configurable retry behavior"""
+    # Per-range retries
+    max_retries_per_range: int = 3
+    initial_backoff_ms: int = 1000
+    max_backoff_ms: int = 60000
+    backoff_multiplier: float = 2.0
+
+    # Failure thresholds
+    max_failed_ranges: int = 10  # Abort if too many ranges fail
+    max_failure_percentage: float = 0.05  # Abort if >5% ranges fail
+
+    # Retry strategies by failure type
+    retry_strategies: Dict[FailureType, RetryStrategy] = field(default_factory=lambda: {
+        FailureType.TRANSIENT: RetryStrategy(max_retries=3, backoff=True),
+        FailureType.NODE_DOWN: RetryStrategy(max_retries=5, backoff=True, wait_for_node=True),
+        FailureType.RANGE_ERROR: RetryStrategy(max_retries=1, split_range=True),
+        FailureType.DATA_ERROR: RetryStrategy(max_retries=0, skip_bad_data=True),
+        FailureType.RESOURCE_LIMIT: RetryStrategy(max_retries=2, reduce_batch_size=True),
+        FailureType.FATAL: RetryStrategy(max_retries=0, abort=True),
+    })
+
+class RetryStrategy:
+    """How to retry specific failure types"""
+    max_retries: int
+    backoff: bool = True
+    wait_for_node: bool = False
+    split_range: bool = False  # Split range into smaller chunks
+    skip_bad_data: bool = False
+    reduce_batch_size: bool = False
+    abort: bool = False
+```
+
+### Checkpoint and Resume System
+
+```python
+@dataclass
+class OperationCheckpoint:
+    """Checkpoint for resumable operations"""
+    operation_id: str
+    operation_type: str  # export, import, count
+    keyspace: str
+    table: str
+    started_at: datetime
+    last_checkpoint: datetime
+
+    # Progress tracking
+    total_ranges: int
+    completed_ranges: List[TokenRange]
+    failed_ranges: List[RangeFailure]
+    in_progress_ranges: List[TokenRange]
+
+    # Statistics
+    rows_processed: int
+    bytes_processed: int
+    errors_encountered: int
+
+    # Configuration snapshot
+    config: Dict[str, Any]  # Parallelization, retry config, etc.
+
+    def save(self, checkpoint_path: Path):
+        """Atomic checkpoint save"""
+        temp_path = checkpoint_path.with_suffix('.tmp')
+        with open(temp_path, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)
+        temp_path.rename(checkpoint_path)  # Atomic on POSIX
+
+    @classmethod
+    def load(cls, checkpoint_path: Path) -> 'OperationCheckpoint':
+        """Load checkpoint for resume"""
+        with open(checkpoint_path) as f:
+            return cls.from_dict(json.load(f))
+
+    def get_remaining_ranges(self) -> List[TokenRange]:
+        """Calculate ranges that still need processing"""
+        completed_set = {(r.start, r.end) for r in self.completed_ranges}
+        return [r for r in self.all_ranges if (r.start, r.end) not in completed_set]
+```
+
+### Resume Operation API
+
+```python
+# Resume from checkpoint
+checkpoint = OperationCheckpoint.load("export_checkpoint.json")
+await operator.resume_export(
+    checkpoint=checkpoint,
+    output_path="s3://bucket/data.parquet",
+    progress_callback=ProgressBarCallback("Resuming export")
+)
+
+# Or auto-checkpoint during operation
+await operator.export_to_csv(
+    'keyspace.table',
+    'output.csv',
+    checkpoint_interval=1000,  # Checkpoint every 1000 ranges
+    checkpoint_path='export_checkpoint.json',
+    auto_resume=True  # Automatically resume if checkpoint exists
+)
+```
+
+### Failure Handling During Operations
+
+```python
+class BulkOperationExecutor:
+    """Core execution engine with failure handling"""
+
+    async def execute_with_retry(self,
+                                 ranges: List[TokenRange],
+                                 operation: Callable,
+                                 config: RetryConfig) -> OperationResult:
+        """Execute operation with comprehensive failure handling"""
+
+        checkpoint = OperationCheckpoint(...)
+        failed_ranges: List[RangeFailure] = []
+
+        # Process ranges with retry logic
+        async with self._create_retry_pool() as pool:
+            for range in ranges:
+                result = await self._process_range_with_retry(
+                    range, operation, config
+                )
+
+                if result.success:
+                    checkpoint.completed_ranges.append(range)
+                else:
+                    failed_ranges.append(result.failure)
+
+                    # Check failure thresholds
+                    if self._should_abort(failed_ranges, checkpoint):
+                        raise BulkOperationAborted(
+                            "Too many failures",
+                            checkpoint=checkpoint
+                        )
+
+                # Periodic checkpoint
+                if len(checkpoint.completed_ranges) % config.checkpoint_interval == 0:
+                    checkpoint.save(self.checkpoint_path)
+
+        # Handle failed ranges
+        if failed_ranges:
+            await self._handle_failed_ranges(failed_ranges, checkpoint)
+
+        return OperationResult(checkpoint=checkpoint, failed_ranges=failed_ranges)
+
+    async def _process_range_with_retry(self,
+                                        range: TokenRange,
+                                        operation: Callable,
+                                        config: RetryConfig) -> RangeResult:
+        """Process single range with retry logic"""
+
+        attempts = 0
+        last_error = None
+        backoff = config.initial_backoff_ms
+
+        while attempts < config.max_retries_per_range:
+            try:
+                result = await operation(range)
+                return RangeResult(success=True, data=result)
+
+            except Exception as e:
+                attempts += 1
+                last_error = e
+                failure_type = self._classify_failure(e)
+
+                # Apply retry strategy
+                strategy = config.retry_strategies[failure_type]
+
+                if not strategy.should_retry(attempts):
+                    break
+
+                if strategy.wait_for_node:
+                    await self._wait_for_node_recovery(range.replica_nodes)
+
+                if strategy.split_range and range.is_splittable():
+                    # Retry with smaller ranges
+                    sub_ranges = self._split_range(range, parts=4)
+                    return await self._process_subranges(sub_ranges, operation, config)
+
+                if strategy.reduce_batch_size:
+                    operation = self._reduce_batch_size(operation)
+
+                # Backoff before retry
+                await asyncio.sleep(backoff / 1000)
+                backoff = min(backoff * config.backoff_multiplier, config.max_backoff_ms)
+
+        # All retries failed
+        return RangeResult(
+            success=False,
+            failure=RangeFailure(
+                range=range,
+                failure_type=self._classify_failure(last_error),
+                error=last_error,
+                attempt_count=attempts,
+                first_failure=datetime.now(),
+                last_failure=datetime.now(),
+                rows_processed_before_failure=0  # TODO: Track partial progress
+            )
+        )
+```
+
+### Handling Partial Range Failures
+
+```python
+class PartialRangeHandler:
+    """Handle failures within a token range"""
+
+    async def process_range_with_savepoints(self,
+                                           range: TokenRange,
+                                           batch_size: int = 1000):
+        """Process range in batches with savepoints"""
+
+        cursor = range.start
+        rows_processed = 0
+
+        while cursor < range.end:
+            try:
+                # Process batch
+                batch_end = min(cursor + batch_size, range.end)
+                rows = await self._process_batch(cursor, batch_end)
+
+                # Save progress
+                await self._save_range_progress(range, cursor, rows_processed)
+
+                cursor = batch_end
+                rows_processed += len(rows)
+
+            except Exception as e:
+                # Can resume from cursor position
+                raise PartialRangeFailure(
+                    range=range,
+                    completed_until=cursor,
+                    rows_processed=rows_processed,
+                    error=e
+                )
+```
+
+### Error Reporting and Diagnostics
+
+```python
+@dataclass
+class BulkOperationReport:
+    """Comprehensive operation report"""
+    operation_id: str
+    success: bool
+    total_rows: int
+    successful_rows: int
+    failed_rows: int
+    duration: timedelta
+
+    # Detailed failure information
+    failures_by_type: Dict[FailureType, List[RangeFailure]]
+    failure_samples: List[Dict[str, Any]]  # Sample of failed rows
+
+    # Recovery information
+    checkpoint_path: Path
+    resume_command: str
+
+    def generate_report(self) -> str:
+        """Human-readable failure report"""
+        return f"""
+Bulk Operation Report
+====================
+Operation ID: {self.operation_id}
+Status: {'PARTIAL SUCCESS' if self.failed_rows > 0 else 'SUCCESS'}
+Rows Processed: {self.successful_rows:,} / {self.total_rows:,}
+Failed Rows: {self.failed_rows:,}
+Duration: {self.duration}
+
+Failure Summary:
+{self._format_failures()}
+
+To resume this operation:
+{self.resume_command}
+
+Checkpoint saved to: {self.checkpoint_path}
+        """
+```
+
+### Testing Failure Scenarios
+
+```python
+class FailureHandlingTests:
+    """Test failure handling and resume capabilities"""
+
+    async def test_resume_after_failure(self):
+        """Test operation can resume from checkpoint"""
+        # Start operation
+        # Simulate failure midway
+        # Load checkpoint
+        # Resume operation
+        # Verify no data loss or duplication
+
+    async def test_node_failure_handling(self):
+        """Test handling of node failures"""
+        # Start operation
+        # Kill Cassandra node
+        # Verify operation retries and completes
+
+    async def test_partial_range_recovery(self):
+        """Test recovery from partial range failures"""
+        # Process large range
+        # Fail after processing some rows
+        # Resume from savepoint
+        # Verify exactly-once processing
+
+    async def test_corruption_handling(self):
+        """Test handling of data corruption"""
+        # Insert corrupted data
+        # Run operation
+        # Verify bad data is logged but operation continues
+```
+
+This comprehensive failure handling ensures bulk operations are production-ready with proper retry logic, checkpointing, and resume capabilities essential for processing large datasets reliably.
