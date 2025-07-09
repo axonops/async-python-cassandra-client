@@ -209,7 +209,7 @@ jobs:
           - name: "BDD Tests"
             command: "pytest tests/bdd -v"
           - name: "Example App"
-            command: "cd ../../examples/fastapi_app && pytest tests/ -v"
+            command: "cd examples/fastapi_app && pytest tests/ -v"
 
     services:
       cassandra:

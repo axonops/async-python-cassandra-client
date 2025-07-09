@@ -91,13 +91,15 @@ class TestExampleScripts:
         # Verify expected output patterns
         # The examples use logging which outputs to stderr
         output = result.stderr if result.stderr else result.stdout
-        assert "Basic Streaming Example" in output
+        assert "BASIC STREAMING EXAMPLE" in output
         assert "Inserted 100000 test events" in output or "Inserted 100,000 test events" in output
-        assert "Streaming completed:" in output
+        assert "Streaming completed!" in output
         assert "Total events: 100,000" in output or "Total events: 100000" in output
-        assert "Filtered Streaming Example" in output
-        assert "Page-Based Streaming Example (True Async Paging)" in output
-        assert "Pages are fetched asynchronously" in output
+        assert "FILTERED STREAMING EXAMPLE" in output
+        assert "PAGE-BASED STREAMING EXAMPLE (True Async Paging)" in output
+        assert (
+            "Pages are fetched ON-DEMAND" in output or "Pages were fetched asynchronously" in output
+        )
 
         # Verify keyspace was cleaned up
         async with AsyncCluster(["localhost"]) as cluster:
@@ -152,8 +154,8 @@ class TestExampleScripts:
 
             # Verify expected output (might be in stdout or stderr due to logging)
             output = result.stdout + result.stderr
-            assert "Created 5000 sample products" in output
-            assert "Export completed:" in output
+            assert "Created 5,000 sample products" in output
+            assert "EXPORT COMPLETED SUCCESSFULLY!" in output
             assert "Rows exported: 5,000" in output
             assert f"Output directory: {export_dir}" in output
 
@@ -235,16 +237,16 @@ class TestExampleScripts:
 
         # Verify all demonstrations ran (might be in stdout or stderr due to logging)
         output = result.stdout + result.stderr
-        assert "Demonstrating Query Error Safety" in output
+        assert "QUERY ERROR SAFETY DEMONSTRATION" in output
         assert "Query failed as expected" in output
-        assert "Session still works after error" in output
+        assert "Session is healthy!" in output
 
-        assert "Demonstrating Streaming Error Safety" in output
+        assert "STREAMING ERROR SAFETY DEMONSTRATION" in output
         assert "Streaming failed as expected" in output
         assert "Successfully streamed" in output
 
-        assert "Demonstrating Context Manager Isolation" in output
-        assert "Demonstrating Concurrent Safety" in output
+        assert "CONTEXT MANAGER ISOLATION DEMONSTRATION" in output
+        assert "CONCURRENT OPERATIONS SAFETY DEMONSTRATION" in output
 
         # Verify key takeaways are shown
         assert "Query errors don't close sessions" in output
@@ -285,15 +287,19 @@ class TestExampleScripts:
 
         # Verify metrics output (might be in stdout or stderr due to logging)
         output = result.stdout + result.stderr
-        assert "Query Metrics Example" in output or "async-cassandra Metrics Example" in output
-        assert "Connection Health Monitoring" in output
-        assert "Error Tracking Example" in output or "Expected error recorded" in output
-        assert "Performance Summary" in output
+        assert "ASYNC-CASSANDRA METRICS COLLECTION EXAMPLE" in output
+        assert "CONNECTION HEALTH MONITORING" in output
+        assert "ERROR TRACKING DEMONSTRATION" in output or "Expected error captured" in output
+        assert "PERFORMANCE METRICS SUMMARY" in output
 
         # Verify statistics are shown
         assert "Total queries:" in output or "Query Metrics:" in output
         assert "Success rate:" in output or "Success Rate:" in output
-        assert "Average latency:" in output or "Average Duration:" in output
+        assert (
+            "Average latency:" in output
+            or "Average Duration:" in output
+            or "Query Performance:" in output
+        )
 
     @pytest.mark.timeout(240)  # Override default timeout for this test (lots of data)
     async def test_realtime_processing_example(self, cassandra_cluster):
@@ -333,15 +339,19 @@ class TestExampleScripts:
         output = result.stdout + result.stderr
 
         # Check that setup completed
-        assert "Setting up sensor data" in output
-        assert "Sample data inserted" in output
+        assert "Setting up IoT sensor data simulation" in output
+        assert "Sample data setup complete" in output
 
         # Check that processing occurred
-        assert "Processing Historical Data" in output or "Processing historical data" in output
-        assert "Processing completed" in output or "readings processed" in output
+        assert "PROCESSING HISTORICAL DATA" in output or "Processing Historical Data" in output
+        assert (
+            "Processing completed" in output
+            or "readings processed" in output
+            or "Analysis complete!" in output
+        )
 
         # Check that real-time simulation ran
-        assert "Simulating Real-Time Processing" in output or "Processing cycle" in output
+        assert "SIMULATING REAL-TIME PROCESSING" in output or "Processing cycle" in output
 
         # Verify cleanup
         assert "Cleaning up" in output
@@ -436,11 +446,12 @@ class TestExampleScripts:
             output = result.stderr if result.stderr else result.stdout
             assert "Setting up test data" in output
             assert "Test data setup complete" in output
-            assert "Example 1: Export Entire Table" in output
-            assert "Example 2: Export Filtered Data" in output
-            assert "Example 3: Export with Different Compression" in output
-            assert "Export completed successfully!" in output
-            assert "Verifying Exported Files" in output
+            assert "EXPORT SUMMARY" in output
+            assert "SNAPPY compression:" in output
+            assert "GZIP compression:" in output
+            assert "LZ4 compression:" in output
+            assert "Three exports completed:" in output
+            assert "VERIFYING EXPORTED PARQUET FILES" in output
             assert f"Output directory: {export_dir}" in output
 
             # Verify Parquet files were created (look recursively in subdirectories)
