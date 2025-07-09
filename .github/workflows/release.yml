@@ -3,8 +3,10 @@ name: Release CI (Legacy)
 on:
   push:
     tags:
-      # Legacy tags - redirect to new monorepo release
-      - 'v[0-9]*'
+      # Legacy tags only - must start with v followed by version number
+      - 'v[0-9].*'
+      - '!async-cassandra-v*'
+      - '!async-cassandra-bulk-v*'
 
 jobs:
   full-ci:
