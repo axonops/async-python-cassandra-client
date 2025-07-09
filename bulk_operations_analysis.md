@@ -255,8 +255,9 @@ async-python-cassandra/  # Repository root
 │   │   │   ├── basic_usage/
 │   │   │   ├── fastapi_app/
 │   │   │   └── advanced/
+│   │   ├── docs/                  # Detailed library documentation
 │   │   ├── pyproject.toml
-│   │   └── README.md
+│   │   └── README_PYPI.md        # Simple README for PyPI only
 │   │
 │   └── async-cassandra-bulk/     # Bulk operations
 │       ├── src/
@@ -270,8 +271,9 @@ async-python-cassandra/  # Repository root
 │       │   ├── iceberg_export/
 │       │   ├── cloud_storage/
 │       │   └── migration_from_dsbulk/
+│       ├── docs/                  # Detailed library documentation
 │       ├── pyproject.toml
-│       └── README.md
+│       └── README_PYPI.md        # Simple README for PyPI only
 │
 ├── tools/                        # Shared tooling
 │   ├── scripts/
@@ -531,6 +533,8 @@ async with operator.stream_to_s3tables(
    - Move fastapi_app example to `libs/async-cassandra/examples/`
    - Create `libs/async-cassandra-bulk/` with proper structure
    - Move bulk_operations example code to `libs/async-cassandra-bulk/examples/`
+   - Keep README_PYPI.md files for PyPI publishing (simple, standalone)
+   - Create docs/ directories for detailed library documentation
    - Update all imports and paths
    - Ensure all existing tests pass
 
@@ -559,7 +563,12 @@ async with operator.stream_to_s3tables(
            return "Hello from async-cassandra-bulk!"
    ```
 
-5. **Validation**
+5. **Documentation Updates**
+   - Update async-cassandra README_PYPI.md to mention async-cassandra-bulk
+   - Create async-cassandra-bulk README_PYPI.md with reference to core library
+   - Ensure both PyPI pages cross-reference each other
+
+6. **Validation**
    - Test installation from TestPyPI
    - Verify cross-package imports work
    - Ensure no regression in core library

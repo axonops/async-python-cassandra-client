@@ -1,0 +1,121 @@
+name: Publish to TestPyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish (async-cassandra, async-cassandra-bulk, or both)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - async-cassandra
+          - async-cassandra-bulk
+          - both
+
+jobs:
+  build-and-publish-async-cassandra:
+    if: ${{ github.event.inputs.package == 'async-cassandra' || github.event.inputs.package == 'both' }}
+    runs-on: ubuntu-latest
+    name: Build and Publish async-cassandra
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: |
+        cd libs/async-cassandra
+        python -m build
+
+    - name: Check package
+      run: |
+        cd libs/async-cassandra
+        twine check dist/*
+
+    - name: Publish to TestPyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN_ASYNC_CASSANDRA }}
+      run: |
+        cd libs/async-cassandra
+        twine upload --repository testpypi dist/*
+
+  build-and-publish-async-cassandra-bulk:
+    if: ${{ github.event.inputs.package == 'async-cassandra-bulk' || github.event.inputs.package == 'both' }}
+    runs-on: ubuntu-latest
+    name: Build and Publish async-cassandra-bulk
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: |
+        cd libs/async-cassandra-bulk
+        python -m build
+
+    - name: Check package
+      run: |
+        cd libs/async-cassandra-bulk
+        twine check dist/*
+
+    - name: Publish to TestPyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN_ASYNC_CASSANDRA_BULK }}
+      run: |
+        cd libs/async-cassandra-bulk
+        twine upload --repository testpypi dist/*
+
+  verify-installation:
+    needs: [build-and-publish-async-cassandra, build-and-publish-async-cassandra-bulk]
+    if: always() && (needs.build-and-publish-async-cassandra.result == 'success' || needs.build-and-publish-async-cassandra-bulk.result == 'success')
+    runs-on: ubuntu-latest
+    name: Verify TestPyPI Installation
+
+    steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Wait for TestPyPI to update
+      run: sleep 30
+
+    - name: Test installation from TestPyPI
+      run: |
+        python -m venv test-env
+        source test-env/bin/activate
+
+        # Install from TestPyPI with fallback to PyPI for dependencies
+        if [ "${{ github.event.inputs.package }}" == "async-cassandra" ] || [ "${{ github.event.inputs.package }}" == "both" ]; then
+          echo "Testing async-cassandra installation..."
+          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ async-cassandra
+          python -c "import async_cassandra; print(f'async-cassandra version: {async_cassandra.__version__}')"
+        fi
+
+        if [ "${{ github.event.inputs.package }}" == "async-cassandra-bulk" ] || [ "${{ github.event.inputs.package }}" == "both" ]; then
+          echo "Testing async-cassandra-bulk installation..."
+          # For bulk, we need to ensure async-cassandra comes from TestPyPI too
+          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ async-cassandra-bulk
+          python -c "import async_cassandra_bulk; print(f'async-cassandra-bulk version: {async_cassandra_bulk.__version__}')"
+        fi

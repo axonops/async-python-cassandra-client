@@ -11,8 +11,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci-base.yml
+  async-cassandra:
+    uses: ./.github/workflows/ci-monorepo.yml
     with:
+      package: async-cassandra
+      run-integration-tests: false
+      run-full-suite: false
+
+  async-cassandra-bulk:
+    uses: ./.github/workflows/ci-monorepo.yml
+    with:
+      package: async-cassandra-bulk
       run-integration-tests: false
       run-full-suite: false

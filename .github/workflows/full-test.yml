@@ -1,0 +1,31 @@
+name: Full Test Suite
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to test (async-cassandra, async-cassandra-bulk, or both)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - async-cassandra
+          - async-cassandra-bulk
+          - both
+
+jobs:
+  async-cassandra:
+    if: ${{ github.event.inputs.package == 'async-cassandra' || github.event.inputs.package == 'both' }}
+    uses: ./.github/workflows/ci-monorepo.yml
+    with:
+      package: async-cassandra
+      run-integration-tests: true
+      run-full-suite: true
+
+  async-cassandra-bulk:
+    if: ${{ github.event.inputs.package == 'async-cassandra-bulk' || github.event.inputs.package == 'both' }}
+    uses: ./.github/workflows/ci-monorepo.yml
+    with:
+      package: async-cassandra-bulk
+      run-integration-tests: false
+      run-full-suite: false
