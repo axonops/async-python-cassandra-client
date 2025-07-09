@@ -208,14 +208,6 @@ Key integration tests:
 - **Data coverage**: Ensures no rows are missed or duplicated
 - **Performance scaling**: Verifies parallel execution benefits
 
-## 🚧 Roadmap
-
-- [x] Phase 1: Basic token operations
-- [ ] Phase 2: Full export functionality
-- [ ] Phase 3: Apache Iceberg integration
-- [ ] Phase 4: Import from Iceberg
-- [ ] Phase 5: Production features
-
 ## 📚 References
 
 - [DataStax Bulk Loader (DSBulk)](https://docs.datastax.com/en/dsbulk/docs/)
