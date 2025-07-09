@@ -6,11 +6,11 @@
 
 > 📢 **Early Release**: This is an early release of async-cassandra. While it has been tested extensively, you may encounter edge cases. We welcome your feedback and contributions! Please report any issues on our [GitHub Issues](https://github.com/axonops/async-python-cassandra-client/issues) page.
 
-> 🚀 **Looking for bulk operations?** Check out [async-cassandra-bulk](https://pypi.org/project/async-cassandra-bulk/) for high-performance data import/export capabilities.
+> 🚀 **Looking for bulk operations?** [async-cassandra-bulk](https://pypi.org/project/async-cassandra-bulk/) is currently in active development and will provide high-performance data import/export capabilities.
 
 ## 🎯 Overview
 
-A Python library that enables true async/await support for Cassandra database operations. This package wraps the official DataStax™ Cassandra driver to make it compatible with async frameworks like **FastAPI**, **aiohttp**, and **Quart**.
+**async-cassandra** is the core library that enables true async/await support for Cassandra database operations. This package wraps the official DataStax™ Cassandra driver to make it compatible with async frameworks like **FastAPI**, **aiohttp**, and **Quart**.
 
 When using the standard Cassandra driver in async applications, blocking operations can freeze your entire service. This wrapper solves that critical issue by bridging Cassandra's thread-based operations with Python's async ecosystem.
 

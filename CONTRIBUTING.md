@@ -114,6 +114,10 @@ Your PR description should include:
 
 For detailed development instructions, see our [Developer Documentation](developerdocs/).
 
+This is a monorepo containing two packages:
+- **async-cassandra** - The main async wrapper library (in `libs/async-cassandra/`)
+- **async-cassandra-bulk** - Bulk operations extension (in `libs/async-cassandra-bulk/`)
+
 Here's how to set up `async-python-cassandra-client` for local development:
 
 1. Fork the `async-python-cassandra-client` repo on GitHub.
@@ -127,6 +131,13 @@ Here's how to set up `async-python-cassandra-client` for local development:
    cd async-python-cassandra-client/
    python -m venv venv
    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+
+   # Install the main library
+   cd libs/async-cassandra
+   pip install -e ".[dev,test]"
+
+   # Optionally install the bulk operations library
+   cd ../async-cassandra-bulk
    pip install -e ".[dev,test]"
    ```
 
@@ -139,13 +150,16 @@ Here's how to set up `async-python-cassandra-client` for local development:
 
 6. When you're done making changes, check that your changes pass the tests:
    ```bash
+   # Navigate to the library you're working on
+   cd libs/async-cassandra  # or libs/async-cassandra-bulk
+
    # Run linting
    ruff check src tests
    black --check src tests
    isort --check-only src tests
    mypy src
 
-   # Run tests
+   # Run tests (from the library directory)
    make test-unit  # Unit tests only (no Cassandra needed)
    make test-integration  # Integration tests (starts Cassandra automatically)
    make test  # All tests except stress tests
@@ -177,6 +191,9 @@ Before you submit a pull request, check that it meets these guidelines:
 ### Running Tests Locally
 
 ```bash
+# Navigate to the library you want to test
+cd libs/async-cassandra  # or libs/async-cassandra-bulk
+
 # Install test dependencies
 pip install -e ".[test]"
 
@@ -190,7 +207,7 @@ make test-integration
 pytest tests/unit/test_session.py -v
 
 # Run with coverage
-pytest --cov=src/async_cassandra --cov-report=html
+pytest --cov=async_cassandra --cov-report=html  # or --cov=async_cassandra_bulk
 ```
 
 ### Cassandra Management for Testing
@@ -198,6 +215,7 @@ pytest --cov=src/async_cassandra --cov-report=html
 Integration tests require a running Cassandra instance. The test infrastructure handles this automatically:
 
 ```bash
+# From the library directory (libs/async-cassandra or libs/async-cassandra-bulk)
 # Automatically handled by test commands:
 make test-integration  # Starts Cassandra if needed
 make test             # Starts Cassandra if needed
@@ -226,6 +244,7 @@ This project uses several tools to maintain code quality and consistency:
 Before submitting a PR, ensure your code passes all checks:
 
 ```bash
+# From the library directory (libs/async-cassandra or libs/async-cassandra-bulk)
 # Format code
 black src tests
 isort src tests

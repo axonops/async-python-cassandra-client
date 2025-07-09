@@ -505,4 +505,4 @@ except ConfigurationError as e:
 - [Connection Pooling](connection-pooling.md) - Understanding connection behavior
 - [Streaming](streaming.md) - Handling large result sets
 - [Performance](performance.md) - Optimization tips
-- [FastAPI Example](../examples/fastapi_app/) - Full production example
+- [FastAPI Example](../libs/async-cassandra/examples/fastapi_app/) - Full production example
