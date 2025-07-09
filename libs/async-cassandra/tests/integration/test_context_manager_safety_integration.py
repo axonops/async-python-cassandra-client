@@ -97,6 +97,9 @@ class TestContextManagerSafetyIntegration:
             """
         )
 
+        # Clean up any existing data
+        await cassandra_session.execute("TRUNCATE test_stream_data")
+
         # Insert some data
         insert_prepared = await cassandra_session.prepare(
             "INSERT INTO test_stream_data (id, value) VALUES (?, ?)"
