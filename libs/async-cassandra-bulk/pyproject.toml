@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "High-performance bulk operations for Apache Cassandra"
 readme = "README_PYPI.md"
 requires-python = ">=3.12"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 authors = [
     {name = "AxonOps"},
 ]
@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "async-cassandra>=0.1.0",
+    "async-cassandra>=0.0.1",
 ]
 
 [project.optional-dependencies]

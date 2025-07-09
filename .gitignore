@@ -175,6 +175,15 @@ htmlcov/
 .hypothesis/
 .pytest_cache/
 testresults/
+reports/
+exports/
+.ruff_cache/
+
+# Virtual environments (both root and library-specific)
+test-env/
+test-env-*/
+libs/*/test-env/
+libs/*/test-env-*/
 
 # Cassandra test data
 cassandra_data/
