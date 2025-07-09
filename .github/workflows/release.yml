@@ -10,14 +10,48 @@ on:
 
 jobs:
   full-ci:
-    uses: ./.github/workflows/ci-base.yml
+    uses: ./.github/workflows/ci-monorepo.yml
     with:
+      package: async-cassandra
       run-integration-tests: true
       run-full-suite: true
 
+  build-package:
+    needs: full-ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: |
+          cd libs/async-cassandra
+          python -m build
+
+      - name: Check package
+        run: |
+          cd libs/async-cassandra
+          twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: libs/async-cassandra/dist/
+          retention-days: 7
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: full-ci
+    needs: [full-ci, build-package]
     runs-on: ubuntu-latest
     # Only publish for proper pre-release versions (PEP 440)
     if: contains(github.ref_name, 'rc') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b')
@@ -266,11 +300,11 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: full-ci
+    needs: [full-ci, build-package]
     runs-on: ubuntu-latest
     # Only publish stable versions (no pre-release suffix)
     # Match only versions like v0.0.1, v1.2.3, etc (no suffix)
-    if: "!contains(github.ref_name, '-')"
+    if: "!contains(github.ref_name, 'rc') && !contains(github.ref_name, 'a') && !contains(github.ref_name, 'b') && !contains(github.ref_name, 'dev')"
 
     permissions:
       id-token: write  # Required for trusted publishing
