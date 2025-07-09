@@ -63,6 +63,7 @@ test = [
     "uvicorn>=0.23.0",
     "psutil>=5.9.0",
     "pyarrow>=10.0.0",
+    "pandas>=2.0.0",
 ]
 docs = [
     "sphinx>=6.0.0",
