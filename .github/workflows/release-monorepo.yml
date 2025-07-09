@@ -162,7 +162,7 @@ jobs:
     needs: [determine-package, build-package]
     runs-on: ubuntu-latest
     # Only publish stable versions (no pre-release suffix)
-    if: "!contains(needs.determine-package.outputs.version, '-')"
+    if: "!contains(needs.determine-package.outputs.version, 'rc') && !contains(needs.determine-package.outputs.version, 'a') && !contains(needs.determine-package.outputs.version, 'b') && !contains(needs.determine-package.outputs.version, 'dev')"
 
     permissions:
       id-token: write  # Required for trusted publishing
