@@ -29,20 +29,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Debug package info
+      run: |
+        echo "Package input: ${{ inputs.package }}"
+        echo "Package dir from env: ${{ env.PACKAGE_DIR }}"
+        echo "Package dir computed: libs/${{ inputs.package }}"
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+        echo "Libs directory:"
+        ls -la libs/
+        echo "Package directory:"
+        ls -la libs/${{ inputs.package }}/ || echo "Directory not found"
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
     - name: Install dependencies
+      working-directory: libs/${{ inputs.package }}
       run: |
         python -m pip install --upgrade pip
-        cd ${{ env.PACKAGE_DIR }}
         pip install -e ".[dev]"
 
     - name: Run linting checks
+      working-directory: libs/${{ inputs.package }}
       run: |
-        cd ${{ env.PACKAGE_DIR }}
         echo "=== Running ruff ==="
         ruff check src/ tests/
         echo "=== Running black ==="
@@ -71,8 +84,8 @@ jobs:
         pip install bandit[toml] safety pip-audit
 
     - name: Run Bandit security scan
+      working-directory: libs/${{ inputs.package }}
       run: |
-        cd ${{ env.PACKAGE_DIR }}
         echo "=== Running Bandit security scan ==="
         # Run bandit with config file and capture exit code
         bandit -c ../../.bandit -r src/ -f json -o bandit-report.json || BANDIT_EXIT=$?
@@ -95,7 +108,7 @@ jobs:
 
     - name: Check dependencies with Safety
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Checking dependencies with Safety ==="
         pip install -e ".[dev,test]"
         # Using the new 'scan' command as 'check' is deprecated
@@ -108,7 +121,7 @@ jobs:
 
     - name: Run pip-audit
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Running pip-audit ==="
         # Skip the local package as it's not on PyPI yet
         pip-audit --skip-editable
@@ -135,14 +148,14 @@ jobs:
         python-version: '3.12'
 
     - name: Install dependencies
+      working-directory: libs/${{ inputs.package }}
       run: |
         python -m pip install --upgrade pip
-        cd ${{ env.PACKAGE_DIR }}
         pip install -e ".[test]"
 
     - name: Run unit tests with coverage
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         pytest tests/unit/ -v --cov=${{ inputs.package == 'async-cassandra' && 'async_cassandra' || 'async_cassandra_bulk' }} --cov-report=html --cov-report=xml || echo "No unit tests found (expected for new packages)"
 
   build:
@@ -165,7 +178,7 @@ jobs:
 
     - name: Build package
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Building package ==="
         python -m build
         echo "=== Package contents ==="
@@ -173,13 +186,13 @@ jobs:
 
     - name: Check package with twine
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Checking package metadata ==="
         twine check dist/*
 
     - name: Display package info
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Wheel contents ==="
         python -m zipfile -l dist/*.whl | head -20
         echo "=== Package metadata ==="
@@ -240,9 +253,9 @@ jobs:
         python-version: '3.12'
 
     - name: Install dependencies
+      working-directory: libs/${{ inputs.package }}
       run: |
         python -m pip install --upgrade pip
-        cd ${{ env.PACKAGE_DIR }}
         pip install -e ".[test,dev]"
 
     - name: Verify Cassandra is ready
@@ -258,7 +271,7 @@ jobs:
         CASSANDRA_HOST: localhost
         CASSANDRA_PORT: 9042
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Running ${{ matrix.test-suite.name }} ==="
         ${{ matrix.test-suite.command }}
 
@@ -304,9 +317,9 @@ jobs:
         python-version: '3.12'
 
     - name: Install dependencies
+      working-directory: libs/${{ inputs.package }}
       run: |
         python -m pip install --upgrade pip
-        cd ${{ env.PACKAGE_DIR }}
         pip install -e ".[test,dev]"
 
     - name: Verify Cassandra is ready
@@ -322,7 +335,7 @@ jobs:
         CASSANDRA_HOST: localhost
         CASSANDRA_PORT: 9042
       run: |
-        cd ${{ env.PACKAGE_DIR }}
+        cd libs/${{ inputs.package }}
         echo "=== Running ${{ matrix.test-suite.name }} ==="
         ${{ matrix.test-suite.command }}
 
