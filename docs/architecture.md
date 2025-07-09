@@ -92,7 +92,7 @@ The DataStax driver's `execute_async()` returns a `ResponseFuture` that will be 
 
 ### 2. The Bridge: AsyncResultHandler
 
-The magic happens in `AsyncResultHandler` ([src/async_cassandra/result.py](../src/async_cassandra/result.py)):
+The magic happens in `AsyncResultHandler` ([src/async_cassandra/result.py](../libs/async-cassandra/src/async_cassandra/result.py)):
 
 ```python
 class AsyncResultHandler:
@@ -153,7 +153,7 @@ async def get_result(self, timeout: Optional[float] = None) -> "AsyncResultSet":
 
 ### 5. Driver Thread Pool Configuration
 
-The driver's thread pool size is configurable ([src/async_cassandra/cluster.py](../src/async_cassandra/cluster.py)):
+The driver's thread pool size is configurable ([src/async_cassandra/cluster.py](../libs/async-cassandra/src/async_cassandra/cluster.py)):
 
 ```python
 def __init__(self, ..., executor_threads: int = 2, ...):

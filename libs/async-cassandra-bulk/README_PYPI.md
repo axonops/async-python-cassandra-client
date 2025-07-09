@@ -1,16 +1,16 @@
-# async-cassandra-bulk
+# async-cassandra-bulk (🚧 Active Development)
 
 [![PyPI version](https://badge.fury.io/py/async-cassandra-bulk.svg)](https://badge.fury.io/py/async-cassandra-bulk)
 [![Python versions](https://img.shields.io/pypi/pyversions/async-cassandra-bulk.svg)](https://pypi.org/project/async-cassandra-bulk/)
 [![License](https://img.shields.io/pypi/l/async-cassandra-bulk.svg)](https://github.com/axonops/async-python-cassandra-client/blob/main/LICENSE)
 
-High-performance bulk operations for Apache Cassandra, built on [async-cassandra](https://pypi.org/project/async-cassandra/).
+High-performance bulk operations extension for Apache Cassandra, built on [async-cassandra](https://pypi.org/project/async-cassandra/).
 
-> 📢 **Early Development**: This package is in early development. Features are being actively added.
+> 🚧 **Active Development**: This package is currently under active development and not yet feature-complete. The API may change as we work towards a stable release. For production use, we recommend using [async-cassandra](https://pypi.org/project/async-cassandra/) directly.
 
 ## 🎯 Overview
 
-async-cassandra-bulk provides high-performance data import/export capabilities for Apache Cassandra databases. It leverages token-aware parallel processing to achieve optimal throughput while maintaining memory efficiency.
+**async-cassandra-bulk** will provide high-performance data import/export capabilities for Apache Cassandra databases. Once complete, it will leverage token-aware parallel processing to achieve optimal throughput while maintaining memory efficiency.
 
 ## ✨ Key Features (Coming Soon)
 
@@ -29,7 +29,20 @@ pip install async-cassandra-bulk
 
 ## 🚀 Quick Start
 
-Coming soon! This package is under active development.
+```python
+import asyncio
+from async_cassandra_bulk import hello
+
+async def main():
+    # This is a placeholder function for testing
+    message = await hello()
+    print(message)  # "Hello from async-cassandra-bulk!"
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+> **Note**: Full functionality is coming soon! This is currently a skeleton package in active development.
 
 ## 📖 Documentation
 

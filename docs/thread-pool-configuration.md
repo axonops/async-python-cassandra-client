@@ -88,9 +88,9 @@ if __name__ == "__main__":
 
 For more examples of thread pool configuration:
 
-- **Unit Tests**: [`tests/unit/test_thread_pool_configuration.py`](../tests/unit/test_thread_pool_configuration.py) - Demonstrates configuration options and verifies behavior
-- **Integration Tests**: [`tests/integration/test_thread_pool_configuration.py`](../tests/integration/test_thread_pool_configuration.py) - Shows real-world usage patterns
-- **Example Script**: [`examples/thread_pool_configuration.py`](../examples/thread_pool_configuration.py) - Interactive examples comparing different thread pool sizes
+- **Unit Tests**: [`tests/unit/test_thread_pool_configuration.py`](../libs/async-cassandra/tests/unit/test_thread_pool_configuration.py) - Demonstrates configuration options and verifies behavior
+- **Integration Tests**: [`tests/integration/test_thread_pool_configuration.py`](../libs/async-cassandra/tests/integration/test_thread_pool_configuration.py) - Shows real-world usage patterns
+- **Example Script**: [`examples/thread_pool_configuration.py`](../libs/async-cassandra/examples/thread_pool_configuration.py) - Interactive examples comparing different thread pool sizes
 
 ## Official Documentation
 

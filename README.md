@@ -9,8 +9,16 @@
 
 > 📢 **Early Release**: This is an early release of async-cassandra. While it has been tested extensively, you may encounter edge cases. We welcome your feedback and contributions! Please report any issues on our [GitHub Issues](https://github.com/axonops/async-python-cassandra-client/issues) page.
 
+## 📦 Repository Structure
+
+This is a monorepo containing two related Python packages:
+
+- **[async-cassandra](libs/async-cassandra/)** - The main async wrapper for the Cassandra Python driver, enabling async/await operations with Cassandra
+- **[async-cassandra-bulk](libs/async-cassandra-bulk/)** - (🚧 Active Development) High-performance bulk operations extension for async-cassandra
+
 ## 📑 Table of Contents
 
+- [📦 Repository Structure](#-repository-structure)
 - [✨ Overview](#-overview)
 - [🏗️ Why create this framework?](#️-why-create-this-framework)
   - [Understanding Async vs Sync](#understanding-async-vs-sync)
@@ -40,7 +48,7 @@
 
 ## ✨ Overview
 
-A Python library that enables the Cassandra driver to work seamlessly with async frameworks like FastAPI, aiohttp, and Quart. It provides an async/await interface that prevents blocking your application's event loop while maintaining full compatibility with the DataStax Python driver.
+**async-cassandra** is a Python library that enables the Cassandra driver to work seamlessly with async frameworks like FastAPI, aiohttp, and Quart. It provides an async/await interface that prevents blocking your application's event loop while maintaining full compatibility with the DataStax Python driver.
 
 When using the standard Cassandra driver in async applications, blocking operations can freeze your entire service. This wrapper solves that critical issue by bridging the gap between Cassandra's thread-based I/O and Python's async ecosystem, ensuring your web services remain responsive under load.
 
@@ -248,13 +256,20 @@ We understand this requirement may be inconvenient for some users, but it allows
 
 ## 🔧 Installation
 
+### async-cassandra (Main Library)
+
 ```bash
 # From PyPI
 pip install async-cassandra
 
-# From source
+# From source (for development)
+cd libs/async-cassandra
 pip install -e .
 ```
+
+### async-cassandra-bulk (Coming Soon)
+
+> 🚧 **In Active Development**: async-cassandra-bulk is currently under development and not yet available on PyPI. It will provide high-performance bulk operations for async-cassandra.
 
 ## 📚 Quick Start
 
@@ -313,16 +328,21 @@ We welcome contributions! Please see:
 - [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
 
 ### Examples
-- [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example
-- [More Examples](examples/) - Additional usage patterns
+- [FastAPI Integration](libs/async-cassandra/examples/fastapi_app/README.md) - Complete REST API example
+- [More Examples](libs/async-cassandra/examples/) - Additional usage patterns
 
 ## 🎯 Running the Examples
 
-The project includes comprehensive examples demonstrating various features and use cases. Each example can be run using the provided Makefile, which automatically handles Cassandra setup if needed.
+The async-cassandra library includes comprehensive examples demonstrating various features and use cases. Examples are located in the `libs/async-cassandra/examples/` directory.
 
-### Available Examples
+### Running Examples
 
-Run any example with: `make example-<name>`
+First, navigate to the async-cassandra directory:
+```bash
+cd libs/async-cassandra
+```
+
+Then run any example with: `make example-<name>`
 
 - **`make example-basic`** - Basic connection and query execution
 - **`make example-streaming`** - Memory-efficient streaming of large result sets with True Async Paging
@@ -339,6 +359,9 @@ Run any example with: `make example-<name>`
 If you have Cassandra running elsewhere:
 
 ```bash
+# From the libs/async-cassandra directory:
+cd libs/async-cassandra
+
 # Single node
 CASSANDRA_CONTACT_POINTS=10.0.0.1 make example-streaming
 

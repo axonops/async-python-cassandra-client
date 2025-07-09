@@ -2,13 +2,28 @@
 
 This directory contains working examples demonstrating various features and use cases of async-cassandra.
 
+## 📍 Important: Directory Context
+
+All examples must be run from the `libs/async-cassandra` directory, not from this examples directory:
+
+```bash
+# Navigate to the async-cassandra library directory first
+cd libs/async-cassandra
+
+# Then run examples using make
+make example-streaming
+```
+
 ## Quick Start
 
 ### Running Examples with Make
 
-The easiest way to run examples is using the provided Make targets:
+The easiest way to run examples is using the provided Make targets from the `libs/async-cassandra` directory:
 
 ```bash
+# From the libs/async-cassandra directory:
+cd libs/async-cassandra
+
 # Run a specific example (automatically starts Cassandra if needed)
 make example-streaming
 make example-export-csv
@@ -30,6 +45,9 @@ CASSANDRA_CONTACT_POINTS=node1.example.com,node2.example.com make example-stream
 Some examples require additional dependencies:
 
 ```bash
+# From the libs/async-cassandra directory:
+cd libs/async-cassandra
+
 # Install all example dependencies (including pyarrow for Parquet export)
 make install-examples
 
@@ -77,6 +95,10 @@ Demonstrates streaming functionality for large result sets:
 
 **Run:**
 ```bash
+# From libs/async-cassandra directory:
+make example-streaming
+
+# Or run directly (from this examples directory):
 python streaming_basic.py
 ```
 
@@ -91,6 +113,10 @@ Shows how to export large Cassandra tables to CSV:
 
 **Run:**
 ```bash
+# From libs/async-cassandra directory:
+make example-export-large-table
+
+# Or run directly (from this examples directory):
 python export_large_table.py
 # Exports will be saved in examples/exampleoutput/ directory (default)
 

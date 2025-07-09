@@ -113,7 +113,7 @@ session = await cluster.connect()
 # Reuse session for all requests - DO NOT close after each use
 ```
 
-**Note**: While async-cassandra provides context manager support for convenience in scripts and tests, production applications should create clusters and sessions once at startup and reuse them throughout the application lifetime. See the [FastAPI example](../examples/fastapi_app/main.py) for the correct pattern.
+**Note**: While async-cassandra provides context manager support for convenience in scripts and tests, production applications should create clusters and sessions once at startup and reuse them throughout the application lifetime. See the [FastAPI example](../libs/async-cassandra/examples/fastapi_app/main.py) for the correct pattern.
 
 ## 4. Lack of Async-First API Design
 
@@ -344,7 +344,7 @@ def _asyncio_future_from_response_future(response_future):
    - Clean async/await syntax
    - Natural error handling with try/except
    - Integration with async frameworks (FastAPI, aiohttp)
-   - See our [FastAPI example](../examples/fastapi_app/README.md) for a complete implementation
+   - See our [FastAPI example](../libs/async-cassandra/examples/fastapi_app/README.md) for a complete implementation
 
 2. **Event Loop Compatibility**:
    - Prevents blocking the event loop with synchronous calls
