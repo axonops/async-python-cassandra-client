@@ -110,13 +110,16 @@ class BulkOperator:
             if timestamp < 0:
                 raise ValueError("Timestamp cannot be negative")
 
-            # Detect if it's seconds or milliseconds
+            # Detect if it's seconds, milliseconds, or microseconds
             # If timestamp is less than year 3000 in seconds, assume seconds
             if timestamp < 32503680000:  # Jan 1, 3000 in seconds
                 return int(timestamp * 1_000_000)
-            else:
-                # Assume milliseconds
+            # If timestamp is less than year 3000 in milliseconds, assume milliseconds
+            elif timestamp < 32503680000000:  # Jan 1, 3000 in milliseconds
                 return int(timestamp * 1_000)
+            else:
+                # Assume microseconds (already in the correct unit)
+                return int(timestamp)
 
         else:
             raise TypeError(f"Unsupported timestamp type: {type(timestamp)}")
@@ -212,6 +215,9 @@ class BulkOperator:
                 - writetime_before: Export rows where ANY column was written before this time
                 - writetime_filter_mode: "any" (default) or "all" - whether ANY or ALL
                   writetime columns must match the filter criteria
+                - include_ttl: Include TTL (time to live) for columns (default: False)
+                - ttl_columns: List of columns to get TTL for
+                  (default: None, use ["*"] for all non-key columns)
             csv_options: CSV-specific options
             json_options: JSON-specific options
             parquet_options: Parquet-specific options
@@ -264,6 +270,14 @@ class BulkOperator:
         if export_options.get("include_writetime") and not writetime_columns:
             # Default to all columns if include_writetime is True
             writetime_columns = ["*"]
+            # Update the options dict so validation sees it
+            export_options["writetime_columns"] = writetime_columns
+
+        # Extract TTL options
+        ttl_columns = export_options.get("ttl_columns")
+        if export_options.get("include_ttl") and not ttl_columns:
+            # Default to all columns if include_ttl is True
+            ttl_columns = ["*"]
 
         # Validate writetime options
         self._validate_writetime_options(export_options)
@@ -287,6 +301,7 @@ class BulkOperator:
             resume_from=resume_from,
             columns=columns,
             writetime_columns=writetime_columns,
+            ttl_columns=ttl_columns,
             writetime_after_micros=writetime_after_micros,
             writetime_before_micros=writetime_before_micros,
             writetime_filter_mode=writetime_filter_mode,

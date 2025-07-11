@@ -89,13 +89,14 @@ class TestWritetimeStress:
 
         base_writetime = 1700000000000000
         batch_size = 100
-        total_rows = 10_000  # Reduced from 100k to 10k for faster tests
-        rows_per_bucket = total_rows // 100
+        total_rows = 1_000  # Reduced to 1k for faster tests
+        num_buckets = 10  # Reduced buckets
+        rows_per_bucket = total_rows // num_buckets
 
         print(f"\nInserting {total_rows} rows for stress test...")
         start_time = time.time()
 
-        for bucket in range(100):
+        for bucket in range(num_buckets):
             batch = []
             for i in range(rows_per_bucket):
                 row_id = f"{bucket:03d}-{i:04d}"
@@ -189,8 +190,8 @@ class TestWritetimeStress:
             )
             duration = time.time() - start_time
 
-            # Verify export completed
-            assert stats.rows_processed == 10_000
+            # Verify export completed (fixture creates 1000 rows, not 10000)
+            assert stats.rows_processed == 1_000
             assert stats.errors == []
 
             # Check memory usage

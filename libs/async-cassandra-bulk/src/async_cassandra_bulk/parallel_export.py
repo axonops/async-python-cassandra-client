@@ -45,6 +45,7 @@ class ParallelExporter:
         resume_from: Optional[Dict[str, Any]] = None,
         columns: Optional[List[str]] = None,
         writetime_columns: Optional[List[str]] = None,
+        ttl_columns: Optional[List[str]] = None,
         writetime_after_micros: Optional[int] = None,
         writetime_before_micros: Optional[int] = None,
         writetime_filter_mode: str = "any",
@@ -64,6 +65,7 @@ class ParallelExporter:
             resume_from: Previous checkpoint to resume from
             columns: Optional list of columns to export (default: all)
             writetime_columns: Optional list of columns to get writetime for
+            ttl_columns: Optional list of columns to get TTL for
             writetime_after_micros: Only export rows with writetime after this (microseconds)
             writetime_before_micros: Only export rows with writetime before this (microseconds)
             writetime_filter_mode: "any" or "all" - how to combine writetime filters
@@ -79,6 +81,7 @@ class ParallelExporter:
         self.resume_from = resume_from
         self.columns = columns
         self.writetime_columns = writetime_columns
+        self.ttl_columns = ttl_columns
         self.writetime_after_micros = writetime_after_micros
         self.writetime_before_micros = writetime_before_micros
         self.writetime_filter_mode = writetime_filter_mode
@@ -127,6 +130,11 @@ class ParallelExporter:
             if config.get("writetime_columns") != self.writetime_columns:
                 logger.warning(
                     f"Writetime columns changed from {config['writetime_columns']} to {self.writetime_columns}"
+                )
+
+            if config.get("ttl_columns") != self.ttl_columns:
+                logger.warning(
+                    f"TTL columns changed from {config['ttl_columns']} to {self.ttl_columns}"
                 )
 
             # Check writetime filter changes
@@ -220,11 +228,19 @@ class ParallelExporter:
                 else:
                     writetime_values.append(value)
 
+        # DEBUG
+        if row_dict.get("id") == 4:
+            logger.info(f"DEBUG: Row 4 writetime values: {writetime_values}")
+            logger.info(f"DEBUG: Filtering with after={self.writetime_after_micros}")
+            logger.info(f"DEBUG: Row 4 full dict keys: {list(row_dict.keys())}")
+            wt_entries = {k: v for k, v in row_dict.items() if "_writetime" in k}
+            logger.info(f"DEBUG: Row 4 writetime entries: {wt_entries}")
+
         if not writetime_values:
-            # No writetime values found - this shouldn't happen if writetime filtering is enabled
-            # but if it does, we'll include the row to be safe
-            logger.warning("No writetime values found in row for filtering")
-            return False
+            # No writetime values found - all columns are NULL or primary keys
+            # When filtering by writetime, rows with no writetime values should be excluded
+            # as they cannot match any writetime criteria
+            return True  # Filter out the row
 
         # Apply filtering based on mode
         if self.writetime_filter_mode == "any":
@@ -290,6 +306,7 @@ class ParallelExporter:
                     ),
                     self._resolved_columns or self.columns,
                     self.writetime_columns,
+                    self.ttl_columns,
                     clustering_keys,
                     counter_columns,
                 )
@@ -302,7 +319,10 @@ class ParallelExporter:
                         row_dict[field] = getattr(row, field)
 
                     # Apply writetime filtering if enabled
-                    if not self._should_filter_row(row_dict):
+                    should_filter = self._should_filter_row(row_dict)
+                    if row_dict.get("id") == 4:
+                        logger.info(f"DEBUG: Row 4 should_filter={should_filter}")
+                    if not should_filter:
                         await self.exporter.write_row(row_dict)
                         row_count += 1
                         stats.rows_processed += 1
@@ -315,6 +335,7 @@ class ParallelExporter:
                     TokenRange(start=MIN_TOKEN, end=token_range.end, replicas=token_range.replicas),
                     self._resolved_columns or self.columns,
                     self.writetime_columns,
+                    self.ttl_columns,
                     clustering_keys,
                     counter_columns,
                 )
@@ -327,7 +348,10 @@ class ParallelExporter:
                         row_dict[field] = getattr(row, field)
 
                     # Apply writetime filtering if enabled
-                    if not self._should_filter_row(row_dict):
+                    should_filter = self._should_filter_row(row_dict)
+                    if row_dict.get("id") == 4:
+                        logger.info(f"DEBUG: Row 4 should_filter={should_filter}")
+                    if not should_filter:
                         await self.exporter.write_row(row_dict)
                         row_count += 1
                         stats.rows_processed += 1
@@ -340,6 +364,7 @@ class ParallelExporter:
                     token_range,
                     self._resolved_columns or self.columns,
                     self.writetime_columns,
+                    self.ttl_columns,
                     clustering_keys,
                     counter_columns,
                 )
@@ -352,7 +377,10 @@ class ParallelExporter:
                         row_dict[field] = getattr(row, field)
 
                     # Apply writetime filtering if enabled
-                    if not self._should_filter_row(row_dict):
+                    should_filter = self._should_filter_row(row_dict)
+                    if row_dict.get("id") == 4:
+                        logger.info(f"DEBUG: Row 4 should_filter={should_filter}")
+                    if not should_filter:
                         await self.exporter.write_row(row_dict)
                         row_count += 1
                         stats.rows_processed += 1
@@ -424,6 +452,7 @@ class ParallelExporter:
                 "table": self.table,
                 "columns": self.columns,
                 "writetime_columns": self.writetime_columns,
+                "ttl_columns": self.ttl_columns,
                 "batch_size": self.batch_size,
                 "concurrency": self.concurrency,
                 "writetime_after_micros": self.writetime_after_micros,
@@ -527,21 +556,22 @@ class ParallelExporter:
 
             # Write header including writetime columns
             header_columns = columns.copy()
+
+            # Get key columns and counter columns to exclude (needed for both writetime and TTL)
+            cluster = self.session._session.cluster
+            metadata = cluster.metadata
+            table_meta = metadata.keyspaces[self.keyspace].tables[self.table_name]
+            partition_keys = {col.name for col in table_meta.partition_key}
+            clustering_keys = {col.name for col in table_meta.clustering_key}
+            key_columns = partition_keys | clustering_keys
+
+            # Get counter columns (they don't support writetime or TTL)
+            counter_columns = set()
+            for col_name, col_meta in table_meta.columns.items():
+                if col_meta.cql_type == "counter":
+                    counter_columns.add(col_name)
+
             if self.writetime_columns:
-                # Get key columns and counter columns to exclude
-                cluster = self.session._session.cluster
-                metadata = cluster.metadata
-                table_meta = metadata.keyspaces[self.keyspace].tables[self.table_name]
-                partition_keys = {col.name for col in table_meta.partition_key}
-                clustering_keys = {col.name for col in table_meta.clustering_key}
-                key_columns = partition_keys | clustering_keys
-
-                # Get counter columns (they don't support writetime)
-                counter_columns = set()
-                for col_name, col_meta in table_meta.columns.items():
-                    if col_meta.cql_type == "counter":
-                        counter_columns.add(col_name)
-
                 # Add writetime columns to header
                 if self.writetime_columns == ["*"]:
                     # Add writetime for all non-key, non-counter columns
@@ -553,6 +583,20 @@ class ParallelExporter:
                     for col in self.writetime_columns:
                         if col not in key_columns and col not in counter_columns:
                             header_columns.append(f"{col}_writetime")
+
+            # Add TTL columns to header
+            if self.ttl_columns:
+                # TTL uses same exclusions as writetime
+                if self.ttl_columns == ["*"]:
+                    # Add TTL for all non-key, non-counter columns
+                    for col in columns:
+                        if col not in key_columns and col not in counter_columns:
+                            header_columns.append(f"{col}_ttl")
+                else:
+                    # Add TTL for specific columns (excluding keys and counters)
+                    for col in self.ttl_columns:
+                        if col not in key_columns and col not in counter_columns:
+                            header_columns.append(f"{col}_ttl")
 
             # Write header only if not resuming
             if not self._header_written:

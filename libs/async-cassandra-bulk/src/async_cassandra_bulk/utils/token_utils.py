@@ -224,6 +224,7 @@ def generate_token_range_query(
     token_range: TokenRange,
     columns: Optional[List[str]] = None,
     writetime_columns: Optional[List[str]] = None,
+    ttl_columns: Optional[List[str]] = None,
     clustering_keys: Optional[List[str]] = None,
     counter_columns: Optional[List[str]] = None,
 ) -> str:
@@ -241,8 +242,9 @@ def generate_token_range_query(
         token_range: Token range to query
         columns: Optional list of columns to select (default: all)
         writetime_columns: Optional list of columns to get writetime for
+        ttl_columns: Optional list of columns to get TTL for
         clustering_keys: Optional list of clustering key columns
-        counter_columns: Optional list of counter columns to exclude from writetime
+        counter_columns: Optional list of counter columns to exclude from writetime/TTL
 
     Returns:
         CQL query string
@@ -261,21 +263,22 @@ def generate_token_range_query(
     else:
         select_parts.append("*")
 
+    # Build excluded columns set (used for both writetime and TTL)
+    # Combine all key columns (partition + clustering)
+    key_columns = set(partition_keys)
+    if clustering_keys:
+        key_columns.update(clustering_keys)
+
+    # Also exclude counter columns from writetime/TTL
+    excluded_columns = key_columns.copy()
+    if counter_columns:
+        excluded_columns.update(counter_columns)
+
     # Add writetime columns if requested
     if writetime_columns:
-        # Combine all key columns (partition + clustering)
-        key_columns = set(partition_keys)
-        if clustering_keys:
-            key_columns.update(clustering_keys)
-
-        # Also exclude counter columns from writetime
-        excluded_columns = key_columns.copy()
-        if counter_columns:
-            excluded_columns.update(counter_columns)
-
         # Handle wildcard writetime request
         if writetime_columns == ["*"]:
-            if columns:
+            if columns and columns != ["*"]:
                 # Get all non-key, non-counter columns from explicit column list
                 writetime_cols = [col for col in columns if col not in excluded_columns]
             else:
@@ -284,11 +287,32 @@ def generate_token_range_query(
                 writetime_cols = []
         else:
             # Use specific columns, excluding keys and counters
+            # This allows getting writetime for specific columns even with SELECT *
             writetime_cols = [col for col in writetime_columns if col not in excluded_columns]
 
         # Add WRITETIME() functions
         for col in writetime_cols:
             select_parts.append(f"WRITETIME({col}) AS {col}_writetime")
+
+    # Add TTL columns if requested
+    if ttl_columns:
+        # Handle wildcard TTL request
+        if ttl_columns == ["*"]:
+            if columns and columns != ["*"]:
+                # Get all non-key, non-counter columns from explicit column list
+                ttl_cols = [col for col in columns if col not in excluded_columns]
+            else:
+                # Cannot use wildcard TTL with SELECT *
+                # We need explicit columns to know what to get TTL for
+                ttl_cols = []
+        else:
+            # Use specific columns, excluding keys and counters
+            # This allows getting TTL for specific columns even with SELECT *
+            ttl_cols = [col for col in ttl_columns if col not in excluded_columns]
+
+        # Add TTL() functions
+        for col in ttl_cols:
+            select_parts.append(f"TTL({col}) AS {col}_ttl")
 
     column_list = ", ".join(select_parts)
 
@@ -308,3 +332,72 @@ def generate_token_range_query(
         )
 
     return f"SELECT {column_list} FROM {keyspace}.{table} WHERE {token_condition}"
+
+
+def build_query(
+    table: str,
+    columns: Optional[List[str]] = None,
+    writetime_columns: Optional[List[str]] = None,
+    ttl_columns: Optional[List[str]] = None,
+    token_range: Optional[TokenRange] = None,
+    primary_keys: Optional[List[str]] = None,
+) -> str:
+    """
+    Build a simple CQL query for testing and simple exports.
+
+    Args:
+        table: Table name (can include keyspace)
+        columns: Optional list of columns to select
+        writetime_columns: Optional list of columns to get writetime for
+        ttl_columns: Optional list of columns to get TTL for
+        token_range: Optional token range (not used in simple query)
+        primary_keys: Optional list of primary key columns to exclude
+
+    Returns:
+        CQL query string
+    """
+    # Build column selection list
+    select_parts = []
+
+    # Add regular columns
+    if columns:
+        select_parts.extend(columns)
+    else:
+        select_parts.append("*")
+
+    # Add writetime columns if requested
+    if writetime_columns:
+        excluded = set(primary_keys) if primary_keys else set()
+
+        if writetime_columns == ["*"]:
+            # Cannot use wildcard with SELECT *
+            if columns and columns != ["*"]:
+                writetime_cols = [col for col in columns if col not in excluded]
+            else:
+                select_parts.append("WRITETIME(*)")
+                writetime_cols = []
+        else:
+            writetime_cols = [col for col in writetime_columns if col not in excluded]
+
+        for col in writetime_cols:
+            select_parts.append(f"WRITETIME({col}) AS {col}_writetime")
+
+    # Add TTL columns if requested
+    if ttl_columns:
+        excluded = set(primary_keys) if primary_keys else set()
+
+        if ttl_columns == ["*"]:
+            # Cannot use wildcard with SELECT *
+            if columns and columns != ["*"]:
+                ttl_cols = [col for col in columns if col not in excluded]
+            else:
+                select_parts.append("TTL(*)")
+                ttl_cols = []
+        else:
+            ttl_cols = [col for col in ttl_columns if col not in excluded]
+
+        for col in ttl_cols:
+            select_parts.append(f"TTL({col}) AS {col}_ttl")
+
+    column_list = ", ".join(select_parts)
+    return f"SELECT {column_list} FROM {table}"

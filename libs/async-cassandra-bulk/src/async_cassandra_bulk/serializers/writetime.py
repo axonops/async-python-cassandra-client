@@ -45,18 +45,24 @@ class WritetimeSerializer(TypeSerializer):
             else:
                 return None
 
-        # Convert microseconds to datetime
-        # Cassandra writetime is microseconds since epoch
-        timestamp = datetime.fromtimestamp(value / 1_000_000, tz=timezone.utc)
+        # Check if raw writetime values are requested
+        if context.options.get("writetime_raw", False):
+            # Return raw microsecond value for exact precision
+            return value
 
-        if context.format == "csv":
-            # For CSV, use configurable format or ISO
-            fmt = context.options.get("writetime_format")
-            if fmt is None:
-                fmt = "%Y-%m-%d %H:%M:%S.%f"
-            return timestamp.strftime(fmt)
-        elif context.format == "json":
-            # For JSON, use ISO format with timezone
+        # For maximum precision, we need to handle large microsecond values carefully
+        # Python's datetime has limitations with very large timestamps
+
+        if context.format in ("csv", "json"):
+            # Convert to seconds and microseconds separately to avoid float precision loss
+            seconds = value // 1_000_000
+            microseconds = value % 1_000_000
+
+            # Create datetime from seconds, then adjust microseconds
+            timestamp = datetime.fromtimestamp(seconds, tz=timezone.utc)
+            timestamp = timestamp.replace(microsecond=microseconds)
+
+            # Return ISO format for both CSV and JSON
             return timestamp.isoformat()
         else:
             # For other formats, return as-is
