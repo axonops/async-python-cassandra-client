@@ -45,6 +45,9 @@ class ParallelExporter:
         resume_from: Optional[Dict[str, Any]] = None,
         columns: Optional[List[str]] = None,
         writetime_columns: Optional[List[str]] = None,
+        writetime_after_micros: Optional[int] = None,
+        writetime_before_micros: Optional[int] = None,
+        writetime_filter_mode: str = "any",
     ) -> None:
         """
         Initialize parallel exporter.
@@ -61,6 +64,9 @@ class ParallelExporter:
             resume_from: Previous checkpoint to resume from
             columns: Optional list of columns to export (default: all)
             writetime_columns: Optional list of columns to get writetime for
+            writetime_after_micros: Only export rows with writetime after this (microseconds)
+            writetime_before_micros: Only export rows with writetime before this (microseconds)
+            writetime_filter_mode: "any" or "all" - how to combine writetime filters
         """
         self.session = session
         self.table = table
@@ -73,6 +79,9 @@ class ParallelExporter:
         self.resume_from = resume_from
         self.columns = columns
         self.writetime_columns = writetime_columns
+        self.writetime_after_micros = writetime_after_micros
+        self.writetime_before_micros = writetime_before_micros
+        self.writetime_filter_mode = writetime_filter_mode
 
         # Parse table name
         if "." not in table:
@@ -118,6 +127,23 @@ class ParallelExporter:
             if config.get("writetime_columns") != self.writetime_columns:
                 logger.warning(
                     f"Writetime columns changed from {config['writetime_columns']} to {self.writetime_columns}"
+                )
+
+            # Check writetime filter changes
+            if config.get("writetime_after_micros") != self.writetime_after_micros:
+                logger.warning(
+                    f"Writetime after filter changed from {config.get('writetime_after_micros')} "
+                    f"to {self.writetime_after_micros}"
+                )
+            if config.get("writetime_before_micros") != self.writetime_before_micros:
+                logger.warning(
+                    f"Writetime before filter changed from {config.get('writetime_before_micros')} "
+                    f"to {self.writetime_before_micros}"
+                )
+            if config.get("writetime_filter_mode") != self.writetime_filter_mode:
+                logger.warning(
+                    f"Writetime filter mode changed from {config.get('writetime_filter_mode')} "
+                    f"to {self.writetime_filter_mode}"
                 )
 
         logger.info(
@@ -169,6 +195,61 @@ class ParallelExporter:
 
         return list(table_meta.columns.keys())
 
+    def _should_filter_row(self, row_dict: Dict[str, Any]) -> bool:
+        """
+        Check if a row should be filtered based on writetime criteria.
+
+        Args:
+            row_dict: Row data including writetime columns
+
+        Returns:
+            True if row should be filtered out (not exported), False otherwise
+        """
+        if not self.writetime_after_micros and not self.writetime_before_micros:
+            # No filtering
+            return False
+
+        # Collect all writetime values from the row
+        writetime_values = []
+        for key, value in row_dict.items():
+            if key.endswith("_writetime") and value is not None:
+                # Handle list values (from collection columns)
+                if isinstance(value, list):
+                    if value:  # Non-empty list
+                        writetime_values.append(value[0])
+                else:
+                    writetime_values.append(value)
+
+        if not writetime_values:
+            # No writetime values found - this shouldn't happen if writetime filtering is enabled
+            # but if it does, we'll include the row to be safe
+            logger.warning("No writetime values found in row for filtering")
+            return False
+
+        # Apply filtering based on mode
+        if self.writetime_filter_mode == "any":
+            # ANY mode: include row if ANY writetime matches criteria
+            for wt in writetime_values:
+                matches = True
+                if self.writetime_after_micros and wt < self.writetime_after_micros:
+                    matches = False
+                if self.writetime_before_micros and wt > self.writetime_before_micros:
+                    matches = False
+                if matches:
+                    # At least one writetime matches criteria
+                    return False  # Don't filter out
+            # No writetime matched criteria
+            return True  # Filter out
+        else:
+            # ALL mode: include row only if ALL writetimes match criteria
+            for wt in writetime_values:
+                if self.writetime_after_micros and wt < self.writetime_after_micros:
+                    return True  # Filter out
+                if self.writetime_before_micros and wt > self.writetime_before_micros:
+                    return True  # Filter out
+            # All writetimes match criteria
+            return False  # Don't filter out
+
     async def _export_range(self, token_range: TokenRange, stats: BulkOperationStats) -> int:
         """
         Export a single token range.
@@ -219,9 +300,12 @@ class ParallelExporter:
                     row_dict = {}
                     for field in row._fields:
                         row_dict[field] = getattr(row, field)
-                    await self.exporter.write_row(row_dict)
-                    row_count += 1
-                    stats.rows_processed += 1
+
+                    # Apply writetime filtering if enabled
+                    if not self._should_filter_row(row_dict):
+                        await self.exporter.write_row(row_dict)
+                        row_count += 1
+                        stats.rows_processed += 1
 
                 # Second part: from MIN_TOKEN to end
                 query2 = generate_token_range_query(
@@ -241,9 +325,12 @@ class ParallelExporter:
                     row_dict = {}
                     for field in row._fields:
                         row_dict[field] = getattr(row, field)
-                    await self.exporter.write_row(row_dict)
-                    row_count += 1
-                    stats.rows_processed += 1
+
+                    # Apply writetime filtering if enabled
+                    if not self._should_filter_row(row_dict):
+                        await self.exporter.write_row(row_dict)
+                        row_count += 1
+                        stats.rows_processed += 1
             else:
                 # Non-wraparound range - process normally
                 query = generate_token_range_query(
@@ -263,9 +350,12 @@ class ParallelExporter:
                     row_dict = {}
                     for field in row._fields:
                         row_dict[field] = getattr(row, field)
-                    await self.exporter.write_row(row_dict)
-                    row_count += 1
-                    stats.rows_processed += 1
+
+                    # Apply writetime filtering if enabled
+                    if not self._should_filter_row(row_dict):
+                        await self.exporter.write_row(row_dict)
+                        row_count += 1
+                        stats.rows_processed += 1
 
             # Update stats
             stats.ranges_completed += 1
@@ -336,6 +426,9 @@ class ParallelExporter:
                 "writetime_columns": self.writetime_columns,
                 "batch_size": self.batch_size,
                 "concurrency": self.concurrency,
+                "writetime_after_micros": self.writetime_after_micros,
+                "writetime_before_micros": self.writetime_before_micros,
+                "writetime_filter_mode": self.writetime_filter_mode,
             },
         }
 
@@ -400,6 +493,37 @@ class ParallelExporter:
             # Get columns
             columns = await self._get_columns()
             self._resolved_columns = columns
+
+            # Validate writetime filtering requirements
+            if self.writetime_after_micros or self.writetime_before_micros:
+                # Need writetime columns for filtering
+                if not self.writetime_columns:
+                    raise ValueError(
+                        "writetime_columns must be specified when using writetime filtering"
+                    )
+
+                # Validate table has columns that support writetime
+                cluster = self.session._session.cluster
+                metadata = cluster.metadata
+                table_meta = metadata.keyspaces[self.keyspace].tables[self.table_name]
+
+                # Get columns that don't support writetime
+                partition_keys = {col.name for col in table_meta.partition_key}
+                clustering_keys = {col.name for col in table_meta.clustering_key}
+                key_columns = partition_keys | clustering_keys
+                counter_columns = {
+                    col_name
+                    for col_name, col_meta in table_meta.columns.items()
+                    if col_meta.cql_type == "counter"
+                }
+
+                # Check if any columns support writetime
+                writable_columns = set(columns) - key_columns - counter_columns
+                if not writable_columns:
+                    raise ValueError(
+                        f"Table {self.table} has no columns that support writetime. "
+                        "Only contains primary key and/or counter columns."
+                    )
 
             # Write header including writetime columns
             header_columns = columns.copy()

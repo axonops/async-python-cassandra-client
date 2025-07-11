@@ -7,7 +7,8 @@ This provides the main entry point for all bulk operations including:
 - Import from various formats (future)
 """
 
-from typing import Any, Callable, Dict, Literal, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, Literal, Optional, Union
 
 from async_cassandra import AsyncCassandraSession
 
@@ -42,6 +43,100 @@ class BulkOperator:
             )
 
         self.session = session
+
+    def _parse_writetime_filters(self, options: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Parse writetime filter options into microseconds.
+
+        Args:
+            options: Dict containing writetime_after and/or writetime_before
+
+        Returns:
+            Dict with parsed writetime_after_micros and/or writetime_before_micros
+
+        Raises:
+            ValueError: If timestamps are invalid or before < after
+        """
+        parsed = {}
+
+        # Parse writetime_after
+        if "writetime_after" in options:
+            after_value = options["writetime_after"]
+            parsed["writetime_after_micros"] = self._parse_timestamp_to_micros(after_value)
+
+        # Parse writetime_before
+        if "writetime_before" in options:
+            before_value = options["writetime_before"]
+            parsed["writetime_before_micros"] = self._parse_timestamp_to_micros(before_value)
+
+        # Validate logical consistency
+        if "writetime_after_micros" in parsed and "writetime_before_micros" in parsed:
+            if parsed["writetime_before_micros"] <= parsed["writetime_after_micros"]:
+                raise ValueError("writetime_before must be later than writetime_after")
+
+        return parsed
+
+    def _parse_timestamp_to_micros(self, timestamp: Union[str, int, float, datetime]) -> int:
+        """
+        Convert various timestamp formats to microseconds since epoch.
+
+        Args:
+            timestamp: ISO string, unix timestamp (seconds/millis), or datetime
+
+        Returns:
+            Microseconds since epoch
+
+        Raises:
+            ValueError: If timestamp format is invalid
+        """
+        if isinstance(timestamp, datetime):
+            # Datetime object
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            return int(timestamp.timestamp() * 1_000_000)
+
+        elif isinstance(timestamp, str):
+            # ISO format string
+            try:
+                dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return int(dt.timestamp() * 1_000_000)
+            except ValueError as e:
+                raise ValueError(f"Invalid timestamp format: {timestamp}") from e
+
+        elif isinstance(timestamp, (int, float)):
+            # Unix timestamp
+            if timestamp < 0:
+                raise ValueError("Timestamp cannot be negative")
+
+            # Detect if it's seconds or milliseconds
+            # If timestamp is less than year 3000 in seconds, assume seconds
+            if timestamp < 32503680000:  # Jan 1, 3000 in seconds
+                return int(timestamp * 1_000_000)
+            else:
+                # Assume milliseconds
+                return int(timestamp * 1_000)
+
+        else:
+            raise TypeError(f"Unsupported timestamp type: {type(timestamp)}")
+
+    def _validate_writetime_options(self, options: Dict[str, Any]) -> None:
+        """
+        Validate writetime-related options.
+
+        Args:
+            options: Export options to validate
+
+        Raises:
+            ValueError: If options are invalid
+        """
+        # If using writetime filters, must have writetime columns
+        has_filters = "writetime_after" in options or "writetime_before" in options
+        has_columns = bool(options.get("writetime_columns"))
+
+        if has_filters and not has_columns:
+            raise ValueError("writetime_columns must be specified when using writetime filters")
 
     async def count(self, table: str, where: Optional[str] = None) -> int:
         """
@@ -113,6 +208,10 @@ class BulkOperator:
                 - include_writetime: Include writetime for columns (default: False)
                 - writetime_columns: List of columns to get writetime for
                   (default: None, use ["*"] for all non-key columns)
+                - writetime_after: Export rows where ANY column was written after this time
+                - writetime_before: Export rows where ANY column was written before this time
+                - writetime_filter_mode: "any" (default) or "all" - whether ANY or ALL
+                  writetime columns must match the filter criteria
             csv_options: CSV-specific options
             json_options: JSON-specific options
             parquet_options: Parquet-specific options
@@ -166,6 +265,15 @@ class BulkOperator:
             # Default to all columns if include_writetime is True
             writetime_columns = ["*"]
 
+        # Validate writetime options
+        self._validate_writetime_options(export_options)
+
+        # Parse writetime filters
+        parsed_filters = self._parse_writetime_filters(export_options)
+        writetime_after_micros = parsed_filters.get("writetime_after_micros")
+        writetime_before_micros = parsed_filters.get("writetime_before_micros")
+        writetime_filter_mode = export_options.get("writetime_filter_mode", "any")
+
         # Create parallel exporter
         parallel_exporter = ParallelExporter(
             session=self.session,
@@ -179,6 +287,9 @@ class BulkOperator:
             resume_from=resume_from,
             columns=columns,
             writetime_columns=writetime_columns,
+            writetime_after_micros=writetime_after_micros,
+            writetime_before_micros=writetime_before_micros,
+            writetime_filter_mode=writetime_filter_mode,
         )
 
         # Perform export
