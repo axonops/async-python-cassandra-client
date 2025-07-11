@@ -28,9 +28,8 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
-from cassandra import OperationTimedOut, WriteTimeout
-
 from async_cassandra import AsyncCassandraSession
+from cassandra import OperationTimedOut, WriteTimeout
 
 
 class TestBackpressureHandling:

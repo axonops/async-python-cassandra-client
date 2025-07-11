@@ -13,10 +13,9 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
+from async_cassandra import AsyncCassandraSession
 from cassandra import InvalidRequest, WriteTimeout
 from cassandra.cluster import Session
-
-from async_cassandra import AsyncCassandraSession
 
 
 class TestLWTOperations:

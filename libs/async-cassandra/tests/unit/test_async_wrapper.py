@@ -20,13 +20,12 @@ Key Testing Patterns:
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from cassandra.auth import PlainTextAuthProvider
-from cassandra.cluster import ResponseFuture
-
 from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra import AsyncCluster
 from async_cassandra.base import AsyncContextManageable
 from async_cassandra.result import AsyncResultSet
+from cassandra.auth import PlainTextAuthProvider
+from cassandra.cluster import ResponseFuture
 
 
 class TestAsyncContextManageable:

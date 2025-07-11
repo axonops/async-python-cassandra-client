@@ -7,9 +7,8 @@ import os
 import time
 
 import pytest
-from cassandra.policies import ConstantReconnectionPolicy
-
 from async_cassandra import AsyncCluster
+from cassandra.policies import ConstantReconnectionPolicy
 from tests.utils.cassandra_control import CassandraControl
 
 

@@ -25,7 +25,6 @@ import time
 from unittest.mock import Mock
 
 import pytest
-
 from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
 
 

@@ -35,7 +35,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from async_cassandra import AsyncCluster
 
 # Path to examples directory

@@ -9,7 +9,6 @@ import asyncio
 import uuid
 
 import pytest
-
 from async_cassandra import StreamConfig, create_streaming_statement
 
 

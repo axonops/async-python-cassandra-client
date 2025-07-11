@@ -9,11 +9,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from cassandra import InvalidRequest
-from pytest_bdd import given, scenarios, then, when
-
 from async_cassandra import AsyncCluster
 from async_cassandra.streaming import StreamConfig
+from cassandra import InvalidRequest
+from pytest_bdd import given, scenarios, then, when
 
 # Load all scenarios from the feature file
 scenarios("features/context_manager_safety.feature")

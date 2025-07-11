@@ -10,11 +10,10 @@ import asyncio
 import uuid
 
 import pytest
+from async_cassandra.exceptions import QueryError
 from cassandra import AlreadyExists, ConfigurationException, InvalidRequest
 from cassandra.protocol import SyntaxException
 from cassandra.query import SimpleStatement
-
-from async_cassandra.exceptions import QueryError
 
 
 class TestErrorPropagation:

@@ -29,9 +29,8 @@ import logging
 import os
 import uuid
 
-from cassandra import InvalidRequest
-
 from async_cassandra import AsyncCluster
+from cassandra import InvalidRequest
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

@@ -12,7 +12,6 @@ import time
 import httpx
 import pytest
 import pytest_asyncio
-
 from tests.utils.cassandra_control import CassandraControl
 
 

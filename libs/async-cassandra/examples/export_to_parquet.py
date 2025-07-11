@@ -40,7 +40,6 @@ from typing import Any, Dict, List, Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 from async_cassandra import AsyncCluster, StreamConfig
 
 # Set up logging

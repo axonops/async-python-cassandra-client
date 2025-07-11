@@ -3,10 +3,9 @@
 
 import asyncio
 
+from async_cassandra import AsyncCluster
 from bulk_operations.bulk_operator import TokenAwareBulkOperator
 from bulk_operations.token_utils import MIN_TOKEN, discover_token_ranges, generate_token_range_query
-
-from async_cassandra import AsyncCluster
 
 
 async def debug_coverage():

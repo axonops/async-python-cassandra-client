@@ -10,10 +10,9 @@ import subprocess
 import time
 
 import pytest
+from async_cassandra import AsyncCluster
 from cassandra.cluster import Cluster
 from cassandra.policies import ConstantReconnectionPolicy
-
-from async_cassandra import AsyncCluster
 from tests.utils.cassandra_control import CassandraControl
 
 

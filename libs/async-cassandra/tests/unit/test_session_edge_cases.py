@@ -9,11 +9,10 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from async_cassandra import AsyncCassandraSession
 from cassandra import InvalidRequest, OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
 from cassandra.cluster import Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
-
-from async_cassandra import AsyncCassandraSession
 
 
 class TestSessionEdgeCases:

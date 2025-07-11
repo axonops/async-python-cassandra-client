@@ -32,7 +32,6 @@ import threading
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from async_cassandra.utils import get_or_create_event_loop, safe_call_soon_threadsafe
 
 # Test constants
@@ -370,9 +369,8 @@ class TestThreadPoolConfiguration:
         10 concurrent operations is well within the 32 thread
         limit, so all should complete successfully.
         """
-        from cassandra.cluster import ResponseFuture
-
         from async_cassandra.session import AsyncCassandraSession as AsyncSession
+        from cassandra.cluster import ResponseFuture
 
         mock_session = Mock()
         results = []

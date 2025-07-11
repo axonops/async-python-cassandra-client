@@ -29,10 +29,9 @@ from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
+from async_cassandra import AsyncCassandraSession, AsyncCluster, StreamConfig
 from cassandra.cluster import Cluster as SyncCluster
 from cassandra.query import BatchStatement, BatchType
-
-from async_cassandra import AsyncCassandraSession, AsyncCluster, StreamConfig
 
 
 @pytest.mark.asyncio

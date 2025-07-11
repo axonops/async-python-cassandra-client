@@ -8,9 +8,8 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
-from cassandra import ConsistencyLevel
-
 from async_cassandra import AsyncCassandraSession
+from cassandra import ConsistencyLevel
 
 from .parallel_export import export_by_token_ranges_parallel
 from .stats import BulkOperationStats

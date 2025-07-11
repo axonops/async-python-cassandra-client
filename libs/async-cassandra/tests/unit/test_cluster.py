@@ -21,14 +21,13 @@ from ssl import PROTOCOL_TLS_CLIENT, SSLContext
 from unittest.mock import Mock, patch
 
 import pytest
-from cassandra.auth import PlainTextAuthProvider
-from cassandra.cluster import Cluster
-from cassandra.policies import ExponentialReconnectionPolicy, TokenAwarePolicy
-
 from async_cassandra.cluster import AsyncCluster
 from async_cassandra.exceptions import ConfigurationError, ConnectionError
 from async_cassandra.retry_policy import AsyncRetryPolicy
 from async_cassandra.session import AsyncCassandraSession
+from cassandra.auth import PlainTextAuthProvider
+from cassandra.cluster import Cluster
+from cassandra.policies import ExponentialReconnectionPolicy, TokenAwarePolicy
 
 
 class TestAsyncCluster:

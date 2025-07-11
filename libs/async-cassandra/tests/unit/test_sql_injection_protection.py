@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
-
 from async_cassandra import AsyncCassandraSession
 
 

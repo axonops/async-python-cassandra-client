@@ -7,7 +7,6 @@ import threading
 from unittest.mock import Mock, patch
 
 import pytest
-
 from async_cassandra.utils import get_or_create_event_loop, safe_call_soon_threadsafe
 
 

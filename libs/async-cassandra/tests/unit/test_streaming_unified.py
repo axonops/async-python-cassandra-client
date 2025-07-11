@@ -31,7 +31,6 @@ from typing import Any, AsyncIterator, List
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from async_cassandra import AsyncCassandraSession
 from async_cassandra.exceptions import QueryError
 from async_cassandra.streaming import StreamConfig

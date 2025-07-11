@@ -22,7 +22,6 @@ Key Testing Focus:
 from unittest.mock import Mock
 
 import pytest
-
 from async_cassandra.result import AsyncResultHandler, AsyncResultSet
 
 
