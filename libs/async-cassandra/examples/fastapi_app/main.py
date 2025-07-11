@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
+from async_cassandra import AsyncCluster, StreamConfig
 from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
 
 # Import Cassandra driver exceptions for proper error detection
@@ -21,8 +22,6 @@ from cassandra.cluster import NoHostAvailable
 from cassandra.policies import ConstantReconnectionPolicy
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
-
-from async_cassandra import AsyncCluster, StreamConfig
 
 
 # Pydantic models

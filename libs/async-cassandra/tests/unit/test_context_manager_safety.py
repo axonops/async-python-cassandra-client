@@ -11,7 +11,6 @@ import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from async_cassandra import AsyncCassandraSession, AsyncCluster
 from async_cassandra.exceptions import QueryError
 from async_cassandra.streaming import AsyncStreamingResultSet

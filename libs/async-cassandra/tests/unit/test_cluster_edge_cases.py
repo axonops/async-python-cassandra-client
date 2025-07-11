@@ -10,10 +10,9 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
-from cassandra.cluster import NoHostAvailable
-
 from async_cassandra import AsyncCluster
 from async_cassandra.exceptions import ConnectionError
+from cassandra.cluster import NoHostAvailable
 
 
 class TestClusterEdgeCases:

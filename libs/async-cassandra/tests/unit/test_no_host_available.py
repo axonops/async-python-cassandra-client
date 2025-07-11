@@ -23,10 +23,9 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
-from cassandra.cluster import NoHostAvailable
-
 from async_cassandra.exceptions import QueryError
 from async_cassandra.session import AsyncCassandraSession
+from cassandra.cluster import NoHostAvailable
 
 
 @pytest.mark.asyncio

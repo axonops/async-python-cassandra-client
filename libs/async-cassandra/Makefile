@@ -46,8 +46,6 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  example-streaming      Run streaming basic example"
-	@echo "  example-export-csv     Run CSV export example"
-	@echo "  example-export-parquet Run Parquet export example"
 	@echo "  example-realtime       Run real-time processing example"
 	@echo "  example-metrics        Run metrics collection example"
 	@echo "  example-non-blocking   Run non-blocking demo"
@@ -340,7 +338,7 @@ clean-all: clean cassandra-stop
 	@echo "All cleaned up"
 
 # Example targets
-.PHONY: example-streaming example-export-csv example-export-parquet example-realtime example-metrics example-non-blocking example-context example-fastapi examples-all
+.PHONY: example-streaming example-realtime example-metrics example-non-blocking example-context example-fastapi examples-all
 
 # Ensure examples can connect to Cassandra
 EXAMPLES_ENV = CASSANDRA_CONTACT_POINTS=$(CASSANDRA_CONTACT_POINTS)
@@ -363,48 +361,6 @@ example-streaming: cassandra-wait
 	@echo ""
 	@$(EXAMPLES_ENV) python examples/streaming_basic.py
 
-example-export-csv: cassandra-wait
-	@echo ""
-	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
-	@echo "║                           CSV EXPORT EXAMPLE                                 ║"
-	@echo "╠══════════════════════════════════════════════════════════════════════════════╣"
-	@echo "║ This example exports a large Cassandra table to CSV format efficiently       ║"
-	@echo "║                                                                              ║"
-	@echo "║ What you'll see:                                                            ║"
-	@echo "║ • Creating and populating a sample products table (5,000 items)            ║"
-	@echo "║ • Streaming export with progress tracking                                   ║"
-	@echo "║ • Memory-efficient processing (no loading entire table into memory)        ║"
-	@echo "║ • Export statistics (rows/sec, file size, duration)                        ║"
-	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
-	@echo ""
-	@echo "📡 Connecting to Cassandra at $(CASSANDRA_CONTACT_POINTS)..."
-	@echo "💾 Output will be saved to: $(EXAMPLE_OUTPUT_DIR)"
-	@echo ""
-	@$(EXAMPLES_ENV) python examples/export_large_table.py
-
-example-export-parquet: cassandra-wait
-	@echo ""
-	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
-	@echo "║                         PARQUET EXPORT EXAMPLE                               ║"
-	@echo "╠══════════════════════════════════════════════════════════════════════════════╣"
-	@echo "║ This example exports Cassandra tables to Parquet format with streaming       ║"
-	@echo "║                                                                              ║"
-	@echo "║ What you'll see:                                                            ║"
-	@echo "║ • Creating time-series data with complex types (30,000+ events)            ║"
-	@echo "║ • Three export scenarios:                                                   ║"
-	@echo "║   - Full table export with snappy compression                              ║"
-	@echo "║   - Filtered export (purchase events only) with gzip                       ║"
-	@echo "║   - Different compression comparison (lz4)                                  ║"
-	@echo "║ • Automatic schema inference from Cassandra types                          ║"
-	@echo "║ • Verification of exported Parquet files                                    ║"
-	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
-	@echo ""
-	@echo "📡 Connecting to Cassandra at $(CASSANDRA_CONTACT_POINTS)..."
-	@echo "💾 Output will be saved to: $(EXAMPLE_OUTPUT_DIR)"
-	@echo "📦 Installing PyArrow if needed..."
-	@pip install pyarrow >/dev/null 2>&1 || echo "✅ PyArrow ready"
-	@echo ""
-	@$(EXAMPLES_ENV) python examples/export_to_parquet.py
 
 example-realtime: cassandra-wait
 	@echo ""
@@ -526,25 +482,15 @@ examples-all: cassandra-wait
 	@echo "║                                                                              ║"
 	@echo "║ Examples to run:                                                            ║"
 	@echo "║ 1. Streaming Basic - Memory-efficient data processing                      ║"
-	@echo "║ 2. CSV Export - Large table export with progress tracking                  ║"
-	@echo "║ 3. Parquet Export - Complex types and compression options                  ║"
-	@echo "║ 4. Real-time Processing - IoT sensor analytics                             ║"
-	@echo "║ 5. Metrics Collection - Performance monitoring                             ║"
-	@echo "║ 6. Non-blocking Demo - Event loop responsiveness proof                     ║"
-	@echo "║ 7. Context Managers - Resource management patterns                         ║"
+	@echo "║ 2. Real-time Processing - IoT sensor analytics                             ║"
+	@echo "║ 3. Metrics Collection - Performance monitoring                             ║"
+	@echo "║ 4. Non-blocking Demo - Event loop responsiveness proof                     ║"
+	@echo "║ 5. Context Managers - Resource management patterns                         ║"
 	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "📡 Using Cassandra at $(CASSANDRA_CONTACT_POINTS)"
 	@echo ""
 	@$(MAKE) example-streaming
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@$(MAKE) example-export-csv
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@$(MAKE) example-export-parquet
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════════════════════════"
 	@echo ""

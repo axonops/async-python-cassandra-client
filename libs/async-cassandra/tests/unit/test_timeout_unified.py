@@ -23,11 +23,10 @@ import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from async_cassandra import AsyncCassandraSession
 from cassandra import ReadTimeout, WriteTimeout
 from cassandra.cluster import _NOT_SET, ResponseFuture
 from cassandra.policies import WriteType
-
-from async_cassandra import AsyncCassandraSession
 
 
 class TestTimeoutHandling:

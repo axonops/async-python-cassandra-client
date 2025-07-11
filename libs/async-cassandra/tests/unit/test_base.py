@@ -19,7 +19,6 @@ Key Testing Focus:
 """
 
 import pytest
-
 from async_cassandra.base import AsyncContextManageable
 
 

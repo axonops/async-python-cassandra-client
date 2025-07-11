@@ -27,7 +27,6 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
 import pytest
-
 from async_cassandra.result import AsyncResultHandler
 from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
 

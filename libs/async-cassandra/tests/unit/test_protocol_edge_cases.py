@@ -27,12 +27,11 @@ Key Testing Principles:
 from unittest.mock import Mock, patch
 
 import pytest
+from async_cassandra import AsyncCassandraSession
+from async_cassandra.exceptions import ConnectionError
 from cassandra import InvalidRequest, OperationTimedOut, UnsupportedOperation
 from cassandra.cluster import NoHostAvailable, Session
 from cassandra.connection import ProtocolError
-
-from async_cassandra import AsyncCassandraSession
-from async_cassandra.exceptions import ConnectionError
 
 
 class TestProtocolEdgeCases:

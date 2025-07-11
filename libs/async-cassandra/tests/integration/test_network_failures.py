@@ -10,11 +10,10 @@ import time
 import uuid
 
 import pytest
-from cassandra import OperationTimedOut, ReadTimeout, Unavailable
-from cassandra.cluster import NoHostAvailable
-
 from async_cassandra import AsyncCassandraSession, AsyncCluster
 from async_cassandra.exceptions import ConnectionError
+from cassandra import OperationTimedOut, ReadTimeout, Unavailable
+from cassandra.cluster import NoHostAvailable
 
 
 @pytest.mark.integration

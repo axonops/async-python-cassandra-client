@@ -6,9 +6,8 @@ import time
 
 import psutil
 import pytest
-from pytest_bdd import given, parsers, scenario, then, when
-
 from async_cassandra import AsyncCluster
+from pytest_bdd import given, parsers, scenario, then, when
 
 # Import the cassandra_container fixture
 pytest_plugins = ["tests._fixtures.cassandra"]

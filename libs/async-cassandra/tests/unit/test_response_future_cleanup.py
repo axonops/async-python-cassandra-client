@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
-
 from async_cassandra.exceptions import ConnectionError
 from async_cassandra.result import AsyncResultHandler
 from async_cassandra.session import AsyncCassandraSession
