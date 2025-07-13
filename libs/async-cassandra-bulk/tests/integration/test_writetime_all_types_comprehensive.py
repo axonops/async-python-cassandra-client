@@ -168,8 +168,9 @@ class TestWritetimeAllTypesComprehensive:
                 SET text_col = 'updated text',
                     int_col = 999,
                     boolean_col = false
-                WHERE id = {test_id}
-                """
+                WHERE id = %s
+                """,
+                (test_id,),
             )
 
             # Export with writetime for all columns
@@ -814,9 +815,10 @@ class TestWritetimeAllTypesComprehensive:
                 f"""
                 INSERT INTO {keyspace}.{table_name}
                 (tenant_id, user_id, tenant_name, tenant_active)
-                VALUES ({tenant1}, {user1}, 'Test Tenant', true)
+                VALUES (%s, %s, 'Test Tenant', true)
                 USING TIMESTAMP {base_writetime}
-                """
+                """,
+                (tenant1, user1),
             )
 
             # Insert regular rows
@@ -826,15 +828,16 @@ class TestWritetimeAllTypesComprehensive:
                     INSERT INTO {keyspace}.{table_name}
                     (tenant_id, user_id, timestamp, event_type, event_data, ip_address)
                     VALUES (
-                        {tenant1},
-                        {user1},
+                        %s,
+                        %s,
                         '{datetime.now(timezone.utc) + timedelta(hours=i)}',
                         'login',
                         'data_{i}',
                         '192.168.1.{i}'
                     )
                     USING TIMESTAMP {base_writetime + i * 1000000}
-                    """
+                    """,
+                    (tenant1, user1),
                 )
 
             # Update static column with different writetime
@@ -843,8 +846,9 @@ class TestWritetimeAllTypesComprehensive:
                 UPDATE {keyspace}.{table_name}
                 USING TIMESTAMP {base_writetime + 5000000}
                 SET tenant_active = false
-                WHERE tenant_id = {tenant1} AND user_id = {user1}
-                """
+                WHERE tenant_id = %s AND user_id = %s
+                """,
+                (tenant1, user1),
             )
 
             # Export with writetime
@@ -951,7 +955,7 @@ class TestWritetimeAllTypesComprehensive:
                 INSERT INTO {keyspace}.{table_name}
                 (id, username, profile, profiles_history)
                 VALUES (
-                    {test_id},
+                    %s,
                     'testuser',
                     {{
                         first_name: 'John',
@@ -964,7 +968,8 @@ class TestWritetimeAllTypesComprehensive:
                     ]
                 )
                 USING TIMESTAMP {base_writetime}
-                """
+                """,
+                (test_id,),
             )
 
             # Update UDT (replaces entire UDT)
@@ -978,8 +983,9 @@ class TestWritetimeAllTypesComprehensive:
                     email: 'newemail@example.com',
                     age: 31
                 }}
-                WHERE id = {test_id}
-                """
+                WHERE id = %s
+                """,
+                (test_id,),
             )
 
             # Export with writetime
@@ -1378,13 +1384,14 @@ class TestWritetimeAllTypesComprehensive:
                     INSERT INTO {keyspace}.{table_name}
                     (id, data, updated_at, version)
                     VALUES (
-                        {test_id},
+                        %s,
                         'test_data_{i}',
                         '{datetime.now(timezone.utc)}',
                         {i}
                     )
                     USING TIMESTAMP {wt}
-                    """
+                    """,
+                    (test_id,),
                 )
 
             # Export to both CSV and JSON
