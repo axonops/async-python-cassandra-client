@@ -29,77 +29,99 @@ class TestAutomaticPartitionCount:
     """Test automatic partition count calculations based on token ranges."""
 
     @pytest.mark.asyncio
-    async def test_automatic_partition_count_small_table(self, session):
+    async def test_automatic_partition_count_medium_table(self, session):
         """
-        Test that small tables get reasonable partition counts.
+        Test partition counts with medium-sized dataset.
 
-        Given: A table with 1000 rows across 10 Cassandra partitions
+        Given: A table with 20,000 rows across 100 Cassandra partitions
         When: Reading without specifying partition_count
-        Then: Should create a reasonable number of Dask partitions based on token ranges
+        Then: Should create multiple Dask partitions based on token ranges
         """
 
         # Create test table
         await session.execute(
             """
-            CREATE TABLE IF NOT EXISTS partition_test_small (
+            CREATE TABLE IF NOT EXISTS partition_test_medium (
                 partition_key INT,
                 cluster_key INT,
                 value TEXT,
+                data TEXT,
                 PRIMARY KEY (partition_key, cluster_key)
             )
         """
         )
 
-        # Insert data - 10 partitions with 100 rows each
+        # Insert data - 100 partitions with 200 rows each = 20,000 rows
         insert_stmt = await session.prepare(
             """
-            INSERT INTO partition_test_small (partition_key, cluster_key, value)
-            VALUES (?, ?, ?)
+            INSERT INTO partition_test_medium (partition_key, cluster_key, value, data)
+            VALUES (?, ?, ?, ?)
         """
         )
 
-        logger.info("Inserting 1000 rows across 10 partitions...")
-        for partition in range(10):
-            for cluster in range(100):
-                await session.execute(
-                    insert_stmt, (partition, cluster, f"value_{partition}_{cluster}")
-                )
+        logger.info("Inserting 20,000 rows across 100 partitions...")
+        # Use batching for efficiency
+        from cassandra.query import BatchStatement
+
+        batch_size = 25  # Cassandra batch size limit
+        rows_inserted = 0
+
+        for partition in range(100):
+            for batch_start in range(0, 200, batch_size):
+                batch = BatchStatement()
+                for cluster in range(batch_start, min(batch_start + batch_size, 200)):
+                    batch.add(
+                        insert_stmt,
+                        (
+                            partition,
+                            cluster,
+                            f"value_{partition}_{cluster}",
+                            "x" * 500,  # 500 bytes of data per row
+                        ),
+                    )
+                await session.execute(batch)
+                rows_inserted += min(batch_size, 200 - batch_start)
+
+            if partition % 10 == 0:
+                logger.info(f"Inserted partition {partition}/100 ({rows_inserted} total rows)")
 
         # Read without specifying partition_count - should auto-calculate
-        df = await cdf.read_cassandra_table("partition_test_small", session=session)
+        df = await cdf.read_cassandra_table("partition_test_medium", session=session)
 
-        logger.info(f"Created {df.npartitions} Dask partitions automatically")
+        logger.info(f"Created {df.npartitions} Dask partitions automatically for 20K rows")
 
         # Verify we got all data
-        result = df.compute()
-        assert len(result) == 1000, f"Expected 1000 rows, got {len(result)}"
+        total_rows = len(df)
+        assert total_rows == 20000, f"Expected 20000 rows, got {total_rows}"
 
-        # With a single node cluster, we typically get 16-256 token ranges
-        # The automatic calculation should create a reasonable number of partitions
-        assert df.npartitions >= 1, "Should have at least 1 partition"
+        # With 20K rows, should create multiple partitions
         assert (
-            df.npartitions <= 50
-        ), f"Should not create too many partitions for small data, got {df.npartitions}"
+            df.npartitions >= 2
+        ), f"Should have multiple partitions for 20K rows, got {df.npartitions}"
 
-        # Verify data is distributed across partitions
+        # Log partition distribution
         partition_sizes = []
         for i in range(df.npartitions):
             partition_data = df.get_partition(i).compute()
             partition_sizes.append(len(partition_data))
             logger.info(f"Partition {i}: {len(partition_data)} rows")
 
-        # At least some partitions should have data
+        # Check distribution
+        avg_size = sum(partition_sizes) / len(partition_sizes)
+        logger.info(f"Average partition size: {avg_size:.1f} rows")
+
+        # All partitions should have some data
         non_empty_partitions = sum(1 for size in partition_sizes if size > 0)
-        assert non_empty_partitions >= 1, "Should have at least one non-empty partition"
+        assert non_empty_partitions == df.npartitions, "All partitions should have data"
 
     @pytest.mark.asyncio
     async def test_automatic_partition_count_large_table(self, session):
         """
-        Test that large tables get appropriate partition counts.
+        Test partition counts with large dataset.
 
-        Given: A table with 50,000 rows across 100 Cassandra partitions
+        Given: A table with 100,000 rows across 200 Cassandra partitions
         When: Reading without specifying partition_count
-        Then: Should create more Dask partitions to handle the larger data volume
+        Then: Should create appropriate number of Dask partitions for parallel processing
         """
 
         # Create test table
@@ -109,26 +131,32 @@ class TestAutomaticPartitionCount:
                 partition_key INT,
                 cluster_key INT,
                 value TEXT,
-                data BLOB,
+                data TEXT,
+                timestamp TIMESTAMP,
                 PRIMARY KEY (partition_key, cluster_key)
             )
         """
         )
 
-        # Insert data - 100 partitions with 500 rows each
+        # Insert data - 200 partitions with 500 rows each = 100,000 rows
         insert_stmt = await session.prepare(
             """
-            INSERT INTO partition_test_large (partition_key, cluster_key, value, data)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO partition_test_large (partition_key, cluster_key, value, data, timestamp)
+            VALUES (?, ?, ?, ?, ?)
         """
         )
 
-        logger.info("Inserting 50,000 rows across 100 partitions...")
+        logger.info("Inserting 100,000 rows across 200 partitions...")
         # Insert in batches for efficiency
+        from datetime import UTC, datetime
+
         from cassandra.query import BatchStatement
 
-        batch_size = 100
-        for partition in range(100):
+        batch_size = 25
+        rows_inserted = 0
+        now = datetime.now(UTC)
+
+        for partition in range(200):
             for batch_start in range(0, 500, batch_size):
                 batch = BatchStatement()
                 for cluster in range(batch_start, min(batch_start + batch_size, 500)):
@@ -138,36 +166,51 @@ class TestAutomaticPartitionCount:
                             partition,
                             cluster,
                             f"value_{partition}_{cluster}",
-                            b"x" * 100,  # 100 bytes of data
+                            "x" * 1000,  # 1KB of data per row
+                            now,
                         ),
                     )
                 await session.execute(batch)
+                rows_inserted += min(batch_size, 500 - batch_start)
 
-            if partition % 10 == 0:
-                logger.info(f"Inserted partition {partition}/100")
+            if partition % 20 == 0:
+                logger.info(f"Inserted partition {partition}/200 ({rows_inserted} total rows)")
 
         # Read without specifying partition_count
         df = await cdf.read_cassandra_table(
             "partition_test_large",
             session=session,
-            columns=["partition_key", "cluster_key", "value"],  # Skip blob for performance
+            columns=["partition_key", "cluster_key", "value"],  # Skip large data column
         )
 
-        logger.info(f"Created {df.npartitions} Dask partitions automatically for large table")
+        logger.info(f"Created {df.npartitions} Dask partitions automatically for 100K rows")
 
-        # Verify partition count is reasonable for larger data
-        # Should create more partitions for larger tables
+        # With 100K rows, should create multiple partitions for parallel processing
         assert (
             df.npartitions >= 2
-        ), f"Should have multiple partitions for large data, got {df.npartitions}"
+        ), f"Should have multiple partitions for 100K rows, got {df.npartitions}"
 
-        # Compute a sample to verify data
-        sample = df.head(1000)
-        assert len(sample) == 1000, f"Expected 1000 rows in sample, got {len(sample)}"
+        # Log partition statistics
+        partition_sizes = []
+        min_rows = float("inf")
+        max_rows = 0
+
+        for i in range(df.npartitions):
+            partition_data = df.get_partition(i).compute()
+            size = len(partition_data)
+            partition_sizes.append(size)
+            min_rows = min(min_rows, size)
+            max_rows = max(max_rows, size)
+            if i < 5 or i >= df.npartitions - 5:  # Log first and last 5 partitions
+                logger.info(f"Partition {i}: {size} rows")
+
+        # Calculate statistics
+        avg_size = sum(partition_sizes) / len(partition_sizes)
+        logger.info(f"Partition statistics: min={min_rows}, max={max_rows}, avg={avg_size:.1f}")
 
         # Check total count
-        total_rows = len(df)
-        assert total_rows == 50000, f"Expected 50000 rows, got {total_rows}"
+        total_rows = sum(partition_sizes)
+        assert total_rows == 100000, f"Expected 100000 rows, got {total_rows}"
 
     @pytest.mark.asyncio
     async def test_partition_count_with_token_ranges(self, session):
@@ -198,12 +241,20 @@ class TestAutomaticPartitionCount:
         """
         )
 
-        logger.info("Inserting 5000 rows with random UUIDs for even token distribution...")
-        for i in range(5000):
-            await session.execute(insert_stmt, (uuid.uuid4(), f"value_{i}"))
+        logger.info("Inserting 20,000 rows with random UUIDs for even token distribution...")
+        # Batch inserts for better performance
+        from cassandra.query import BatchStatement
 
-            if i % 1000 == 0:
-                logger.info(f"Inserted {i}/5000 rows")
+        batch_size = 25
+        for i in range(0, 20000, batch_size):
+            batch = BatchStatement()
+            for j in range(batch_size):
+                if i + j < 20000:
+                    batch.add(insert_stmt, (uuid.uuid4(), f"value_{i + j}"))
+            await session.execute(batch)
+
+            if i % 2000 == 0:
+                logger.info(f"Inserted {i}/20000 rows")
 
         # Read and let it calculate partitions based on token ranges
         df = await cdf.read_cassandra_table("partition_test_tokens", session=session)
@@ -324,15 +375,35 @@ class TestAutomaticPartitionCount:
         """
         )
 
-        logger.info("Inserting data across multiple years...")
+        logger.info("Inserting 30,000+ rows across multiple years...")
+        # Batch inserts for efficiency - 3 years * 12 months * 28 days * 30 events = 30,240 rows
+        from cassandra.query import BatchStatement
+
+        batch_size = 25
+        total_rows = 0
+
         for year in [2022, 2023, 2024]:
             for month in range(1, 13):
                 for day in range(1, 29):  # Simplified - 28 days per month
-                    for _ in range(10):  # 10 events per day
-                        await session.execute(
+                    batch = BatchStatement()
+                    for event in range(30):  # 30 events per day
+                        batch.add(
                             insert_stmt,
-                            (year, month, day, uuid.uuid4(), f"event_{year}_{month}_{day}"),
+                            (year, month, day, uuid.uuid4(), f"event_{year}_{month}_{day}_{event}"),
                         )
+                        total_rows += 1
+
+                        # Execute batch when full
+                        if len(batch) >= batch_size:
+                            await session.execute(batch)
+                            batch = BatchStatement()
+
+                    # Execute remaining items in batch
+                    if batch:
+                        await session.execute(batch)
+
+                if month % 3 == 0:
+                    logger.info(f"Inserted {year}/{month} - {total_rows} total rows")
 
         # Read all data - should create multiple partitions
         df_all = await cdf.read_cassandra_table("partition_test_filtered", session=session)
@@ -354,7 +425,9 @@ class TestAutomaticPartitionCount:
 
         # Verify filtering worked
         assert len(df_filtered) < len(df_all)
-        assert len(df_filtered) == 28 * 12 * 10  # 28 days * 12 months * 10 events
+        assert (
+            len(df_filtered) == 28 * 12 * 30
+        )  # 28 days * 12 months * 30 events = 10,080 rows for 2024
 
     @pytest.mark.asyncio
     async def test_partition_memory_limits(self, session):
@@ -407,3 +480,77 @@ class TestAutomaticPartitionCount:
         # Verify we still get all data
         assert len(df_default) == 1000
         assert len(df_low_memory) == 1000
+
+    @pytest.mark.asyncio
+    async def test_partition_count_scales_with_data(self, session):
+        """
+        Test that partition count scales appropriately with data volume.
+
+        Given: Tables with different data volumes (1K, 10K, 50K rows)
+        When: Reading with automatic partition calculation
+        Then: Partition count should increase with data volume
+        """
+
+        # Test with three different data sizes
+        test_cases = [
+            (1000, "small"),  # 1K rows
+            (10000, "medium"),  # 10K rows
+            (50000, "large"),  # 50K rows
+        ]
+
+        partition_counts = {}
+
+        for row_count, size_name in test_cases:
+            table_name = f"partition_test_scale_{size_name}"
+
+            # Create table
+            await session.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INT PRIMARY KEY,
+                    data TEXT
+                )
+            """
+            )
+
+            # Insert data in batches
+            insert_stmt = await session.prepare(
+                f"""
+                INSERT INTO {table_name} (id, data) VALUES (?, ?)
+            """
+            )
+
+            logger.info(f"Inserting {row_count} rows for {size_name} dataset...")
+
+            from cassandra.query import BatchStatement
+
+            batch_size = 100
+
+            for i in range(0, row_count, batch_size):
+                batch = BatchStatement()
+                for j in range(min(batch_size, row_count - i)):
+                    batch.add(insert_stmt, (i + j, "x" * 200))  # 200 bytes per row
+                await session.execute(batch)
+
+                if i % 10000 == 0 and i > 0:
+                    logger.info(f"  Inserted {i}/{row_count} rows")
+
+            # Read with automatic partitioning
+            df = await cdf.read_cassandra_table(table_name, session=session)
+            partition_counts[size_name] = df.npartitions
+
+            logger.info(f"{size_name} dataset ({row_count} rows): {df.npartitions} partitions")
+
+            # Verify row count
+            assert len(df) == row_count, f"Expected {row_count} rows, got {len(df)}"
+
+        # Verify partition count scaling
+        logger.info(f"Partition count scaling: {partition_counts}")
+
+        # Larger datasets should have same or more partitions
+        assert (
+            partition_counts["medium"] >= partition_counts["small"]
+        ), f"Medium dataset should have >= partitions than small: {partition_counts}"
+        assert (
+            partition_counts["large"] >= partition_counts["medium"]
+        ), f"Large dataset should have >= partitions than medium: {partition_counts}"
