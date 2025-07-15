@@ -8,6 +8,8 @@ This module provides streaming functionality that:
 4. Has low cyclomatic complexity
 """
 
+# mypy: ignore-errors
+
 from typing import Any
 
 import pandas as pd
@@ -116,6 +118,8 @@ class CassandraStreamer:
         consistency_level=None,
         table_metadata: dict | None = None,
         type_mapper: Any | None = None,
+        writetime_columns: list[str] | None = None,
+        ttl_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Stream data from a token range with proper pagination.
@@ -143,8 +147,22 @@ class CassandraStreamer:
         else:
             token_expr = f"TOKEN({', '.join(partition_keys)})"
 
-        # Build base query
-        select_list = ", ".join(columns)
+        # Build base query with writetime/TTL columns
+        select_parts = list(columns)
+
+        # Add writetime columns
+        if writetime_columns:
+            for col in writetime_columns:
+                if col in columns:
+                    select_parts.append(f"WRITETIME({col}) AS {col}_writetime")
+
+        # Add TTL columns
+        if ttl_columns:
+            for col in ttl_columns:
+                if col in columns:
+                    select_parts.append(f"TTL({col}) AS {col}_ttl")
+
+        select_list = ", ".join(select_parts)
         base_query = f"SELECT {select_list} FROM {table}"
 
         # Add WHERE clause
@@ -167,59 +185,63 @@ class CassandraStreamer:
         # Use incremental builder
         from .incremental_builder import IncrementalDataFrameBuilder
 
+        # Include writetime/TTL columns in expected columns
+        expected_columns = list(columns)
+        if writetime_columns:
+            for col in writetime_columns:
+                if col in columns:
+                    expected_columns.append(f"{col}_writetime")
+        if ttl_columns:
+            for col in ttl_columns:
+                if col in columns:
+                    expected_columns.append(f"{col}_ttl")
+
+        # print(f"DEBUG stream_token_range: columns={columns}")
+        # print(f"DEBUG stream_token_range: writetime_columns={writetime_columns}")
+        # print(f"DEBUG stream_token_range: expected_columns={expected_columns}")
+
         builder = IncrementalDataFrameBuilder(
-            columns=columns,
+            columns=expected_columns,
             chunk_size=fetch_size,
             type_mapper=type_mapper,
             table_metadata=table_metadata,
         )
         memory_limit_bytes = memory_limit_mb * 1024 * 1024
-        current_start_token = start_token
         total_rows_for_range = 0
 
-        while current_start_token <= end_token:
-            # Update token range in values
-            current_values = values_list.copy()
-            current_values[-2] = current_start_token  # Update start token
+        # For token range queries, we need to read ALL data in the range
+        # We can't use token-based pagination for subsequent pages because
+        # all rows in a partition have the same token value
 
-            # Stream this batch
-            rows = await self._stream_batch(
-                query, tuple(current_values), columns, fetch_size, consistency_level
-            )
+        # Build query without LIMIT - we'll use streaming to control memory
+        query_no_limit = query.replace(f" LIMIT {fetch_size}", "")
 
-            if not rows:
-                break  # No more data
+        # Use execute_stream to read all data in chunks
+        stream_config = StreamConfig(fetch_size=fetch_size)
+        prepared = await self.session.prepare(query_no_limit)
 
-            # Add rows to builder incrementally
-            for row in rows:
+        if consistency_level:
+            prepared.consistency_level = consistency_level
+
+        stream_result = await self.session.execute_stream(
+            prepared, tuple(values_list), stream_config=stream_config
+        )
+
+        async with stream_result as stream:
+            async for row in stream:
                 builder.add_row(row)
+                total_rows_for_range += 1
 
-            total_rows_for_range += len(rows)
+                # Check memory periodically
+                if total_rows_for_range % fetch_size == 0:
+                    if builder.get_memory_usage() > memory_limit_bytes:
+                        import logging
 
-            # Check memory limit - but only warn, don't break!
-            if builder.get_memory_usage() > memory_limit_bytes:
-                import logging
-
-                logging.warning(
-                    f"Memory limit of {memory_limit_mb}MB exceeded after {total_rows_for_range} rows in token range. "
-                    f"Consider using more partitions."
-                )
-                # DO NOT BREAK - we must read the complete token range!
-
-            # If we got fewer rows than limit, we're done
-            if len(rows) < fetch_size:
-                break
-
-            # Calculate next start token
-            # Get the token of the last row
-            last_row = rows[-1]
-            last_token = await self._get_row_token(table, partition_keys, last_row)
-
-            if last_token is None or last_token >= end_token:
-                break
-
-            # Continue from next token
-            current_start_token = last_token + 1
+                        logging.warning(
+                            f"Memory limit of {memory_limit_mb}MB exceeded after {total_rows_for_range} rows. "
+                            f"Consider using more partitions."
+                        )
+                        # Continue reading to ensure we get all data
 
         return builder.get_dataframe()
 

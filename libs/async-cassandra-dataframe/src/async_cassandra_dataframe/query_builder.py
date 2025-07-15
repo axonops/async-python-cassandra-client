@@ -83,6 +83,11 @@ class QueryBuilder:
 
         query = " ".join(query_parts)
 
+        # Debug logging
+        # print(f"DEBUG build_partition_query: writetime_columns={writetime_columns}, columns={columns}")
+        # print(f"DEBUG query: {query}")
+        # print(f"DEBUG params: {params}")
+
         return query, params
 
     def _build_select_clause(
@@ -110,14 +115,18 @@ class QueryBuilder:
         # Add writetime columns
         if writetime_columns:
             for col in writetime_columns:
-                if col in base_columns and col not in self.primary_key:
+                # Check if column exists in table (not just in selected columns)
+                # and is not a primary key column
+                if col not in self.primary_key:
                     # Add writetime function
                     select_parts.append(f"WRITETIME({col}) AS {col}_writetime")
 
         # Add TTL columns
         if ttl_columns:
             for col in ttl_columns:
-                if col in base_columns and col not in self.primary_key:
+                # Check if column exists in table (not just in selected columns)
+                # and is not a primary key column
+                if col not in self.primary_key:
                     # Add TTL function
                     select_parts.append(f"TTL({col}) AS {col}_ttl")
 

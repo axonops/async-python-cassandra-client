@@ -7,8 +7,9 @@ Shows writetime filtering, snapshot consistency, and concurrency control.
 import asyncio
 from datetime import UTC, datetime
 
-import async_cassandra_dataframe as cdf
 from async_cassandra import AsyncCluster
+
+import async_cassandra_dataframe as cdf
 
 
 async def example_writetime_filtering():
@@ -38,12 +39,14 @@ async def example_writetime_filtering():
                 """
             )
 
+            # Prepare statement for inserting events
+            insert_stmt = await session.prepare(
+                "INSERT INTO events (id, type, data, processed) VALUES (?, ?, ?, ?)"
+            )
+
             # Insert some old data
             for i in range(5):
-                await session.execute(
-                    f"INSERT INTO events (id, type, data, processed) "
-                    f"VALUES ({i}, 'old', 'old_data_{i}', false)"
-                )
+                await session.execute(insert_stmt, (i, "old", f"old_data_{i}", False))
 
             # Mark cutoff time
             cutoff_time = datetime.now(UTC)
@@ -54,10 +57,7 @@ async def example_writetime_filtering():
 
             # Insert new data
             for i in range(5, 10):
-                await session.execute(
-                    f"INSERT INTO events (id, type, data, processed) "
-                    f"VALUES ({i}, 'new', 'new_data_{i}', false)"
-                )
+                await session.execute(insert_stmt, (i, "new", f"new_data_{i}", False))
 
             # Get only new data (written after cutoff)
             df = await cdf.read_cassandra_table(
@@ -109,11 +109,14 @@ async def example_snapshot_consistency():
                 ("SKU003", 75, "warehouse_a"),
             ]
 
+            # Prepare statement for inserting inventory
+            inventory_stmt = await session.prepare(
+                "INSERT INTO inventory (sku, quantity, location, last_updated) "
+                "VALUES (?, ?, ?, toTimestamp(now()))"
+            )
+
             for sku, qty, loc in items:
-                await session.execute(
-                    f"INSERT INTO inventory (sku, quantity, location, last_updated) "
-                    f"VALUES ('{sku}', {qty}, '{loc}', toTimestamp(now()))"
-                )
+                await session.execute(inventory_stmt, (sku, qty, loc))
 
             # Take a snapshot at current time
             # All queries will use this exact time for consistency
@@ -292,13 +295,13 @@ async def example_incremental_load():
 
             # Simulate initial load
             print("Initial data load...")
+            # Prepare statement for inserting transactions
+            transaction_stmt = await session.prepare(
+                "INSERT INTO transactions (id, account, amount, type) " "VALUES (uuid(), ?, ?, ?)"
+            )
+
             for i in range(5):
-                await session.execute(
-                    f"""
-                    INSERT INTO transactions (id, account, amount, type)
-                    VALUES (uuid(), 'ACC00{i}', {100 + i * 10}, 'credit')
-                    """
-                )
+                await session.execute(transaction_stmt, (f"ACC00{i}", 100 + i * 10, "credit"))
 
             # Track last load time
             last_load_time = datetime.now(UTC)
@@ -309,12 +312,7 @@ async def example_incremental_load():
 
             print("\nNew transactions arrive...")
             for i in range(5, 8):
-                await session.execute(
-                    f"""
-                    INSERT INTO transactions (id, account, amount, type)
-                    VALUES (uuid(), 'ACC00{i}', {100 + i * 10}, 'debit')
-                    """
-                )
+                await session.execute(transaction_stmt, (f"ACC00{i}", 100 + i * 10, "debit"))
 
             # Incremental load - only get new data
             print(f"\nIncremental load - data after {last_load_time}...")

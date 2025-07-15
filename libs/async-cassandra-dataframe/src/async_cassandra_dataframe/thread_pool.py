@@ -148,7 +148,7 @@ class ManagedThreadPool:
             return 0
 
         # Get executor threads
-        executor_threads = getattr(self._executor, "_threads", set())
+        executor_threads: set = getattr(self._executor, "_threads", set())
         logger.debug(f"Executor has {len(executor_threads)} threads")
 
         # Find threads to clean up

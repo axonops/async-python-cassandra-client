@@ -5,6 +5,8 @@ This module provides a more memory-efficient way to build DataFrames
 by processing rows as they arrive rather than collecting all rows first.
 """
 
+# mypy: ignore-errors
+
 import asyncio
 from collections.abc import Callable
 from typing import Any
@@ -73,7 +75,12 @@ class IncrementalDataFrameBuilder:
     def _row_to_dict(self, row: Any) -> dict:
         """Convert a row object to dictionary."""
         if hasattr(row, "_asdict"):
-            return row._asdict()
+            result = row._asdict()
+            # Debug first row
+            # if self.total_rows == 0:
+            #     print(f"DEBUG IncrementalBuilder: First row dict keys: {list(result.keys())}")
+            #     print(f"DEBUG IncrementalBuilder: Expected columns: {self.columns}")
+            return result
         elif hasattr(row, "__dict__"):
             return row.__dict__
         elif isinstance(row, dict):

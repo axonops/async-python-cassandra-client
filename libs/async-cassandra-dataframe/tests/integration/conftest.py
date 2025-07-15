@@ -1,133 +1,169 @@
 """
-Shared fixtures for integration tests.
+Integration test configuration and shared fixtures.
 
-Provides Cassandra connection, session management, and test data utilities.
+CRITICAL: Integration tests require a real Cassandra instance.
+NO MOCKS ALLOWED in integration tests - they must test against real Cassandra.
 """
 
-import asyncio
 import os
-import uuid
-from collections.abc import AsyncGenerator, Generator
+import socket
+from collections.abc import AsyncGenerator
+from datetime import UTC
 
 import pytest
 import pytest_asyncio
 from async_cassandra import AsyncCluster
 
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator:
-    """Create event loop for session scope."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def pytest_configure(config):
+    """Configure pytest for dataframe tests."""
+    # Skip if explicitly disabled
+    if os.environ.get("SKIP_INTEGRATION_TESTS", "").lower() in ("1", "true", "yes"):
+        pytest.exit("Skipping integration tests (SKIP_INTEGRATION_TESTS is set)", 0)
 
+    # Store shared keyspace name
+    config.shared_test_keyspace = "test_dataframe"
 
-@pytest.fixture(scope="session")
-def cassandra_host() -> str:
-    """Get Cassandra host from environment or default."""
-    return os.environ.get("CASSANDRA_HOST", "localhost")
+    # Get contact points from environment
+    # Force IPv4 by replacing localhost with 127.0.0.1
+    contact_points = os.environ.get("CASSANDRA_CONTACT_POINTS", "127.0.0.1").split(",")
+    config.cassandra_contact_points = [
+        "127.0.0.1" if cp.strip() == "localhost" else cp.strip() for cp in contact_points
+    ]
 
+    # Check if Cassandra is available
+    cassandra_port = int(os.environ.get("CASSANDRA_PORT", "9042"))
+    available = False
+    for contact_point in config.cassandra_contact_points:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((contact_point, cassandra_port))
+            sock.close()
+            if result == 0:
+                available = True
+                print(f"Found Cassandra on {contact_point}:{cassandra_port}")
+                break
+        except Exception:
+            pass
 
-@pytest.fixture(scope="session")
-def cassandra_port() -> int:
-    """Get Cassandra port from environment or default."""
-    return int(os.environ.get("CASSANDRA_PORT", "9042"))
-
-
-@pytest.fixture(scope="session")
-def dask_scheduler() -> str:
-    """Get Dask scheduler address from environment."""
-    return os.environ.get("DASK_SCHEDULER", "tcp://localhost:8786")
+    if not available:
+        pytest.exit(
+            f"Cassandra is not available on {config.cassandra_contact_points}:{cassandra_port}\n"
+            f"Please start Cassandra using: make cassandra-start\n"
+            f"Or set CASSANDRA_CONTACT_POINTS environment variable to point to your Cassandra instance",
+            1,
+        )
 
 
 @pytest_asyncio.fixture(scope="session")
-async def async_cluster(cassandra_host: str, cassandra_port: int) -> AsyncGenerator:
-    """Create async cluster for session scope."""
+async def async_cluster(pytestconfig):
+    """Create a shared cluster for all integration tests."""
     cluster = AsyncCluster(
-        contact_points=[cassandra_host],
-        port=cassandra_port,
+        contact_points=pytestconfig.cassandra_contact_points,
         protocol_version=5,
+        connect_timeout=10.0,
     )
     yield cluster
     await cluster.shutdown()
 
 
 @pytest_asyncio.fixture(scope="session")
-async def session(async_cluster: AsyncCluster) -> AsyncGenerator:
-    """Create session with test keyspace."""
+async def shared_keyspace(async_cluster, pytestconfig):
+    """Create shared keyspace for all integration tests."""
     session = await async_cluster.connect()
 
-    # Create test keyspace
-    await session.execute(
-        """
-        CREATE KEYSPACE IF NOT EXISTS test_dataframe
-        WITH replication = {
-            'class': 'SimpleStrategy',
-            'replication_factor': 1
-        }
-        """
-    )
+    try:
+        # Create the shared keyspace
+        keyspace_name = pytestconfig.shared_test_keyspace
+        await session.execute(
+            f"""
+            CREATE KEYSPACE IF NOT EXISTS {keyspace_name}
+            WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
+            """
+        )
+        print(f"Created shared keyspace: {keyspace_name}")
 
-    # Use test keyspace
-    await session.set_keyspace("test_dataframe")
+        yield keyspace_name
+
+    finally:
+        # Clean up the keyspace after all tests
+        try:
+            await session.execute(f"DROP KEYSPACE IF EXISTS {pytestconfig.shared_test_keyspace}")
+            print(f"Dropped shared keyspace: {pytestconfig.shared_test_keyspace}")
+        except Exception as e:
+            print(f"Warning: Failed to drop shared keyspace: {e}")
+
+        await session.close()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def session(async_cluster, shared_keyspace):
+    """Create an async Cassandra session using shared keyspace."""
+    session = await async_cluster.connect()
+
+    # Use the shared keyspace
+    await session.set_keyspace(shared_keyspace)
+
+    # Track tables created for this test
+    session._created_tables = []
 
     yield session
 
-    # Cleanup is handled by cluster shutdown
+    # Cleanup tables after test
+    try:
+        for table in getattr(session, "_created_tables", []):
+            await session.execute(f"DROP TABLE IF EXISTS {table}")
+    except Exception:
+        pass
 
 
 @pytest.fixture
-def test_table_name() -> str:
-    """Generate unique table name for each test."""
-    return f"test_{uuid.uuid4().hex[:8]}"
+def test_table_name():
+    """Generate a unique table name for each test."""
+    import random
+    import string
+
+    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    return f"test_table_{suffix}"
 
 
-@pytest_asyncio.fixture
-async def basic_test_table(session, test_table_name: str) -> AsyncGenerator[str, None]:
-    """Create a basic test table with various data types."""
-    table_name = test_table_name
+@pytest_asyncio.fixture(scope="function")
+async def basic_test_table(session, test_table_name):
+    """Create a basic test table with sample data for integration tests."""
+    from datetime import datetime
 
-    # Create table with common data types
+    # Create table
     await session.execute(
         f"""
-        CREATE TABLE {table_name} (
-            id INT,
+        CREATE TABLE IF NOT EXISTS {test_table_name} (
+            id INT PRIMARY KEY,
             name TEXT,
             value DOUBLE,
             created_at TIMESTAMP,
-            is_active BOOLEAN,
-            PRIMARY KEY (id)
+            is_active BOOLEAN
         )
-        """
+    """
     )
 
-    # Insert test data
+    # Track for cleanup
+    session._created_tables.append(test_table_name)
+
+    # Insert sample data
     insert_stmt = await session.prepare(
         f"""
-        INSERT INTO {table_name} (id, name, value, created_at, is_active)
+        INSERT INTO {test_table_name} (id, name, value, created_at, is_active)
         VALUES (?, ?, ?, ?, ?)
-        """
+    """
     )
 
-    # Insert 1000 rows for testing
-    from datetime import datetime
-
+    # Insert 1000 rows
     for i in range(1000):
         await session.execute(
-            insert_stmt,
-            (
-                i,
-                f"name_{i}",
-                float(i * 1.5),
-                datetime(2024, 1, (i % 28) + 1, 12, 0, 0),
-                i % 2 == 0,
-            ),
+            insert_stmt, (i, f"name_{i}", float(i), datetime.now(UTC), i % 2 == 0)
         )
 
-    yield f"test_dataframe.{table_name}"
-
-    # Cleanup
-    await session.execute(f"DROP TABLE IF EXISTS {table_name}")
+    return test_table_name
 
 
 @pytest_asyncio.fixture
@@ -189,9 +225,10 @@ async def all_types_table(session, test_table_name: str) -> AsyncGenerator[str, 
         """
     )
 
-    yield f"test_dataframe.{table_name}"
+    # Track for cleanup
+    session._created_tables.append(table_name)
 
-    await session.execute(f"DROP TABLE IF EXISTS {table_name}")
+    yield f"test_dataframe.{table_name}"
 
 
 @pytest_asyncio.fixture
@@ -207,9 +244,10 @@ async def wide_table(session, test_table_name: str) -> AsyncGenerator[str, None]
     create_stmt = f"CREATE TABLE {table_name} ({', '.join(columns)})"
     await session.execute(create_stmt)
 
-    yield f"test_dataframe.{table_name}"
+    # Track for cleanup
+    session._created_tables.append(table_name)
 
-    await session.execute(f"DROP TABLE IF EXISTS {table_name}")
+    yield f"test_dataframe.{table_name}"
 
 
 @pytest_asyncio.fixture
@@ -236,9 +274,10 @@ async def large_rows_table(session, test_table_name: str) -> AsyncGenerator[str,
     for i in range(10):
         await session.execute(insert_stmt, (i, large_data, f"metadata_{i}"))
 
-    yield f"test_dataframe.{table_name}"
+    # Track for cleanup
+    session._created_tables.append(table_name)
 
-    await session.execute(f"DROP TABLE IF EXISTS {table_name}")
+    yield f"test_dataframe.{table_name}"
 
 
 @pytest_asyncio.fixture
@@ -271,6 +310,18 @@ async def sparse_table(session, test_table_name: str) -> AsyncGenerator[str, Non
         else:
             await session.execute(f"INSERT INTO {table_name} (id) VALUES ({i})")
 
+    # Track for cleanup
+    session._created_tables.append(table_name)
+
     yield f"test_dataframe.{table_name}"
 
-    await session.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+# For unit tests that don't need Cassandra
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    import asyncio
+
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()

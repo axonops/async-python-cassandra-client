@@ -128,7 +128,7 @@ class DataFrameTypeConverter:
         """Convert to nullable integer type to handle NaN values."""
         try:
             # First convert to numeric, then to nullable integer
-            return pd.to_numeric(series, errors="coerce").astype(dtype)
+            return pd.to_numeric(series, errors="coerce").astype(dtype)  # type: ignore[call-overload, no-any-return]
         except Exception:
             # If conversion fails, keep as numeric float
             return pd.to_numeric(series, errors="coerce")
@@ -191,7 +191,7 @@ class DataFrameTypeConverter:
         if pd.isna(value):
             return pd.NaT
         if isinstance(value, Time):
-            return pd.Timedelta(nanoseconds=value.nanosecond_time)
+            return pd.Timedelta(value.nanosecond_time, unit="ns")
         if isinstance(value, time):
             return pd.Timedelta(
                 hours=value.hour,
@@ -201,7 +201,7 @@ class DataFrameTypeConverter:
             )
         if isinstance(value, int | np.int64):
             # Time as nanoseconds
-            return pd.Timedelta(nanoseconds=value)
+            return pd.Timedelta(int(value), unit="ns")
         return value
 
     @staticmethod

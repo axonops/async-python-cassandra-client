@@ -37,7 +37,7 @@ def serialize_udt_for_dask(value: Any) -> str:
                 serialized.append(item)
         return f"__UDT_LIST__{json.dumps(serialized)}"
     else:
-        return value
+        return str(value)
 
 
 def deserialize_udt_from_dask(value: Any) -> Any:

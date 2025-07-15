@@ -109,13 +109,20 @@ class TableMetadataExtractor:
         """
         Check if column supports writetime.
 
-        Primary key columns and counters don't support writetime.
+        Primary key columns, counters, and UDTs don't support writetime.
         """
         if is_pk or is_ck:
             return False
 
+        col_type_str = str(col.cql_type)
+
         # Counter columns don't support writetime
-        if str(col.cql_type) == "counter":
+        if col_type_str == "counter":
+            return False
+
+        # Only direct UDT columns don't support writetime
+        # Collections of UDTs do support writetime on the collection itself
+        if self._is_direct_udt_type(col_type_str):
             return False
 
         return True
@@ -140,6 +147,114 @@ class TableMetadataExtractor:
         pk = [col.name for col in table_meta.partition_key]
         pk.extend([col.name for col in table_meta.clustering_key])
         return pk
+
+    def _is_udt_type(self, col_type_str: str) -> bool:
+        """
+        Check if a column type is a UDT.
+
+        Args:
+            col_type_str: String representation of column type
+
+        Returns:
+            True if the type is a UDT
+        """
+        # Remove frozen wrapper if present
+        type_str = col_type_str
+        if type_str.startswith("frozen<") and type_str.endswith(">"):
+            type_str = type_str[7:-1]
+
+        # Check if it's a collection of UDTs
+        if any(type_str.startswith(prefix) for prefix in ["list<", "set<", "map<"]):
+            # Extract inner types
+            inner = type_str[type_str.index("<") + 1 : -1]
+            # For maps, check both key and value types
+            if type_str.startswith("map<"):
+                parts = inner.split(",", 1)
+                if len(parts) == 2:
+                    return self._is_udt_type(parts[0].strip()) or self._is_udt_type(
+                        parts[1].strip()
+                    )
+            else:
+                return self._is_udt_type(inner)
+
+        # Check if it's a vector type (vector<type, dimensions>)
+        if type_str.startswith("vector<"):
+            return False
+
+        # It's a UDT if it's not a known Cassandra type
+        return type_str not in {
+            "ascii",
+            "bigint",
+            "blob",
+            "boolean",
+            "counter",
+            "date",
+            "decimal",
+            "double",
+            "duration",
+            "float",
+            "inet",
+            "int",
+            "smallint",
+            "text",
+            "time",
+            "timestamp",
+            "timeuuid",
+            "tinyint",
+            "uuid",
+            "varchar",
+            "varint",
+            "tuple",
+        }
+
+    def _is_direct_udt_type(self, col_type_str: str) -> bool:
+        """
+        Check if a column is directly a UDT (not a collection containing UDTs).
+
+        Args:
+            col_type_str: String representation of column type
+
+        Returns:
+            True if the column itself is a UDT (not a collection of UDTs)
+        """
+        # Remove frozen wrapper if present
+        type_str = col_type_str
+        if type_str.startswith("frozen<") and type_str.endswith(">"):
+            type_str = type_str[7:-1]
+
+        # If it's a collection, it's not a direct UDT
+        if any(type_str.startswith(prefix) for prefix in ["list<", "set<", "map<"]):
+            return False
+
+        # Check if it's a vector type (vector<type, dimensions>)
+        if type_str.startswith("vector<"):
+            return False
+
+        # It's a UDT if it's not a known Cassandra type
+        return type_str not in {
+            "ascii",
+            "bigint",
+            "blob",
+            "boolean",
+            "counter",
+            "date",
+            "decimal",
+            "double",
+            "duration",
+            "float",
+            "inet",
+            "int",
+            "smallint",
+            "text",
+            "time",
+            "timestamp",
+            "timeuuid",
+            "tinyint",
+            "uuid",
+            "varchar",
+            "varint",
+            "tuple",
+        }
 
     def get_writetime_capable_columns(self, table_metadata: dict[str, Any]) -> list[str]:
         """

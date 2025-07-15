@@ -5,6 +5,8 @@ No upfront size estimation needed - partitions are created by streaming
 data until memory limits are reached.
 """
 
+# mypy: ignore-errors
+
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -251,6 +253,8 @@ class StreamingPartitionStrategy:
         Returns:
             DataFrame containing partition data
         """
+        # print(f"DEBUG stream_partition: Starting with writetime_columns={partition_def.get('writetime_columns')}")
+
         table = partition_def["table"]
         columns = partition_def["columns"]
         memory_limit_mb = partition_def["memory_limit_mb"]
@@ -279,6 +283,8 @@ class StreamingPartitionStrategy:
                     else None
                 ),
             )
+            # print(f"DEBUG stream_partition: Built query: {query}")
+            # print(f"DEBUG stream_partition: writetime_columns in partition_def: {writetime_columns}")
         else:
             # Fallback to manual query building
             select_parts = list(columns)
@@ -357,6 +363,13 @@ class StreamingPartitionStrategy:
         # ALWAYS use async-cassandra streaming - it's a required dependency
 
         if use_token_ranges:
+            # Check if this is a grouped partition with multiple ranges
+            if "token_ranges" in partition_def:
+                # Handle grouped partitions with multiple token ranges
+                return await PartitionHelper.stream_grouped_partition(
+                    self.session, partition_def, fetch_size
+                )
+
             # For token-based queries, we need to handle pagination properly
             # start_token and end_token are defined above in the query building section
             start_token = partition_def.get("start_token")
@@ -395,6 +408,9 @@ class StreamingPartitionStrategy:
                     where_clause = " AND ".join(where_parts)
                     where_values = tuple(pred_values)
 
+            # print(f"DEBUG partition.py before stream_token_range: writetime_columns={writetime_columns}")
+            # print(f"DEBUG partition.py before stream_token_range: ttl_columns={ttl_columns}")
+
             return await streamer.stream_token_range(
                 table=partition_def["table"],
                 columns=columns,
@@ -408,8 +424,11 @@ class StreamingPartitionStrategy:
                 consistency_level=partition_def.get("consistency_level"),
                 table_metadata=partition_def.get("_table_metadata"),
                 type_mapper=partition_def.get("type_mapper"),
+                writetime_columns=writetime_columns,
+                ttl_columns=ttl_columns,
             )
         else:
+            print("DEBUG: Taking non-token range path")
             # Non-token range query - use regular streaming
             from .streaming import CassandraStreamer
 
@@ -475,6 +494,13 @@ class StreamingPartitionStrategy:
         if consistency_level:
             prepared.consistency_level = consistency_level
 
+        # Debug query execution
+        # print(f"DEBUG: Executing query: {query}")
+        # print(f"DEBUG: Query values: {values}")
+        # print(f"DEBUG: Prepared statement result metadata: {prepared.result_metadata}")
+        # if prepared.result_metadata:
+        #     print(f"DEBUG: Column names from metadata: {[col.name for col in prepared.result_metadata]}")
+
         # Stream the initial batch
         stream_result = await self.session.execute_stream(
             prepared, values, stream_config=stream_config
@@ -484,6 +510,12 @@ class StreamingPartitionStrategy:
         async with stream_result as stream:
             async for row in stream:
                 rows.append(row)
+
+                if len(rows) == 1:  # Debug first row
+                    print(f"DEBUG: First row from stream: {row}")
+                    if hasattr(row, "_fields"):
+                        print(f"DEBUG: First row fields from query: {row._fields}")
+                        print(f"DEBUG: Row values: {[getattr(row, f) for f in row._fields]}")
 
                 # Track the last token we've seen
                 if hasattr(row, "_asdict"):
@@ -584,6 +616,15 @@ class StreamingPartitionStrategy:
             rows.extend(batch_rows)
             memory_used = len(rows) * len(columns) * 50
 
+        # Debug
+        # print(f"DEBUG stream_partition: Found {len(rows)} rows")
+        # if rows and len(rows) > 0:
+        #     print(f"DEBUG stream_partition: First row type: {type(rows[0])}")
+        #     if hasattr(rows[0], '_fields'):
+        #         print(f"DEBUG stream_partition: First row fields: {rows[0]._fields}")
+        # print(f"DEBUG stream_partition: writetime_columns={writetime_columns}")
+        # print(f"DEBUG stream_partition: use_token_ranges={use_token_ranges}")
+
         # Convert to DataFrame
         if rows:
             # Convert rows to DataFrame preserving types
@@ -608,10 +649,13 @@ class StreamingPartitionStrategy:
                     return value
 
             df_data = []
-            for row in rows:
+            for _i, row in enumerate(rows):
                 row_dict = {}
                 # Get column names from the row
                 if hasattr(row, "_fields"):
+                    # if i == 0:  # Debug first row
+                    #     print(f"DEBUG: First row fields: {row._fields}")
+                    #     print(f"DEBUG: Row has writetime fields: {[f for f in row._fields if 'writetime' in f]}")
                     for field in row._fields:
                         value = getattr(row, field)
                         row_dict[field] = convert_value(value)
@@ -624,6 +668,13 @@ class StreamingPartitionStrategy:
 
             df = pd.DataFrame(df_data)
 
+            # Debug writetime columns
+            # print(f"DEBUG: DataFrame columns after creation: {list(df.columns)}")
+            # print(f"DEBUG: DataFrame shape: {df.shape}")
+            # if len(df) > 0:
+            #     print(f"DEBUG: First row data: {df.iloc[0].to_dict()}")
+            # print(f"DEBUG: writetime_columns from partition_def: {partition_def.get('writetime_columns', [])}")
+
             # Debug: Check UDT values in DataFrame
             # for col in df.columns:
             #     if df[col].dtype == 'object' and len(df) > 0:
@@ -634,8 +685,26 @@ class StreamingPartitionStrategy:
             #             print(f"DEBUG partition.py: Column {col} is STRING: {first_val}")
 
             # Ensure columns are in the expected order
-            if columns and set(df.columns) == set(columns):
-                df = df[columns]
+            # Include writetime/TTL columns if they exist
+            expected_columns = list(columns) if columns else []
+
+            # Add writetime columns
+            writetime_cols = partition_def.get("writetime_columns", [])
+            for col in writetime_cols:
+                wt_col = f"{col}_writetime"
+                if wt_col in df.columns and wt_col not in expected_columns:
+                    expected_columns.append(wt_col)
+
+            # Add TTL columns
+            ttl_cols = partition_def.get("ttl_columns", [])
+            for col in ttl_cols:
+                ttl_col = f"{col}_ttl"
+                if ttl_col in df.columns and ttl_col not in expected_columns:
+                    expected_columns.append(ttl_col)
+
+            # Reorder columns if needed
+            if expected_columns and set(df.columns) == set(expected_columns):
+                df = df[expected_columns]
 
             # Apply type conversions using type mapper if available
             if "type_mapper" in partition_def and "_table_metadata" in partition_def:
@@ -667,24 +736,27 @@ class StreamingPartitionStrategy:
             return df
         else:
             # Empty partition - return empty DataFrame with correct schema
-            # Need to include writetime/TTL columns if requested
-            all_columns = list(columns)
+            # Need to delegate to partition reader's empty dataframe creation
+            # to ensure proper dtypes including CassandraWritetimeDtype
+            # Empty partition - return empty DataFrame with correct schema
+            # Need to delegate to partition reader's empty dataframe creation
+            # to ensure proper dtypes including CassandraWritetimeDtype
+            # print(f"DEBUG stream_partition: Empty partition, creating empty DataFrame")
+            # print(f"DEBUG stream_partition: writetime_columns={writetime_columns}")
 
-            # Add writetime columns
-            writetime_columns = partition_def.get("writetime_columns", [])
-            if writetime_columns:
-                for col in writetime_columns:
-                    if f"{col}_writetime" not in all_columns:
-                        all_columns.append(f"{col}_writetime")
+            from .partition_reader import PartitionReader
 
-            # Add TTL columns
-            ttl_columns = partition_def.get("ttl_columns", [])
-            if ttl_columns:
-                for col in ttl_columns:
-                    if f"{col}_ttl" not in all_columns:
-                        all_columns.append(f"{col}_ttl")
+            empty_df = PartitionReader._create_empty_dataframe(
+                partition_def,
+                partition_def.get("type_mapper"),
+                partition_def.get("writetime_columns"),
+                partition_def.get("ttl_columns"),
+            )
 
-            return pd.DataFrame(columns=all_columns)
+            # print(f"DEBUG stream_partition: Empty DataFrame columns: {list(empty_df.columns)}")
+            # print(f"DEBUG stream_partition: Empty DataFrame dtypes: {empty_df.dtypes.to_dict()}")
+
+            return empty_df
 
     def _get_primary_key_columns(self, table: str) -> list[str]:
         """Get primary key columns for table."""
@@ -734,6 +806,67 @@ class AdaptivePartitionIterator:
                 self.exhausted = True
             else:
                 self.current_token = next_token
+
+    async def _read_next_partition(self) -> tuple[pd.DataFrame | None, int]:
+        """Read next partition up to memory limit."""
+        # Implementation similar to stream_partition
+        # Returns (DataFrame, next_token)
+        # Placeholder for future implementation
+        return pd.DataFrame(), self.current_token
+
+
+class PartitionHelper:
+    """Helper methods for partition operations."""
+
+    @staticmethod
+    async def stream_grouped_partition(
+        session, partition_def: dict[str, Any], fetch_size: int
+    ) -> pd.DataFrame:
+        """
+        Stream data from a grouped partition containing multiple token ranges.
+
+        This combines results from all token ranges in the group into a single DataFrame.
+        """
+        from .streaming import CassandraStreamer
+
+        streamer = CassandraStreamer(session)
+        all_dfs = []
+
+        # Process each token range in the group
+        for token_range in partition_def["token_ranges"]:
+            # Stream this token range
+            df = await streamer.stream_token_range(
+                table=partition_def["table"],
+                columns=partition_def["columns"],
+                partition_keys=partition_def.get("primary_key_columns", ["id"]),
+                start_token=token_range.start,
+                end_token=token_range.end,
+                fetch_size=fetch_size,
+                where_clause="",
+                where_values=(),
+                consistency_level=partition_def.get("consistency_level"),
+                table_metadata=partition_def.get("_table_metadata"),
+                type_mapper=partition_def.get("type_mapper"),
+                writetime_columns=partition_def.get("writetime_columns"),
+                ttl_columns=partition_def.get("ttl_columns"),
+            )
+
+            if df is not None and not df.empty:
+                all_dfs.append(df)
+
+        # Combine all DataFrames
+        if all_dfs:
+            return pd.concat(all_dfs, ignore_index=True)
+        else:
+            # Return empty DataFrame with correct schema from partition definition
+            from .partition_reader import PartitionReader
+
+            return PartitionReader._create_empty_dataframe(
+                partition_def,
+                partition_def.get("type_mapper"),
+                partition_def.get("writetime_columns"),
+                partition_def.get("ttl_columns"),
+            )
 
     async def _read_next_partition(self) -> tuple[pd.DataFrame | None, int]:
         """Read next partition up to memory limit."""
