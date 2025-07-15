@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-
 from async_cassandra import AsyncCluster
 
 # Add parent directory to path for test_utils import

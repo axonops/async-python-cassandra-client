@@ -28,10 +28,9 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
+from async_cassandra import AsyncCassandraSession, AsyncCluster
 from cassandra import OperationTimedOut, ReadTimeout, WriteTimeout
 from cassandra.cluster import ConnectionException, Host, NoHostAvailable
-
-from async_cassandra import AsyncCassandraSession, AsyncCluster
 
 
 class TestNetworkFailures:

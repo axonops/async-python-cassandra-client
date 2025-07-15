@@ -11,7 +11,6 @@ import time
 
 import pytest
 import pytest_asyncio
-
 from async_cassandra import AsyncCassandraSession, AsyncCluster
 
 from .benchmark_config import BenchmarkConfig

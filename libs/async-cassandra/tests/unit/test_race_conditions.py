@@ -10,7 +10,6 @@ import time
 from unittest.mock import Mock
 
 import pytest
-
 from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra.result import AsyncResultHandler
 

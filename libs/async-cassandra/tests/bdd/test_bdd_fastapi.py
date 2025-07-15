@@ -6,11 +6,10 @@ import time
 
 import pytest
 import pytest_asyncio
+from async_cassandra import AsyncCluster
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pytest_bdd import given, parsers, scenario, then, when
-
-from async_cassandra import AsyncCluster
 
 # Import the cassandra_container fixture
 pytest_plugins = ["tests._fixtures.cassandra"]

@@ -9,10 +9,9 @@ import asyncio
 import uuid
 
 import pytest
-from cassandra import InvalidRequest
-
 from async_cassandra import AsyncCluster
 from async_cassandra.streaming import StreamConfig
+from cassandra import InvalidRequest
 
 
 @pytest.mark.integration

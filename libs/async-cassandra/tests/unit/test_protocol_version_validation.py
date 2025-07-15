@@ -21,7 +21,6 @@ Key Testing Principles:
 """
 
 import pytest
-
 from async_cassandra import AsyncCluster
 from async_cassandra.exceptions import ConfigurationError
 

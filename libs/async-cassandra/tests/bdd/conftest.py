@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from tests._fixtures.cassandra import cassandra_container  # noqa: F401
 
 # Add project root to path

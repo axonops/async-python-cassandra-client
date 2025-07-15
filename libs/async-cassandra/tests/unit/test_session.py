@@ -22,12 +22,11 @@ Key Testing Patterns:
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from cassandra.cluster import ResponseFuture, Session
-from cassandra.query import PreparedStatement
-
 from async_cassandra.exceptions import ConnectionError, QueryError
 from async_cassandra.result import AsyncResultSet
 from async_cassandra.session import AsyncCassandraSession
+from cassandra.cluster import ResponseFuture, Session
+from cassandra.query import PreparedStatement
 
 
 class TestAsyncCassandraSession:

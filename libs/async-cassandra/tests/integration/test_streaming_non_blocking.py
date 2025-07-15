@@ -10,7 +10,6 @@ import time
 from typing import List
 
 import pytest
-
 from async_cassandra import AsyncCluster, StreamConfig
 
 

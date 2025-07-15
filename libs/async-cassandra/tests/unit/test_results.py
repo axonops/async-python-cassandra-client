@@ -22,9 +22,8 @@ Note: This complements test_result.py with additional edge cases.
 from unittest.mock import Mock
 
 import pytest
-from cassandra.cluster import ResponseFuture
-
 from async_cassandra.result import AsyncResultHandler, AsyncResultSet
+from cassandra.cluster import ResponseFuture
 
 
 class TestAsyncResultHandler:

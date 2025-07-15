@@ -1,57 +1,124 @@
-# async-cassandra-bulk (🚧 Active Development)
+# async-cassandra-bulk
 
-[![PyPI version](https://badge.fury.io/py/async-cassandra-bulk.svg)](https://badge.fury.io/py/async-cassandra-bulk)
-[![Python versions](https://img.shields.io/pypi/pyversions/async-cassandra-bulk.svg)](https://pypi.org/project/async-cassandra-bulk/)
-[![License](https://img.shields.io/pypi/l/async-cassandra-bulk.svg)](https://github.com/axonops/async-python-cassandra-client/blob/main/LICENSE)
+High-performance bulk operations for Apache Cassandra with async/await support.
 
-High-performance bulk operations extension for Apache Cassandra, built on [async-cassandra](https://pypi.org/project/async-cassandra/).
+## Features
 
-> 🚧 **Active Development**: This package is currently under active development and not yet feature-complete. The API may change as we work towards a stable release. For production use, we recommend using [async-cassandra](https://pypi.org/project/async-cassandra/) directly.
+- **Parallel exports** with token-aware range splitting for maximum performance
+- **Multiple export formats**: CSV, JSON, and JSON Lines (JSONL)
+- **Checkpointing and resumption** for fault-tolerant exports
+- **Real-time progress tracking** with detailed statistics
+- **Type-safe operations** with full type hints
+- **Memory efficient** streaming for large datasets
+- **Custom exporters** for specialized formats
 
-## 🎯 Overview
-
-**async-cassandra-bulk** will provide high-performance data import/export capabilities for Apache Cassandra databases. Once complete, it will leverage token-aware parallel processing to achieve optimal throughput while maintaining memory efficiency.
-
-## ✨ Key Features (Coming Soon)
-
-- 🚀 **Token-aware parallel processing** for maximum throughput
-- 📊 **Memory-efficient streaming** for large datasets
-- 🔄 **Resume capability** with checkpointing
-- 📁 **Multiple formats**: CSV, JSON, Parquet, Apache Iceberg
-- ☁️ **Cloud storage support**: S3, GCS, Azure Blob
-- 📈 **Progress tracking** with customizable callbacks
-
-## 📦 Installation
+## Installation
 
 ```bash
 pip install async-cassandra-bulk
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ```python
-import asyncio
-from async_cassandra_bulk import hello
+from async_cassandra import AsyncCluster
+from async_cassandra_bulk import BulkOperator
 
-async def main():
-    # This is a placeholder function for testing
-    message = await hello()
-    print(message)  # "Hello from async-cassandra-bulk!"
+async def export_data():
+    async with AsyncCluster(['localhost']) as cluster:
+        async with cluster.connect() as session:
+            await session.set_keyspace('my_keyspace')
 
-if __name__ == "__main__":
-    asyncio.run(main())
+            operator = BulkOperator(session=session)
+
+            # Count rows
+            count = await operator.count('users')
+            print(f"Total users: {count}")
+
+            # Export to CSV
+            stats = await operator.export(
+                table='users',
+                output_path='users.csv',
+                format='csv'
+            )
+            print(f"Exported {stats.rows_processed} rows in {stats.duration_seconds:.2f}s")
 ```
 
-> **Note**: Full functionality is coming soon! This is currently a skeleton package in active development.
+## Key Features
 
-## 📖 Documentation
+### Parallel Processing
 
-See the [project documentation](https://github.com/axonops/async-python-cassandra-client) for detailed information.
+Utilizes token range splitting for parallel processing across multiple workers:
 
-## 🤝 Related Projects
+```python
+stats = await operator.export(
+    table='large_table',
+    output_path='export.csv',
+    concurrency=16  # Use 16 parallel workers
+)
+```
 
-- [async-cassandra](https://pypi.org/project/async-cassandra/) - The async Cassandra driver this package builds upon
+### Progress Tracking
 
-## 📄 License
+Monitor export progress in real-time:
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/axonops/async-python-cassandra-client/blob/main/LICENSE) file for details.
+```python
+def progress_callback(stats):
+    print(f"Progress: {stats.progress_percentage:.1f}% ({stats.rows_processed} rows)")
+
+stats = await operator.export(
+    table='large_table',
+    output_path='export.csv',
+    progress_callback=progress_callback
+)
+```
+
+### Checkpointing
+
+Enable checkpointing for resumable exports:
+
+```python
+async def save_checkpoint(state):
+    with open('checkpoint.json', 'w') as f:
+        json.dump(state, f)
+
+stats = await operator.export(
+    table='huge_table',
+    output_path='export.csv',
+    checkpoint_interval=60,  # Checkpoint every minute
+    checkpoint_callback=save_checkpoint
+)
+```
+
+### Export Formats
+
+Support for multiple output formats:
+
+- **CSV**: Standard comma-separated values
+- **JSON**: Complete JSON array
+- **JSONL**: Streaming JSON Lines format
+
+```python
+# Export as JSON Lines (memory efficient for large datasets)
+stats = await operator.export(
+    table='events',
+    output_path='events.jsonl',
+    format='json',
+    json_options={'mode': 'objects'}
+)
+```
+
+## Documentation
+
+- [API Reference](https://github.com/axonops/async-python-cassandra-client/blob/main/libs/async-cassandra-bulk/docs/API.md)
+- [Examples](https://github.com/axonops/async-python-cassandra-client/tree/main/libs/async-cassandra-bulk/examples)
+
+## Requirements
+
+- Python 3.12+
+- async-cassandra
+- Apache Cassandra 3.0+
+
+## License
+
+Apache License 2.0

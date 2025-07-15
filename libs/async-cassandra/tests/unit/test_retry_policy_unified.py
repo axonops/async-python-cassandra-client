@@ -30,9 +30,8 @@ Key Testing Principles:
 
 from unittest.mock import Mock
 
-from cassandra.policies import ConsistencyLevel, RetryPolicy, WriteType
-
 from async_cassandra.retry_policy import AsyncRetryPolicy
+from cassandra.policies import ConsistencyLevel, RetryPolicy, WriteType
 
 
 class TestAsyncRetryPolicy:

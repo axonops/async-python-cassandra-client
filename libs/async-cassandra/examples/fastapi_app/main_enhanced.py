@@ -19,13 +19,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
-from pydantic import BaseModel
-
 from async_cassandra import AsyncCluster, StreamConfig
 from async_cassandra.constants import MAX_CONCURRENT_QUERIES
 from async_cassandra.metrics import create_metrics_system
 from async_cassandra.monitoring import RateLimitedSession, create_monitored_session
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from pydantic import BaseModel
 
 
 # Pydantic models

@@ -22,12 +22,11 @@ Key Testing Focus:
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from async_cassandra import AsyncCassandraSession as AsyncSession
+from async_cassandra.result import AsyncResultSet
 from cassandra import ConsistencyLevel
 from cassandra.cluster import ResponseFuture
 from cassandra.query import SimpleStatement
-
-from async_cassandra import AsyncCassandraSession as AsyncSession
-from async_cassandra.result import AsyncResultSet
 
 
 class TestBasicQueryExecution:

@@ -24,11 +24,10 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
-from cassandra import ConsistencyLevel, InvalidRequest, Unavailable
-from cassandra.cluster import NoHostAvailable
-
 from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra import AsyncCluster
+from cassandra import ConsistencyLevel, InvalidRequest, Unavailable
+from cassandra.cluster import NoHostAvailable
 
 
 def create_mock_response_future(rows=None, has_more_pages=False):

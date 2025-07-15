@@ -27,12 +27,11 @@ import asyncio
 from unittest.mock import Mock, patch
 
 import pytest
+from async_cassandra import AsyncCluster
+from async_cassandra.exceptions import ConnectionError
 from cassandra import AuthenticationFailed, Unauthorized
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import NoHostAvailable
-
-from async_cassandra import AsyncCluster
-from async_cassandra.exceptions import ConnectionError
 
 
 class TestAuthenticationFailures:

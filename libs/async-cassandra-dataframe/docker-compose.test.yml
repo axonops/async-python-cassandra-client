@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  cassandra:
+    image: cassandra:5
+    container_name: cassandra-dataframe-test
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=TestCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - HEAP_NEWSIZE=512M
+      - MAX_HEAP_SIZE=2G
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "SELECT now() FROM system.local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+  dask-scheduler:
+    image: daskdev/dask:latest
+    container_name: dask-scheduler
+    command: ["dask-scheduler"]
+    ports:
+      - "8786:8786"  # Dask communication
+      - "8787:8787"  # Dask dashboard
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    environment:
+      - DASK_DISTRIBUTED__SCHEDULER__WORK_STEALING=True
+      - DASK_DISTRIBUTED__SCHEDULER__ALLOWED_FAILURES=3
+
+  dask-worker-1:
+    image: daskdev/dask:latest
+    container_name: dask-worker-1
+    command: ["dask-worker", "tcp://dask-scheduler:8786", "--nworkers", "2", "--nthreads", "2", "--memory-limit", "2GB"]
+    depends_on:
+      dask-scheduler:
+        condition: service_healthy
+    environment:
+      - DASK_DISTRIBUTED__WORKER__MEMORY__TARGET=0.8
+      - DASK_DISTRIBUTED__WORKER__MEMORY__SPILL=0.9
+      - DASK_DISTRIBUTED__WORKER__MEMORY__PAUSE=0.95
+      - DASK_DISTRIBUTED__WORKER__MEMORY__TERMINATE=0.98
+
+  dask-worker-2:
+    image: daskdev/dask:latest
+    container_name: dask-worker-2
+    command: ["dask-worker", "tcp://dask-scheduler:8786", "--nworkers", "2", "--nthreads", "2", "--memory-limit", "2GB"]
+    depends_on:
+      dask-scheduler:
+        condition: service_healthy
+    environment:
+      - DASK_DISTRIBUTED__WORKER__MEMORY__TARGET=0.8
+      - DASK_DISTRIBUTED__WORKER__MEMORY__SPILL=0.9
+      - DASK_DISTRIBUTED__WORKER__MEMORY__PAUSE=0.95
+      - DASK_DISTRIBUTED__WORKER__MEMORY__TERMINATE=0.98
+
+  # Test runner container with all dependencies
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: dataframe-test-runner
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      dask-scheduler:
+        condition: service_healthy
+    environment:
+      - CASSANDRA_HOST=cassandra
+      - DASK_SCHEDULER=tcp://dask-scheduler:8786
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+    command: ["sleep", "infinity"]  # Keep running for interactive testing
+
+volumes:
+  cassandra-data:
+
+networks:
+  default:
+    name: cassandra-dataframe-test-network

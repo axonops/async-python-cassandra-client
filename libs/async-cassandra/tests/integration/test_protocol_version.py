@@ -5,7 +5,6 @@ Only tests actual connection with protocol v5 - validation logic is tested in un
 """
 
 import pytest
-
 from async_cassandra import AsyncCluster
 
 

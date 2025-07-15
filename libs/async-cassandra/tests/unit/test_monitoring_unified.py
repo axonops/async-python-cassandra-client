@@ -28,7 +28,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from async_cassandra.metrics import (
     ConnectionMetrics,
     InMemoryMetricsCollector,

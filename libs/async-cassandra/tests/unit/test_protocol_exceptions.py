@@ -17,6 +17,7 @@ Tests proper handling of all protocol-level exceptions including:
 from unittest.mock import Mock
 
 import pytest
+from async_cassandra import AsyncCassandraSession
 from cassandra import (
     AlreadyExists,
     AuthenticationFailed,
@@ -39,8 +40,6 @@ from cassandra.connection import (
     ProtocolError,
 )
 from cassandra.pool import NoConnectionsAvailable
-
-from async_cassandra import AsyncCassandraSession
 
 
 class TestProtocolExceptions:

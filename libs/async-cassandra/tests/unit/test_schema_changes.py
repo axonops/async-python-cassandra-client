@@ -13,9 +13,8 @@ import asyncio
 from unittest.mock import Mock, patch
 
 import pytest
-from cassandra import AlreadyExists, InvalidRequest
-
 from async_cassandra import AsyncCassandraSession, AsyncCluster
+from cassandra import AlreadyExists, InvalidRequest
 
 
 class TestSchemaChanges:

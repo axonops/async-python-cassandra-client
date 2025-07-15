@@ -10,7 +10,6 @@ import time
 import uuid
 
 import pytest
-
 from async_cassandra import AsyncCluster
 
 

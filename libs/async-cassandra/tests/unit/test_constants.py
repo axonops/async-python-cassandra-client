@@ -3,7 +3,6 @@ Unit tests for constants module.
 """
 
 import pytest
-
 from async_cassandra.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_EXECUTOR_THREADS,
