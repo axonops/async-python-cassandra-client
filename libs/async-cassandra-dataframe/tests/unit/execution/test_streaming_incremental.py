@@ -177,17 +177,23 @@ class TestStreamingWithIncrementalBuilder:
         session = AsyncMock()
         streamer = CassandraStreamer(session)
 
-        # Mock _stream_batch to return rows
-        async def mock_stream_batch(query, values, columns, fetch_size, consistency_level=None):
-            rows = []
+        # Mock the stream result
+        mock_stream_result = AsyncMock()
+
+        # Create async context manager that yields rows
+        async def async_iter():
             for i in range(3):
                 row = Mock()
                 row._asdict.return_value = {"id": i}
-                rows.append(row)
-            return rows
+                yield row
 
-        streamer._stream_batch = mock_stream_batch
-        streamer._get_row_token = AsyncMock(return_value=None)
+        # Set up the async context manager
+        mock_stream_result.__aenter__.return_value = async_iter()
+        mock_stream_result.__aexit__.return_value = None
+
+        # Mock prepare and execute_stream
+        session.prepare = AsyncMock()
+        session.execute_stream = AsyncMock(return_value=mock_stream_result)
 
         with patch(
             "async_cassandra_dataframe.incremental_builder.IncrementalDataFrameBuilder"

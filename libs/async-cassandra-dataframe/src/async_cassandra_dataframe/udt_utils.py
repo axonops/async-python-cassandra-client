@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 
 
-def serialize_udt_for_dask(value: Any) -> str:
+def serialize_udt_for_dask(value: Any) -> Any:
     """
     Serialize UDT dict to a special JSON format for Dask transport.
 
@@ -37,7 +37,7 @@ def serialize_udt_for_dask(value: Any) -> str:
                 serialized.append(item)
         return f"__UDT_LIST__{json.dumps(serialized)}"
     else:
-        return str(value)
+        return value
 
 
 def deserialize_udt_from_dask(value: Any) -> Any:
