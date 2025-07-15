@@ -63,6 +63,68 @@ class TokenRange:
             # Wraparound: token is either after start OR before end
             return token >= self.start or token <= self.end
 
+    def split(self, split_factor: int) -> list["TokenRange"]:
+        """
+        Split this token range into N equal sub-ranges.
+
+        Args:
+            split_factor: Number of sub-ranges to create
+
+        Returns:
+            List of sub-ranges that cover this range
+
+        Raises:
+            ValueError: If split_factor is not positive
+        """
+        if split_factor < 1:
+            raise ValueError("split_factor must be positive")
+
+        if split_factor == 1:
+            return [self]
+
+        # Handle wraparound ranges
+        if self.is_wraparound:
+            # Split into two non-wraparound ranges first
+            first_part = TokenRange(start=self.start, end=MAX_TOKEN, replicas=self.replicas)
+            second_part = TokenRange(start=MIN_TOKEN, end=self.end, replicas=self.replicas)
+
+            # Calculate how to distribute splits between the two parts
+            first_size = first_part.size
+            second_size = second_part.size
+            total_size = first_size + second_size
+
+            # Allocate splits proportionally
+            first_splits = max(1, round(split_factor * first_size / total_size))
+            second_splits = max(1, split_factor - first_splits)
+
+            result = []
+            result.extend(first_part.split(first_splits))
+            result.extend(second_part.split(second_splits))
+            return result
+
+        # Calculate split size
+        range_size = self.size
+        if range_size < split_factor:
+            # Can't split into more parts than tokens available
+            # Still create the requested number of splits, some may be very small
+            pass
+
+        splits = []
+        for i in range(split_factor):
+            # Calculate boundaries for this split
+            if i == split_factor - 1:
+                # Last split gets any remainder
+                start = self.start + (range_size * i // split_factor)
+                end = self.end
+            else:
+                start = self.start + (range_size * i // split_factor)
+                end = self.start + (range_size * (i + 1) // split_factor)
+
+            # Create sub-range with proportional fraction
+            splits.append(TokenRange(start=start, end=end, replicas=self.replicas))
+
+        return splits
+
 
 async def discover_token_ranges(session: Any, keyspace: str) -> list[TokenRange]:
     """

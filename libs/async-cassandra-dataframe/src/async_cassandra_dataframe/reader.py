@@ -172,6 +172,7 @@ class CassandraDataFrameReader:
         # Partitioning strategy
         partition_strategy: str = "auto",
         target_partition_size_mb: int = 1024,
+        split_factor: int | None = None,
         # Validation
         require_partition_key_predicate: bool = False,
         # Progress
@@ -224,6 +225,7 @@ class CassandraDataFrameReader:
             pushdown_predicates,
             partition_strategy,
             target_partition_size_mb,
+            split_factor,
         )
 
         # Normalize snapshot time
@@ -454,6 +456,7 @@ class CassandraDataFrameReader:
         pushdown_predicates: list,
         partition_strategy: str,
         target_partition_size_mb: int,
+        split_factor: int | None,
     ) -> list[dict[str, Any]]:
         """Create partition definitions."""
         # Create partition strategy
@@ -482,6 +485,7 @@ class CassandraDataFrameReader:
                     columns,
                     None,  # writetime_columns
                     None,  # ttl_columns
+                    split_factor,
                 )
             except Exception as e:
                 logger.warning(f"Could not apply partitioning strategy: {e}")
@@ -497,6 +501,7 @@ class CassandraDataFrameReader:
         columns: list[str],
         writetime_columns: list[str] | None,
         ttl_columns: list[str] | None,
+        split_factor: int | None,
     ) -> list[dict[str, Any]]:
         """Create grouped partitions based on partitioning strategy."""
         # Get natural token ranges
@@ -513,6 +518,7 @@ class CassandraDataFrameReader:
             strategy=strategy_enum,
             target_partition_count=partition_count,
             target_partition_size_mb=target_partition_size_mb,
+            split_factor=split_factor,
         )
 
         # Log partitioning info
@@ -650,7 +656,9 @@ async def read_cassandra_table(
     adaptive_page_size: bool = False,
     # Partitioning strategy
     partition_strategy: str = "auto",
+    partitioning_strategy: str | None = None,  # Alias for backward compatibility
     target_partition_size_mb: int = 1024,
+    split_factor: int | None = None,
     # Validation
     require_partition_key_predicate: bool = False,
     # Progress
@@ -687,8 +695,9 @@ async def read_cassandra_table(
         max_concurrent_partitions=max_concurrent_partitions,
         page_size=page_size,
         adaptive_page_size=adaptive_page_size,
-        partition_strategy=partition_strategy,
+        partition_strategy=partitioning_strategy or partition_strategy,  # Use alias if provided
         target_partition_size_mb=target_partition_size_mb,
+        split_factor=split_factor,
         require_partition_key_predicate=require_partition_key_predicate,
         progress_callback=progress_callback,
         client=client,

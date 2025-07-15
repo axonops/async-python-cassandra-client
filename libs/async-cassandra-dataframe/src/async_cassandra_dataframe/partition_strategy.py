@@ -23,6 +23,7 @@ class PartitioningStrategy(str, Enum):
     NATURAL = "natural"  # One partition per token range
     COMPACT = "compact"  # Balance parallelism and overhead
     FIXED = "fixed"  # User-specified partition count
+    SPLIT = "split"  # Split each token range into N sub-partitions
 
 
 @dataclass
@@ -70,6 +71,7 @@ class TokenRangeGrouper:
         strategy: PartitioningStrategy = PartitioningStrategy.AUTO,
         target_partition_count: int | None = None,
         target_partition_size_mb: int | None = None,
+        split_factor: int | None = None,
     ) -> list[PartitionGroup]:
         """
         Group token ranges into partitions based on strategy.
@@ -79,6 +81,7 @@ class TokenRangeGrouper:
             strategy: Partitioning strategy to use
             target_partition_count: Desired number of partitions (for FIXED strategy)
             target_partition_size_mb: Target size per partition
+            split_factor: Number of sub-partitions per token range (for SPLIT strategy)
 
         Returns:
             List of partition groups
@@ -96,6 +99,10 @@ class TokenRangeGrouper:
             if target_partition_count is None:
                 raise ValueError("FIXED strategy requires target_partition_count")
             return self._fixed_grouping(token_ranges, target_partition_count)
+        elif strategy == PartitioningStrategy.SPLIT:
+            if split_factor is None:
+                raise ValueError("SPLIT strategy requires split_factor")
+            return self._split_grouping(token_ranges, split_factor)
         else:  # AUTO
             return self._auto_grouping(token_ranges, target_size)
 
@@ -259,6 +266,47 @@ class TokenRangeGrouper:
                 # Apply minimal grouping
                 target_partitions = max(len(token_ranges) // 2, unique_nodes * 4)
                 return self._fixed_grouping(token_ranges, target_partitions)
+
+    def _split_grouping(
+        self, token_ranges: list[TokenRange], split_factor: int
+    ) -> list[PartitionGroup]:
+        """
+        Split each token range into N sub-partitions.
+
+        Args:
+            token_ranges: Original token ranges from Cassandra
+            split_factor: Number of sub-partitions per token range
+
+        Returns:
+            List of partition groups, one per sub-range
+        """
+        groups = []
+        partition_id = 0
+
+        for token_range in token_ranges:
+            # Split the token range into sub-ranges
+            sub_ranges = token_range.split(split_factor)
+
+            # Create a partition group for each sub-range
+            for sub_range in sub_ranges:
+                # Estimate size based on fraction
+                estimated_size = self.default_partition_size_mb * sub_range.fraction
+
+                group = PartitionGroup(
+                    partition_id=partition_id,
+                    token_ranges=[sub_range],
+                    estimated_size_mb=estimated_size,
+                    primary_replica=sub_range.replicas[0] if sub_range.replicas else None,
+                )
+                groups.append(group)
+                partition_id += 1
+
+        logger.info(
+            f"Split partitioning: {len(token_ranges)} ranges split by {split_factor} "
+            f"= {len(groups)} partitions"
+        )
+
+        return groups
 
     def _group_by_replica(self, token_ranges: list[TokenRange]) -> dict[str, list[TokenRange]]:
         """Group token ranges by their primary replica."""

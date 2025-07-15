@@ -412,7 +412,7 @@ class TestAutomaticPartitionCount:
         df_filtered = await cdf.read_cassandra_table(
             "partition_test_filtered",
             session=session,
-            predicates=[{"column": "year", "op": "=", "value": 2024}],
+            predicates=[{"column": "year", "operator": "=", "value": 2024}],
             allow_filtering=True,
         )
 
@@ -554,3 +554,245 @@ class TestAutomaticPartitionCount:
         assert (
             partition_counts["large"] >= partition_counts["medium"]
         ), f"Large dataset should have >= partitions than medium: {partition_counts}"
+
+    @pytest.mark.asyncio
+    async def test_split_strategy_basic(self, session):
+        """
+        Test SPLIT partitioning strategy with basic configuration.
+
+        Given: A table with data and discovered token ranges
+        When: Using SPLIT strategy with split_factor=2
+        Then: Each token range should be split into 2 sub-partitions
+        """
+        # Create test table
+        await session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS partition_test_split (
+                id INT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
+
+        # Insert data
+        insert_stmt = await session.prepare(
+            """
+            INSERT INTO partition_test_split (id, value) VALUES (?, ?)
+            """
+        )
+
+        logger.info("Inserting 5000 rows for split strategy test...")
+        from cassandra.query import BatchStatement
+
+        batch_size = 100
+        for i in range(0, 5000, batch_size):
+            batch = BatchStatement()
+            for j in range(batch_size):
+                batch.add(insert_stmt, (i + j, f"value_{i + j}"))
+            await session.execute(batch)
+
+        # Read with SPLIT strategy
+        df = await cdf.read_cassandra_table(
+            "partition_test_split",
+            session=session,
+            partitioning_strategy="split",
+            split_factor=2,
+        )
+
+        logger.info(f"SPLIT strategy with factor 2: {df.npartitions} partitions")
+
+        # With a single-node cluster having ~17 vnodes, and split_factor=2,
+        # we should have approximately 17 * 2 = 34 partitions
+        assert df.npartitions >= 30, f"Expected at least 30 partitions, got {df.npartitions}"
+
+        # Verify all data is read
+        assert len(df) == 5000, f"Expected 5000 rows, got {len(df)}"
+
+        # Check partition sizes
+        partition_sizes = []
+        for i in range(df.npartitions):
+            partition_data = df.get_partition(i).compute()
+            partition_sizes.append(len(partition_data))
+
+        # Log distribution
+        avg_size = sum(partition_sizes) / len(partition_sizes)
+        logger.info(
+            f"SPLIT strategy partition sizes: min={min(partition_sizes)}, "
+            f"max={max(partition_sizes)}, avg={avg_size:.1f}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_split_strategy_high_factor(self, session):
+        """
+        Test SPLIT strategy with high split factor.
+
+        Given: A table with data
+        When: Using SPLIT strategy with split_factor=10
+        Then: Each token range should be split into 10 sub-partitions
+        """
+        # Create test table
+        await session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS partition_test_split_high (
+                id INT PRIMARY KEY,
+                data TEXT
+            )
+            """
+        )
+
+        # Insert data
+        insert_stmt = await session.prepare(
+            """
+            INSERT INTO partition_test_split_high (id, data) VALUES (?, ?)
+            """
+        )
+
+        logger.info("Inserting 2000 rows for high split factor test...")
+        from cassandra.query import BatchStatement
+
+        batch_size = 25
+        for i in range(0, 2000, batch_size):
+            batch = BatchStatement()
+            for j in range(batch_size):
+                batch.add(insert_stmt, (i + j, f"data_{i + j}"))
+            await session.execute(batch)
+
+        # Read with high split factor
+        df = await cdf.read_cassandra_table(
+            "partition_test_split_high",
+            session=session,
+            partitioning_strategy="split",
+            split_factor=10,
+        )
+
+        logger.info(f"SPLIT strategy with factor 10: {df.npartitions} partitions")
+
+        # With ~17 vnodes and split_factor=10, expect around 170 partitions
+        assert df.npartitions >= 100, f"Expected at least 100 partitions, got {df.npartitions}"
+
+        # Verify all data
+        assert len(df) == 2000
+
+        # Check that partitions are relatively small
+        partition_sizes = []
+        sample_size = min(10, df.npartitions)  # Sample first 10 partitions
+        for i in range(sample_size):
+            partition_data = df.get_partition(i).compute()
+            partition_sizes.append(len(partition_data))
+
+        avg_sample_size = sum(partition_sizes) / len(partition_sizes)
+        logger.info(f"Average partition size (sample): {avg_sample_size:.1f} rows")
+
+        # With many partitions, each should be relatively small
+        assert avg_sample_size < 50, f"Partitions too large: avg={avg_sample_size}"
+
+    @pytest.mark.asyncio
+    async def test_split_vs_auto_strategy(self, session):
+        """
+        Compare SPLIT strategy with AUTO strategy.
+
+        Given: The same table
+        When: Reading with SPLIT vs AUTO strategies
+        Then: SPLIT should create more partitions based on split_factor
+        """
+        # Create test table
+        await session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS partition_test_compare_split (
+                pk INT,
+                ck INT,
+                value TEXT,
+                PRIMARY KEY (pk, ck)
+            )
+            """
+        )
+
+        # Insert data
+        insert_stmt = await session.prepare(
+            """
+            INSERT INTO partition_test_compare_split (pk, ck, value) VALUES (?, ?, ?)
+            """
+        )
+
+        for pk in range(50):
+            for ck in range(100):
+                await session.execute(insert_stmt, (pk, ck, f"value_{pk}_{ck}"))
+
+        # Read with AUTO strategy
+        df_auto = await cdf.read_cassandra_table(
+            "partition_test_compare_split",
+            session=session,
+            partitioning_strategy="auto",
+        )
+
+        # Read with SPLIT strategy
+        df_split = await cdf.read_cassandra_table(
+            "partition_test_compare_split",
+            session=session,
+            partitioning_strategy="split",
+            split_factor=3,
+        )
+
+        logger.info(f"AUTO strategy: {df_auto.npartitions} partitions")
+        logger.info(f"SPLIT strategy (factor=3): {df_split.npartitions} partitions")
+
+        # SPLIT with factor 3 should create more partitions than AUTO
+        assert df_split.npartitions > df_auto.npartitions, (
+            f"SPLIT should create more partitions: "
+            f"SPLIT={df_split.npartitions}, AUTO={df_auto.npartitions}"
+        )
+
+        # Both should read all data
+        assert len(df_auto) == 5000
+        assert len(df_split) == 5000
+
+    @pytest.mark.asyncio
+    async def test_split_strategy_preserves_ordering(self, session):
+        """
+        Test that SPLIT strategy preserves token ordering.
+
+        Given: A table with ordered data
+        When: Using SPLIT strategy
+        Then: Token ranges should maintain proper ordering without gaps
+        """
+        # Create test table
+        await session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS partition_test_split_order (
+                id INT PRIMARY KEY,
+                value INT
+            )
+            """
+        )
+
+        # Insert sequential data
+        insert_stmt = await session.prepare(
+            """
+            INSERT INTO partition_test_split_order (id, value) VALUES (?, ?)
+            """
+        )
+
+        for i in range(1000):
+            await session.execute(insert_stmt, (i, i * 10))
+
+        # Read with SPLIT strategy
+        df = await cdf.read_cassandra_table(
+            "partition_test_split_order",
+            session=session,
+            partitioning_strategy="split",
+            split_factor=5,
+        )
+
+        # Collect all data and verify completeness
+        all_data = df.compute()
+        assert len(all_data) == 1000, f"Expected 1000 rows, got {len(all_data)}"
+
+        # Verify all IDs are present (no gaps)
+        ids = sorted(all_data["id"].tolist())
+        assert ids == list(range(1000)), "Missing or duplicate IDs detected"
+
+        # Verify values are correct
+        for i in range(1000):
+            row = all_data[all_data["id"] == i]
+            assert len(row) == 1, f"ID {i} appears {len(row)} times"
+            assert row["value"].iloc[0] == i * 10, f"Incorrect value for ID {i}"
